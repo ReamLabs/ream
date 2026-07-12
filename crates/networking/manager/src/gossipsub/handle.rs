@@ -1,6 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use libp2p::gossipsub::Message;
+use libp2p::gossipsub::{Message, MessageAcceptance};
 use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_consensus_beacon::{
     blob_sidecar::BlobIdentifier,
@@ -134,10 +134,13 @@ async fn import_gossip_attestation(
     let (attestation, should_process_attestation) = {
         let store = beacon_chain.store.lock().await;
         let head_root = store.get_head()?;
-        let state =
+        let mut state =
             store.db.state_provider().get(head_root)?.ok_or_else(|| {
                 anyhow::anyhow!("No beacon state found for head root: {head_root}")
             })?;
+        if state.slot < single_attestation.data.slot {
+            state.process_slots(single_attestation.data.slot)?;
+        }
         let attestation = single_attestation_to_attestation(single_attestation, &state)?;
 
         store
@@ -165,13 +168,21 @@ fn forward_gossip_message(message: &Message, p2p_sender: &P2PSender, data: Vec<u
     });
 }
 
+fn message_acceptance(validation_result: &ValidationResult) -> MessageAcceptance {
+    match validation_result {
+        ValidationResult::Accept => MessageAcceptance::Accept,
+        ValidationResult::Reject(_) => MessageAcceptance::Reject,
+        ValidationResult::Ignore(_) => MessageAcceptance::Ignore,
+    }
+}
+
 /// Dispatches a gossipsub message to its appropriate handler.
 pub async fn handle_gossipsub_message(
     message: Message,
     beacon_chain: &BeaconChain,
     cached_db: &BeaconCacheDB,
     p2p_sender: &P2PSender,
-) {
+) -> MessageAcceptance {
     match GossipsubMessage::decode(&message.topic, &message.data) {
         Ok(gossip_message) => match gossip_message {
             GossipsubMessage::BeaconBlock(signed_block) => {
@@ -189,7 +200,7 @@ pub async fn handle_gossipsub_message(
                 };
                 if let Err(err) = beacon_chain.process_tick(tick_time).await {
                     warn!("Failed to process gossipsub tick before block validation: {err}");
-                    return;
+                    return MessageAcceptance::Ignore;
                 }
 
                 let validation_result = match validate_gossip_beacon_block(
@@ -202,10 +213,11 @@ pub async fn handle_gossipsub_message(
                     Ok(result) => result,
                     Err(err) => {
                         warn!("Failed to validate gossipsub beacon block: {err}");
-                        return;
+                        return MessageAcceptance::Ignore;
                     }
                 };
 
+                let acceptance = message_acceptance(&validation_result);
                 match validation_result {
                     ValidationResult::Accept => {
                         let signed_block_bytes = signed_block.as_ssz_bytes();
@@ -221,6 +233,7 @@ pub async fn handle_gossipsub_message(
                         warn!("Rejecting gossipsub beacon block: {reason}");
                     }
                 }
+                acceptance
             }
             GossipsubMessage::BeaconAttestation((single_attestation, subnet_id)) => {
                 trace!(
@@ -228,7 +241,7 @@ pub async fn handle_gossipsub_message(
                     single_attestation.tree_hash_root()
                 );
 
-                match validate_beacon_attestation(
+                let validation_result = match validate_beacon_attestation(
                     &single_attestation,
                     beacon_chain,
                     subnet_id,
@@ -236,30 +249,35 @@ pub async fn handle_gossipsub_message(
                 )
                 .await
                 {
-                    Ok(validation_result) => match validation_result {
-                        ValidationResult::Accept => {
-                            if let Err(err) =
-                                import_gossip_attestation(beacon_chain, &single_attestation).await
-                            {
-                                warn!("Failed to import gossipsub beacon attestation: {err}");
-                            }
-                            forward_gossip_message(
-                                &message,
-                                p2p_sender,
-                                single_attestation.as_ssz_bytes(),
-                            );
-                        }
-                        ValidationResult::Reject(reason) => {
-                            info!("Attestation rejected: {reason}");
-                        }
-                        ValidationResult::Ignore(reason) => {
-                            info!("Attestation ignored: {reason}");
-                        }
-                    },
+                    Ok(validation_result) => validation_result,
                     Err(err) => {
                         trace!("Could not validate attestation: {err}");
+                        return MessageAcceptance::Ignore;
+                    }
+                };
+
+                let acceptance = message_acceptance(&validation_result);
+                match validation_result {
+                    ValidationResult::Accept => {
+                        if let Err(err) =
+                            import_gossip_attestation(beacon_chain, &single_attestation).await
+                        {
+                            warn!("Failed to import gossipsub beacon attestation: {err}");
+                        }
+                        forward_gossip_message(
+                            &message,
+                            p2p_sender,
+                            single_attestation.as_ssz_bytes(),
+                        );
+                    }
+                    ValidationResult::Reject(reason) => {
+                        info!("Attestation rejected: {reason}");
+                    }
+                    ValidationResult::Ignore(reason) => {
+                        info!("Attestation ignored: {reason}");
                     }
                 }
+                acceptance
             }
             GossipsubMessage::BlsToExecutionChange(signed_bls_to_execution_change) => {
                 info!(
@@ -293,6 +311,7 @@ pub async fn handle_gossipsub_message(
                         error!("Could not validate BLS to Execution Change: {err}");
                     }
                 }
+                MessageAcceptance::Ignore
             }
             GossipsubMessage::AggregateAndProof(aggregate_and_proof) => {
                 info!(
@@ -322,6 +341,7 @@ pub async fn handle_gossipsub_message(
                         error!("Could not validate aggregate and proof: {err}");
                     }
                 }
+                MessageAcceptance::Ignore
             }
             GossipsubMessage::SyncCommittee((sync_committee, subnet_id)) => {
                 trace!(
@@ -351,6 +371,7 @@ pub async fn handle_gossipsub_message(
                         error!("Could not validate sync committee message: {err}");
                     }
                 }
+                MessageAcceptance::Ignore
             }
             GossipsubMessage::SyncCommitteeContributionAndProof(signed_contribution_and_proof) => {
                 info!(
@@ -385,6 +406,7 @@ pub async fn handle_gossipsub_message(
                         error!("Could not validate sync committee contribution and proof: {err}");
                     }
                 }
+                MessageAcceptance::Ignore
             }
             GossipsubMessage::AttesterSlashing(attester_slashing) => {
                 info!(
@@ -416,6 +438,7 @@ pub async fn handle_gossipsub_message(
                         error!("Could not validate attester slashing: {err}");
                     }
                 }
+                MessageAcceptance::Ignore
             }
             GossipsubMessage::ProposerSlashing(proposer_slashing) => {
                 info!(
@@ -444,6 +467,7 @@ pub async fn handle_gossipsub_message(
                         error!("Could not validate proposer slashing: {err}");
                     }
                 }
+                MessageAcceptance::Ignore
             }
             GossipsubMessage::BlobSidecar(blob_sidecar) => {
                 info!(
@@ -494,6 +518,7 @@ pub async fn handle_gossipsub_message(
                         error!("Could not validate blob_sidecar: {err}");
                     }
                 }
+                MessageAcceptance::Ignore
             }
             GossipsubMessage::DataColumnSidecar(data_column_sidecar) => {
                 info!(
@@ -511,12 +536,12 @@ pub async fn handle_gossipsub_message(
                         GossipTopicKind::DataColumnSidecar(id) => id,
                         _ => {
                             error!("Unexpected topic kind for data column sidecar");
-                            return;
+                            return MessageAcceptance::Ignore;
                         }
                     },
                     Err(err) => {
                         error!("Failed to parse topic for data column sidecar: {err}");
-                        return;
+                        return MessageAcceptance::Ignore;
                     }
                 };
 
@@ -540,7 +565,7 @@ pub async fn handle_gossipsub_message(
                     Ok(validation_result) => validation_result,
                     Err(err) => {
                         error!("Could not validate data_column_sidecar: {err}");
-                        return;
+                        return MessageAcceptance::Ignore;
                     }
                 };
 
@@ -576,6 +601,7 @@ pub async fn handle_gossipsub_message(
                         info!("Data column sidecar ignored: {reason}");
                     }
                 }
+                MessageAcceptance::Ignore
             }
             GossipsubMessage::LightClientFinalityUpdate(light_client_finality_update) => {
                 info!(
@@ -608,6 +634,7 @@ pub async fn handle_gossipsub_message(
                         error!("Could not validate light client finality update: {err}");
                     }
                 }
+                MessageAcceptance::Ignore
             }
             GossipsubMessage::LightClientOptimisticUpdate(light_client_optimistic_update) => {
                 info!(
@@ -644,6 +671,7 @@ pub async fn handle_gossipsub_message(
                         error!("Could not validate light client optimistic update: {err}");
                     }
                 }
+                MessageAcceptance::Ignore
             }
             GossipsubMessage::VoluntaryExit(voluntary_exit) => {
                 info!(
@@ -671,10 +699,12 @@ pub async fn handle_gossipsub_message(
                         error!("Could not validate voluntary_exit: {err}");
                     }
                 }
+                MessageAcceptance::Ignore
             }
         },
         Err(err) => {
             trace!("Failed to decode gossip message: {err:?}");
+            MessageAcceptance::Reject
         }
-    };
+    }
 }
