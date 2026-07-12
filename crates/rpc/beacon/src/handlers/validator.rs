@@ -38,7 +38,7 @@ use ream_consensus_misc::{
     checkpoint::Checkpoint,
     constants::beacon::{
         DOMAIN_AGGREGATE_AND_PROOF, DOMAIN_BEACON_ATTESTER, DOMAIN_RANDAO, DOMAIN_SYNC_COMMITTEE,
-        MAX_COMMITTEES_PER_SLOT, PROPOSER_REWARD_QUOTIENT, SLOTS_PER_EPOCH,
+        FULU_FORK_EPOCH, MAX_COMMITTEES_PER_SLOT, PROPOSER_REWARD_QUOTIENT, SLOTS_PER_EPOCH,
         SYNC_COMMITTEE_PROPOSER_REWARD_QUOTIENT, WHISTLEBLOWER_REWARD_QUOTIENT,
     },
     deposit::Deposit,
@@ -60,6 +60,7 @@ use ream_execution_rpc_types::{
 };
 use ream_fork_choice_beacon::store::Store;
 use ream_network_manager::gossipsub::validate::sync_committee_contribution_and_proof::get_sync_subcommittee_pubkeys;
+use ream_network_spec::networks::beacon_network_spec;
 use ream_operation_pool::OperationPool;
 use ream_p2p::{
     gossipsub::beacon::topics::{GossipTopic, GossipTopicKind},
@@ -98,6 +99,10 @@ use super::state::get_state_from_id;
 ///  For slots in Electra and later, this AttestationData must have a committee_index of 0.
 const ELECTRA_COMMITTEE_INDEX: u64 = 0;
 const MAX_VALIDATOR_COUNT: usize = 100;
+
+fn gossip_fork_digest(state: &BeaconState) -> B32 {
+    beacon_network_spec().fork_digest(FULU_FORK_EPOCH, state.genesis_validators_root)
+}
 
 fn build_validator_balances(
     validators: &[(Validator, u64)],
@@ -848,7 +853,7 @@ pub async fn post_beacon_committee_subscriptions(
         let subnet_id =
             compute_subnet_for_attestation(sub.committees_at_slot, sub.slot, sub.committee_index);
 
-        let fork = state.fork.current_version;
+        let fork = gossip_fork_digest(&state);
 
         subnets.insert((subnet_id, fork));
     }
@@ -951,7 +956,7 @@ pub async fn post_sync_committee_subscriptions(
             )));
         }
 
-        let fork = state.fork.current_version;
+        let fork = gossip_fork_digest(&state);
         for subnet_id in validator_subnets {
             subnets_to_subscribe.insert((subnet_id, fork));
         }
