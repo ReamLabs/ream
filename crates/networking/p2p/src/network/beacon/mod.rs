@@ -484,24 +484,30 @@ impl Network {
             SwarmEvent::ConnectionEstablished {
                 peer_id, endpoint, ..
             } => {
-                if let ConnectedPoint::Listener { send_back_addr, .. } = &endpoint {
-                    self.network_state.upsert_peer(
-                        peer_id,
-                        Some(send_back_addr.clone()),
-                        ConnectionState::Connecting,
-                        Direction::Inbound,
-                        None,
-                    );
-                } else {
-                    // send status request to the peer
-                    let status_message =
-                        BeaconRequestMessage::Status(self.network_state.status.read().clone());
-                    self.send_request(peer_id, status_message);
-                    let ping_message = BeaconRequestMessage::Ping(Ping::new(
-                        self.network_state.meta_data.read().seq_number,
-                    ));
-                    self.send_request(peer_id, ping_message);
-                }
+                let (address, direction) = match endpoint {
+                    ConnectedPoint::Dialer { address, .. } => {
+                        (address.clone(), Direction::Outbound)
+                    }
+                    ConnectedPoint::Listener { send_back_addr, .. } => {
+                        (send_back_addr.clone(), Direction::Inbound)
+                    }
+                };
+
+                self.network_state.upsert_peer(
+                    peer_id,
+                    Some(address),
+                    ConnectionState::Connected,
+                    direction,
+                    None,
+                );
+
+                let status_message =
+                    BeaconRequestMessage::Status(self.network_state.status.read().clone());
+                self.send_request(peer_id, status_message);
+                let ping_message = BeaconRequestMessage::Ping(Ping::new(
+                    self.network_state.meta_data.read().seq_number,
+                ));
+                self.send_request(peer_id, ping_message);
 
                 None
             }
