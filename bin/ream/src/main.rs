@@ -1510,12 +1510,23 @@ mod tests {
         )
     }
 
+    fn minimum_connected_peer_count(node_count: usize) -> u64 {
+        node_count.saturating_sub(1).min(2) as u64
+    }
+
+    fn peer_count_is_ready(peer_count: &serde_json::Value, minimum_connected: u64) -> bool {
+        peer_count_connected(peer_count) >= minimum_connected
+            && peer_count_value(peer_count, "disconnected") == 0
+            && peer_count_value(peer_count, "disconnecting") == 0
+    }
+
     async fn wait_for_connected_beacon_peer(
         http_ports: &[u16],
     ) -> Result<Vec<serde_json::Value>, Vec<serde_json::Value>> {
         let start = Instant::now();
         let timeout_duration = Duration::from_secs(60);
         let required_ready_polls = 3;
+        let minimum_connected = minimum_connected_peer_count(http_ports.len());
         let mut ready_polls = 0;
         loop {
             let mut peer_counts = Vec::new();
@@ -1525,7 +1536,7 @@ mod tests {
 
             let every_node_connected = peer_counts
                 .iter()
-                .all(|count| peer_count_connected(count) > 0);
+                .all(|count| peer_count_is_ready(count, minimum_connected));
             let peer_count_summary = http_ports
                 .iter()
                 .copied()
@@ -1535,6 +1546,7 @@ mod tests {
             info!(
                 ready_polls,
                 required_ready_polls,
+                minimum_connected,
                 ?peer_count_summary,
                 "beacon e2e peer readiness poll"
             );
@@ -2348,7 +2360,7 @@ mod tests {
         assert!(
             peer_counts
                 .iter()
-                .all(|count| peer_count_connected(count) > 0),
+                .all(|count| peer_count_is_ready(count, minimum_connected_peer_count(2))),
             "beacon nodes did not report a connected peer: {peer_counts:?}"
         );
     }
@@ -2595,7 +2607,7 @@ mod tests {
         assert!(
             peer_counts
                 .iter()
-                .all(|count| peer_count_connected(count) > 0),
+                .all(|count| peer_count_is_ready(count, minimum_connected_peer_count(4))),
             "beacon nodes did not report a connected peer: {peer_counts:?}"
         );
         info!(
