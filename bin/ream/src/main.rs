@@ -2463,11 +2463,34 @@ mod tests {
             let node_2_http_port = node_2_config.http_port;
             let node_2_handle =
                 spawn_beacon_test_node(node_2_config, node_2_db, node_2_executor_handle.clone());
+            if let Err(err) =
+                wait_for_connected_beacon_peer(&[node_1_http_port, node_2_http_port]).await
+            {
+                shutdown_beacon_test_node(&node_2_executor_handle, node_2_handle).await;
+                shutdown_beacon_test_node(&node_1_executor_handle, node_1_handle).await;
+                mock_execution_server.stop().await;
+                panic!("Timed out waiting for node 2 to connect: {err:?}");
+            }
+
             let node_3_config =
                 beacon_node_config_from_args(port_offset + 2, Some(node_1_enr.clone()));
             let node_3_http_port = node_3_config.http_port;
             let node_3_handle =
                 spawn_beacon_test_node(node_3_config, node_3_db, node_3_executor_handle.clone());
+            if let Err(err) = wait_for_connected_beacon_peer(&[
+                node_1_http_port,
+                node_2_http_port,
+                node_3_http_port,
+            ])
+            .await
+            {
+                shutdown_beacon_test_node(&node_3_executor_handle, node_3_handle).await;
+                shutdown_beacon_test_node(&node_2_executor_handle, node_2_handle).await;
+                shutdown_beacon_test_node(&node_1_executor_handle, node_1_handle).await;
+                mock_execution_server.stop().await;
+                panic!("Timed out waiting for node 3 to connect: {err:?}");
+            }
+
             let node_4_config = beacon_node_config_from_args(port_offset + 3, Some(node_1_enr));
             let node_4_http_port = node_4_config.http_port;
             let node_4_handle =
