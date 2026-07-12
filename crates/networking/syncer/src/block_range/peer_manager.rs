@@ -106,9 +106,8 @@ impl PeerManager {
         }
 
         format!(
-            "Total Peers: {total_peers}, Idle: {idle_peers}, Downloading: {downloading_peers}, Banned: {}, Finalized Epochs: {:?}",
-            self.banned_peers.len(),
-            finalized_epochs
+            "Total Peers: {total_peers}, Idle: {idle_peers}, Downloading: {downloading_peers}, Banned: {banned_peers}, Finalized Epochs: {finalized_epochs:?}",
+            banned_peers = self.banned_peers.len(),
         )
     }
 

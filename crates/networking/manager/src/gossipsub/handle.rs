@@ -145,6 +145,16 @@ async fn import_gossip_attestation(
             .insert_attestation(attestation.clone(), single_attestation.committee_index);
 
         let current_slot = store.get_current_slot()?;
+        info!(
+            current_slot,
+            attestation_slot = single_attestation.data.slot,
+            committee_index = single_attestation.committee_index,
+            attester_index = single_attestation.attester_index,
+            beacon_block_root = %single_attestation.data.beacon_block_root,
+            target_epoch = single_attestation.data.target.epoch,
+            target_root = %single_attestation.data.target.root,
+            "beacon_e2e_trace: gossip attestation inserted"
+        );
         (
             attestation,
             current_slot >= single_attestation.data.slot + MIN_ATTESTATION_INCLUSION_DELAY,
@@ -152,6 +162,13 @@ async fn import_gossip_attestation(
     };
 
     if should_process_attestation {
+        info!(
+            attestation_slot = attestation.data.slot,
+            beacon_block_root = %attestation.data.beacon_block_root,
+            target_epoch = attestation.data.target.epoch,
+            target_root = %attestation.data.target.root,
+            "beacon_e2e_trace: gossip attestation processing fork choice"
+        );
         beacon_chain.process_attestation(attestation, false).await?;
     }
 
@@ -175,10 +192,18 @@ pub async fn handle_gossipsub_message(
     match GossipsubMessage::decode(&message.topic, &message.data) {
         Ok(gossip_message) => match gossip_message {
             GossipsubMessage::BeaconBlock(signed_block) => {
+                let slot = signed_block.message.slot;
+                let root = signed_block.message.block_root();
+                let parent_root = signed_block.message.parent_root;
+                let proposer_index = signed_block.message.proposer_index;
+                let attestation_count = signed_block.message.body.attestations.len();
                 info!(
-                    "Beacon block received over gossipsub: slot: {}, root: {}",
-                    signed_block.message.slot,
-                    signed_block.message.block_root()
+                    slot,
+                    %root,
+                    %parent_root,
+                    proposer_index,
+                    attestation_count,
+                    "beacon_e2e_trace: gossip block received"
                 );
 
                 let tick_time = {
@@ -208,17 +233,55 @@ pub async fn handle_gossipsub_message(
 
                 match validation_result {
                     ValidationResult::Accept => {
+                        info!(
+                            slot,
+                            %root,
+                            %parent_root,
+                            proposer_index,
+                            attestation_count,
+                            "beacon_e2e_trace: gossip block accepted"
+                        );
                         let signed_block_bytes = signed_block.as_ssz_bytes();
                         if let Err(err) = beacon_chain.process_block(*signed_block).await {
-                            error!("Failed to process gossipsub beacon block: {err}");
+                            error!(
+                                slot,
+                                %root,
+                                %parent_root,
+                                "beacon_e2e_trace: gossip block import failed: {err}"
+                            );
+                        } else {
+                            info!(
+                                slot,
+                                %root,
+                                %parent_root,
+                                "beacon_e2e_trace: gossip block imported"
+                            );
                         }
                         forward_gossip_message(&message, p2p_sender, signed_block_bytes);
+                        info!(
+                            slot,
+                            %root,
+                            %parent_root,
+                            "beacon_e2e_trace: gossip block forwarded"
+                        );
                     }
                     ValidationResult::Ignore(reason) => {
-                        warn!("Ignoring gossipsub beacon block: {reason}");
+                        warn!(
+                            slot,
+                            %root,
+                            %parent_root,
+                            reason,
+                            "beacon_e2e_trace: gossip block ignored"
+                        );
                     }
                     ValidationResult::Reject(reason) => {
-                        warn!("Rejecting gossipsub beacon block: {reason}");
+                        warn!(
+                            slot,
+                            %root,
+                            %parent_root,
+                            reason,
+                            "beacon_e2e_trace: gossip block rejected"
+                        );
                     }
                 }
             }

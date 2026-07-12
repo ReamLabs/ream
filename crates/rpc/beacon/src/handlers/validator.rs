@@ -90,6 +90,7 @@ use ssz_types::{
     typenum::{U1, U8, U16},
 };
 use tokio::sync::{Mutex, broadcast};
+use tracing::info;
 use tree_hash::TreeHash;
 
 use super::state::get_state_from_id;
@@ -580,6 +581,19 @@ pub async fn get_attestation_data(
         epoch: target_epoch,
         root: target_root,
     };
+    info!(
+        slot,
+        current_slot,
+        committee_index = ?query.committee_index,
+        %head_root,
+        head_state_slot = state.slot,
+        %beacon_block_root,
+        source_epoch = source_checkpoint.epoch,
+        source_root = %source_checkpoint.root,
+        target_epoch = target_checkpoint.epoch,
+        target_root = %target_checkpoint.root,
+        "beacon_e2e_trace: validator attestation data"
+    );
 
     Ok(HttpResponse::Ok().json(DataResponse::new(AttestationData {
         slot,

@@ -165,13 +165,12 @@ pub async fn validate_beacon_block(
                 .slot_index_provider()
                 .get_highest_slot()?
                 .unwrap_or_default();
+            let slot = block.message.slot;
+            let root = block.message.block_root();
+            let parent_root = block.message.parent_root;
             // [IGNORE] The block's parent (defined by block.parent_root) has been seen.
             return Ok(ValidationResult::Ignore(format!(
-                "Parent block not found: slot={}, root={}, parent_root={}, local_highest_slot={}",
-                block.message.slot,
-                block.message.block_root(),
-                block.message.parent_root,
-                local_highest_slot
+                "Parent block not found: slot={slot}, root={root}, parent_root={parent_root}, local_highest_slot={local_highest_slot}"
             )));
         }
     }

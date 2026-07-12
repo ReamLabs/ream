@@ -533,6 +533,11 @@ async fn publish_and_process_block(
     beacon_chain: Data<Arc<BeaconChain>>,
     p2p_sender: Data<Arc<P2PSender>>,
 ) -> Result<HttpResponse, ApiError> {
+    let slot = signed_block.message.slot;
+    let root = signed_block.message.block_root();
+    let parent_root = signed_block.message.parent_root;
+    let proposer_index = signed_block.message.proposer_index;
+    let attestation_count = signed_block.message.body.attestations.len();
     process_tick_now(beacon_chain.as_ref())
         .await
         .map_err(|err| {
@@ -550,18 +555,47 @@ async fn publish_and_process_block(
         topic,
         data: signed_block.as_ssz_bytes(),
     });
+    info!(
+        slot,
+        %root,
+        %parent_root,
+        proposer_index,
+        attestation_count,
+        "beacon_e2e_trace: validator block published to gossip"
+    );
 
     // Integrate into state (after broadcast)
     let integration_success = match beacon_chain.process_block(signed_block.clone()).await {
-        Ok(()) => true,
+        Ok(()) => {
+            info!(
+                slot,
+                %root,
+                %parent_root,
+                proposer_index,
+                attestation_count,
+                "beacon_e2e_trace: validator block imported locally"
+            );
+            true
+        }
         Err(err) => {
             if err.to_string().contains("already known")
                 || err.to_string().contains("ALREADY_KNOWN")
             {
-                warn!("Block already known, ignoring: {err}");
+                warn!(
+                    slot,
+                    %root,
+                    %parent_root,
+                    "beacon_e2e_trace: validator block already known, ignoring: {err}"
+                );
                 return Ok(HttpResponse::Ok().finish());
             }
-            error!("Failed to integrate block into state: {err}");
+            error!(
+                slot,
+                %root,
+                %parent_root,
+                proposer_index,
+                "beacon_e2e_trace: validator block import failed: {err}"
+            );
             false
         }
     };

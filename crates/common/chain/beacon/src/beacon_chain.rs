@@ -21,7 +21,7 @@ use ream_storage::{
 };
 use ream_sync_committee_pool::SyncCommitteePool;
 use tokio::sync::{Mutex, broadcast};
-use tracing::warn;
+use tracing::{info, warn};
 
 /// BeaconChain is the main struct which manages the nodes local beacon chain.
 pub struct BeaconChain {
@@ -47,6 +47,11 @@ impl BeaconChain {
     }
 
     pub async fn process_block(&self, signed_block: SignedBeaconBlock) -> anyhow::Result<()> {
+        let slot = signed_block.message.slot;
+        let root = signed_block.message.block_root();
+        let parent_root = signed_block.message.parent_root;
+        let proposer_index = signed_block.message.proposer_index;
+        let attestation_count = signed_block.message.body.attestations.len();
         let mut store = self.store.lock().await;
 
         on_block(
@@ -56,15 +61,32 @@ impl BeaconChain {
             signed_block.message.slot >= beacon_network_spec().slot_n_days_ago(17),
         )
         .await?;
+        let finalized_checkpoint = store.db.finalized_checkpoint_provider().get().ok();
+        info!(
+            slot,
+            %root,
+            %parent_root,
+            proposer_index,
+            attestation_count,
+            finalized_epoch = finalized_checkpoint.as_ref().map(|checkpoint| checkpoint.epoch),
+            "beacon_e2e_trace: chain block imported"
+        );
 
         for attestation in signed_block.message.body.attestations.iter() {
             if let Err(err) = on_attestation(&mut store, attestation.clone(), true) {
-                warn!("Failed to process block attestation through fork choice: {err:?}");
+                warn!(
+                    block_slot = slot,
+                    block_root = %root,
+                    attestation_slot = attestation.data.slot,
+                    attestation_beacon_block_root = %attestation.data.beacon_block_root,
+                    target_epoch = attestation.data.target.epoch,
+                    target_root = %attestation.data.target.root,
+                    "beacon_e2e_trace: failed to process block attestation through fork choice: {err:?}"
+                );
             }
         }
 
         // Build and Emit Block event
-        let finalized_checkpoint = store.db.finalized_checkpoint_provider().get().ok();
         let block_event =
             BlockEvent::from_block(&signed_block, finalized_checkpoint, |block_root, epoch| {
                 store.get_checkpoint_block(block_root, epoch)

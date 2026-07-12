@@ -138,6 +138,12 @@ impl BlockRangeSyncer {
                             sleep(SLEEP_DURATION).await;
                             continue;
                         };
+                        info!(
+                            peer_id = %peer.peer_id,
+                            start_slot = range.start_slot,
+                            count = range.count,
+                            "beacon_e2e_trace: range sync requesting block range"
+                        );
 
                         task_handles.push(DownloadTask::new_block_range(
                             PeerRangeDownloader::start(
@@ -337,6 +343,17 @@ fn poll_ready_tasks(
                                 continue;
                             }
                         };
+                        let first_slot = blocks.first().map(|block| block.message.slot);
+                        let last_slot = blocks.last().map(|block| block.message.slot);
+                        info!(
+                            peer_id = %peer_id,
+                            requested_start_slot = range.start_slot,
+                            requested_count = range.count,
+                            block_count = blocks.len(),
+                            ?first_slot,
+                            ?last_slot,
+                            "beacon_e2e_trace: range sync received block range"
+                        );
 
                         if blocks.is_empty() {
                             warn!("Received empty block range from peer: {peer_id}");

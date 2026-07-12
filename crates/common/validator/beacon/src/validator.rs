@@ -467,18 +467,52 @@ impl ValidatorService {
             ProduceBlockData::Full(full_block) => {
                 let signed_beacon_block =
                     sign_beacon_block(slot, full_block.block, &keystore.private_key)?;
+                let root = signed_beacon_block.message.tree_hash_root();
+                let parent_root = signed_beacon_block.message.parent_root;
+                let attestation_count = signed_beacon_block.message.body.attestations.len();
+                info!(
+                    slot,
+                    validator_index,
+                    %root,
+                    %parent_root,
+                    attestation_count,
+                    "beacon_e2e_trace: validator publishing full block"
+                );
 
                 self.beacon_api_client
                     .publish_block(BroadcastValidation::Gossip, signed_beacon_block)
                     .await?;
+                info!(
+                    slot,
+                    validator_index,
+                    %root,
+                    %parent_root,
+                    "beacon_e2e_trace: validator published full block"
+                );
             }
             ProduceBlockData::Blinded(blinded_block) => {
                 let signed_blinded_block =
                     sign_blinded_beacon_block(slot, blinded_block, &keystore.private_key)?;
+                let root = signed_blinded_block.message.tree_hash_root();
+                let parent_root = signed_blinded_block.message.parent_root;
+                info!(
+                    slot,
+                    validator_index,
+                    %root,
+                    %parent_root,
+                    "beacon_e2e_trace: validator publishing blinded block"
+                );
 
                 self.beacon_api_client
                     .publish_blinded_block(BroadcastValidation::Gossip, signed_blinded_block)
                     .await?;
+                info!(
+                    slot,
+                    validator_index,
+                    %root,
+                    %parent_root,
+                    "beacon_e2e_trace: validator published blinded block"
+                );
             }
         };
 
@@ -645,12 +679,28 @@ async fn make_attestation_for_duty(
         .await?
         .data;
 
-    Ok(beacon_api_client
-        .submit_attestation(vec![SingleAttestation {
-            attester_index: validator_index,
-            committee_index,
-            signature: sign_attestation_data(&attestation_data, &keystore.private_key)?,
-            data: attestation_data,
-        }])
-        .await?)
+    let single_attestation = SingleAttestation {
+        attester_index: validator_index,
+        committee_index,
+        signature: sign_attestation_data(&attestation_data, &keystore.private_key)?,
+        data: attestation_data,
+    };
+    info!(
+        slot,
+        validator_index,
+        committee_index,
+        beacon_block_root = %single_attestation.data.beacon_block_root,
+        target_epoch = single_attestation.data.target.epoch,
+        target_root = %single_attestation.data.target.root,
+        "beacon_e2e_trace: validator submitting attestation"
+    );
+    beacon_api_client
+        .submit_attestation(vec![single_attestation])
+        .await?;
+    info!(
+        slot,
+        validator_index, committee_index, "beacon_e2e_trace: validator submitted attestation"
+    );
+
+    Ok(())
 }
