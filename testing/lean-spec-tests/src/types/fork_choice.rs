@@ -127,22 +127,16 @@ impl TryFrom<State> for LeanState {
             .map_err(|err| anyhow!("Failed to create justifications_roots VariableList: {err}"))?;
 
         let justifications_validators = {
-            let validator_count = validators.len();
-            let total_bits = state.justifications_validators.data.len() * validator_count;
+            let bits = &state.justifications_validators.data;
 
-            let mut bitlist = ssz_types::BitList::with_capacity(total_bits).map_err(|err| {
+            let mut bitlist = ssz_types::BitList::with_capacity(bits.len()).map_err(|err| {
                 anyhow!("Failed to create BitList for justifications_validators: {err:?}")
             })?;
 
-            for (root_index, validator_list) in
-                state.justifications_validators.data.iter().enumerate()
-            {
-                for &validator_index in validator_list {
-                    let flat_index = root_index * validator_count + validator_index as usize;
-                    bitlist.set(flat_index, true).map_err(|err| {
-                        anyhow!("Failed to set bit at flat index {flat_index}: {err:?}")
-                    })?;
-                }
+            for (index, &bit) in bits.iter().enumerate() {
+                bitlist
+                    .set(index, bit)
+                    .map_err(|err| anyhow!("Failed to set bit at index {index}: {err:?}"))?;
             }
             bitlist
         };
