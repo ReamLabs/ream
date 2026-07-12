@@ -77,6 +77,7 @@ use ssz_types::{
     serde_utils::{quoted_u64_fixed_vec, quoted_u64_var_list},
     typenum::{U4, U32, U64, U2048, U8192, U65536, U262144, U16777216, U134217728},
 };
+use tracing::info;
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
@@ -1937,6 +1938,18 @@ impl BeaconState {
         let total_active_balance = self.get_total_active_balance();
         let previous_target_balance = self.get_total_balance(previous_indices);
         let current_target_balance = self.get_total_balance(current_indices);
+        info!(
+            state_slot = self.slot,
+            current_epoch = self.get_current_epoch(),
+            previous_epoch = self.get_previous_epoch(),
+            total_active_balance,
+            previous_target_balance,
+            current_target_balance,
+            current_justified_epoch = self.current_justified_checkpoint.epoch,
+            previous_justified_epoch = self.previous_justified_checkpoint.epoch,
+            finalized_epoch = self.finalized_checkpoint.epoch,
+            "beacon_e2e_trace: weighing justification balances"
+        );
 
         self.weigh_justification_and_finalization(
             total_active_balance,
@@ -2024,6 +2037,21 @@ impl BeaconState {
         {
             self.finalized_checkpoint = old_current_justified_checkpoint;
         }
+        info!(
+            state_slot = self.slot,
+            current_epoch,
+            previous_epoch,
+            previous_epoch_target_balance,
+            current_epoch_target_balance,
+            total_active_balance,
+            justification_bits = ?bits,
+            old_previous_justified_epoch = old_previous_justified_checkpoint.epoch,
+            old_current_justified_epoch = old_current_justified_checkpoint.epoch,
+            previous_justified_epoch = self.previous_justified_checkpoint.epoch,
+            current_justified_epoch = self.current_justified_checkpoint.epoch,
+            finalized_epoch = self.finalized_checkpoint.epoch,
+            "beacon_e2e_trace: weighed justification result"
+        );
 
         Ok(())
     }
@@ -2158,6 +2186,19 @@ impl BeaconState {
         // Participation flag indices
         let participation_flag_indices =
             self.get_attestation_participation_flag_indices(data, self.slot - data.slot)?;
+        let attesting_indices = self.get_attesting_indices(attestation)?;
+        info!(
+            state_slot = self.slot,
+            attestation_slot = data.slot,
+            source_epoch = data.source.epoch,
+            target_epoch = data.target.epoch,
+            beacon_block_root = %data.beacon_block_root,
+            target_root = %data.target.root,
+            inclusion_delay = self.slot - data.slot,
+            participation_flag_indices = ?participation_flag_indices,
+            attesting_indices = ?attesting_indices,
+            "beacon_e2e_trace: state attestation participation"
+        );
         // Verify signature
         ensure!(
             self.is_valid_indexed_attestation(&self.get_indexed_attestation(attestation)?)?,
@@ -2166,7 +2207,7 @@ impl BeaconState {
 
         let base_reward_per_increment = self.get_base_reward_per_increment();
         let mut proposer_reward_numerator = 0;
-        for index in self.get_attesting_indices(attestation)? {
+        for index in attesting_indices {
             let index = index as usize;
             for (flag_index, &weight) in PARTICIPATION_FLAG_WEIGHTS.iter().enumerate() {
                 let flag_index = flag_index as u8;

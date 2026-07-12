@@ -84,6 +84,7 @@ impl BeaconChain {
                     "beacon_e2e_trace: failed to process block attestation through fork choice: {err:?}"
                 );
             }
+            store.operation_pool.remove_attestation(attestation);
         }
 
         // Build and Emit Block event

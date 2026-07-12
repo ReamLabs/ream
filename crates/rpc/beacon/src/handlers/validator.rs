@@ -1530,10 +1530,25 @@ pub async fn get_blocks_v3(
         .get_all_attester_slashings()
         .try_into()
         .unwrap_or_default();
-    let attestations: VariableList<Attestation, U8> = operation_pool
-        .get_attestations_for_block(&state)
-        .try_into()
-        .unwrap_or_default();
+    let selected_attestations = operation_pool.get_attestations_for_block(&state);
+    info!(
+        slot,
+        state_slot = state.slot,
+        selected_attestations = ?selected_attestations
+            .iter()
+            .map(|attestation| {
+                (
+                    attestation.data.slot,
+                    attestation.data.source.epoch,
+                    attestation.data.target.epoch,
+                    attestation.aggregation_bits.num_set_bits(),
+                )
+            })
+            .collect::<Vec<_>>(),
+        "beacon_e2e_trace: validator selected attestations for block"
+    );
+    let attestations: VariableList<Attestation, U8> =
+        selected_attestations.try_into().unwrap_or_default();
     let deposits: VariableList<Deposit, U16> = operation_pool
         .get_all_deposits()
         .try_into()

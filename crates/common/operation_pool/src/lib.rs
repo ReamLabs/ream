@@ -10,8 +10,9 @@ use ream_consensus_beacon::{
     voluntary_exit::SignedVoluntaryExit,
 };
 use ream_consensus_misc::{
-    constants::beacon::MIN_ATTESTATION_INCLUSION_DELAY, deposit::Deposit,
-    misc::compute_epoch_at_slot,
+    constants::beacon::MIN_ATTESTATION_INCLUSION_DELAY,
+    deposit::Deposit,
+    misc::{compute_epoch_at_slot, get_committee_indices},
 };
 use tree_hash::TreeHash;
 
@@ -202,6 +203,18 @@ impl OperationPool {
         } else {
             map.insert(key, vec![attestation]);
         }
+    }
+
+    pub fn remove_attestation(&self, attestation: &Attestation) {
+        let slot = attestation.data.slot;
+        let attestation_data_root = attestation.data.tree_hash_root();
+        let committee_indices = get_committee_indices(&attestation.committee_bits);
+
+        self.attestations.write().retain(|key, _| {
+            key.slot != slot
+                || key.attestation_data_root != attestation_data_root
+                || !committee_indices.contains(&key.committee_index)
+        });
     }
 
     /// Select attestations that can be included in the block.
