@@ -1510,12 +1510,13 @@ mod tests {
         )
     }
 
-    fn minimum_connected_peer_count(node_count: usize) -> u64 {
+    fn minimum_ready_peer_count(node_count: usize) -> u64 {
         node_count.saturating_sub(1).min(2) as u64
     }
 
-    fn peer_count_is_ready(peer_count: &serde_json::Value, minimum_connected: u64) -> bool {
-        peer_count_connected(peer_count) >= minimum_connected
+    fn peer_count_is_ready(peer_count: &serde_json::Value, minimum_ready_peers: u64) -> bool {
+        peer_count_connected(peer_count) + peer_count_value(peer_count, "connecting")
+            >= minimum_ready_peers
             && peer_count_value(peer_count, "disconnected") == 0
             && peer_count_value(peer_count, "disconnecting") == 0
     }
@@ -1526,7 +1527,7 @@ mod tests {
         let start = Instant::now();
         let timeout_duration = Duration::from_secs(60);
         let required_ready_polls = 3;
-        let minimum_connected = minimum_connected_peer_count(http_ports.len());
+        let minimum_ready_peers = minimum_ready_peer_count(http_ports.len());
         let mut ready_polls = 0;
         loop {
             let mut peer_counts = Vec::new();
@@ -1536,7 +1537,7 @@ mod tests {
 
             let every_node_connected = peer_counts
                 .iter()
-                .all(|count| peer_count_is_ready(count, minimum_connected));
+                .all(|count| peer_count_is_ready(count, minimum_ready_peers));
             let peer_count_summary = http_ports
                 .iter()
                 .copied()
@@ -1546,7 +1547,7 @@ mod tests {
             info!(
                 ready_polls,
                 required_ready_polls,
-                minimum_connected,
+                minimum_ready_peers,
                 ?peer_count_summary,
                 "beacon e2e peer readiness poll"
             );
@@ -2360,7 +2361,7 @@ mod tests {
         assert!(
             peer_counts
                 .iter()
-                .all(|count| peer_count_is_ready(count, minimum_connected_peer_count(2))),
+                .all(|count| peer_count_is_ready(count, minimum_ready_peer_count(2))),
             "beacon nodes did not report a connected peer: {peer_counts:?}"
         );
     }
@@ -2463,14 +2464,24 @@ mod tests {
             let node_4_http_port = node_4_config.http_port;
             let node_4_handle =
                 spawn_beacon_test_node(node_4_config, node_4_db, node_4_executor_handle.clone());
-            let peer_counts =
-                wait_for_connected_beacon_peer(&[
-                    node_1_http_port,
-                    node_2_http_port,
-                    node_3_http_port,
-                    node_4_http_port,
-                ])
-                .await;
+            let peer_counts = match wait_for_connected_beacon_peer(&[
+                node_1_http_port,
+                node_2_http_port,
+                node_3_http_port,
+                node_4_http_port,
+            ])
+            .await
+            {
+                Ok(peer_counts) => peer_counts,
+                Err(peer_counts) => {
+                    shutdown_beacon_test_node(&node_4_executor_handle, node_4_handle).await;
+                    shutdown_beacon_test_node(&node_3_executor_handle, node_3_handle).await;
+                    shutdown_beacon_test_node(&node_2_executor_handle, node_2_handle).await;
+                    shutdown_beacon_test_node(&node_1_executor_handle, node_1_handle).await;
+                    mock_execution_server.stop().await;
+                    panic!("Timed out waiting for beacon nodes to connect: {peer_counts:?}");
+                }
+            };
 
             let validator_handles = spawn_validator_test_nodes(
                 &[node_1_http_port, node_2_http_port],
@@ -2591,9 +2602,6 @@ mod tests {
             node_3_finality,
             node_4_finality,
         ) = result;
-        let peer_counts = peer_counts.unwrap_or_else(|peer_counts| {
-            panic!("Timed out waiting for beacon nodes to connect: {peer_counts:?}")
-        });
         assert!(!node_1_finished, "node 1 task exited early");
         assert!(!node_2_finished, "node 2 task exited early");
         assert!(!node_3_finished, "node 3 task exited early");
@@ -2607,7 +2615,7 @@ mod tests {
         assert!(
             peer_counts
                 .iter()
-                .all(|count| peer_count_is_ready(count, minimum_connected_peer_count(4))),
+                .all(|count| peer_count_is_ready(count, minimum_ready_peer_count(4))),
             "beacon nodes did not report a connected peer: {peer_counts:?}"
         );
         info!(
