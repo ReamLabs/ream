@@ -4,6 +4,7 @@ use actix_web::{
     HttpResponse, Responder, get, post,
     web::{Data, Json, Query},
 };
+use alloy_primitives::aliases::B32;
 use ream_api_types_beacon::{
     query::AttestationQuery,
     request::SyncCommitteeRequestItem,
@@ -18,7 +19,7 @@ use ream_consensus_beacon::{
     single_attestation::SingleAttestation, voluntary_exit::SignedVoluntaryExit,
 };
 use ream_consensus_misc::{
-    constants::beacon::{DOMAIN_SYNC_COMMITTEE, SYNC_COMMITTEE_SIZE},
+    constants::beacon::{DOMAIN_SYNC_COMMITTEE, FULU_FORK_EPOCH, SYNC_COMMITTEE_SIZE},
     misc::{compute_epoch_at_slot, compute_signing_root},
 };
 use ream_network_manager::{
@@ -47,6 +48,10 @@ use ssz::Encode;
 use tracing::warn;
 
 use crate::handlers::state::get_state_from_id;
+
+fn gossip_fork_digest(state: &BeaconState) -> B32 {
+    beacon_network_spec().fork_digest(FULU_FORK_EPOCH, state.genesis_validators_root)
+}
 
 /// GET /eth/v1/beacon/pool/bls_to_execution_changes
 #[get("/beacon/pool/bls_to_execution_changes")]
@@ -92,7 +97,7 @@ pub async fn post_bls_to_execution_changes(
         .p2p_sender
         .send_gossip(GossipMessage {
             topic: GossipTopic {
-                fork: beacon_state.fork.current_version,
+                fork: gossip_fork_digest(&beacon_state),
                 kind: GossipTopicKind::BlsToExecutionChange,
             },
             data: signed_bls_to_execution_change.as_ssz_bytes(),
@@ -145,7 +150,7 @@ pub async fn post_voluntary_exits(
         .p2p_sender
         .send_gossip(GossipMessage {
             topic: GossipTopic {
-                fork: beacon_state.fork.current_version,
+                fork: gossip_fork_digest(&beacon_state),
                 kind: GossipTopicKind::VoluntaryExit,
             },
             data: signed_voluntary_exit.as_ssz_bytes(),
@@ -195,7 +200,7 @@ pub async fn post_attester_slashings(
         })?;
     network_manager.p2p_sender.send_gossip(GossipMessage {
         topic: GossipTopic {
-            fork: beacon_state.fork.current_version,
+            fork: gossip_fork_digest(&beacon_state),
             kind: GossipTopicKind::AttesterSlashing,
         },
         data: attester_slashing.as_ssz_bytes(),
@@ -248,7 +253,7 @@ pub async fn post_proposer_slashings(
     network_manager.p2p_sender.send_gossip(GossipMessage {
         topic: {
             GossipTopic {
-                fork: beacon_state.fork.current_version,
+                fork: gossip_fork_digest(&beacon_state),
                 kind: GossipTopicKind::ProposerSlashing,
             }
         },
@@ -339,7 +344,7 @@ pub async fn post_attestations(
 
         p2p_sender.send_gossip(GossipMessage {
             topic: GossipTopic {
-                fork: beacon_state.fork.current_version,
+                fork: gossip_fork_digest(&beacon_state),
                 kind: GossipTopicKind::BeaconAttestation(subnet_id),
             },
             data: single_attestation.as_ssz_bytes(),
@@ -489,7 +494,7 @@ pub async fn post_sync_committees(
                 .insert_sync_committee_message(sync_message.clone(), subcommittee_index);
             p2p_sender.send_gossip(GossipMessage {
                 topic: GossipTopic {
-                    fork: beacon_network_spec().fork_digest(epoch, state.genesis_validators_root),
+                    fork: gossip_fork_digest(&state),
                     kind: GossipTopicKind::SyncCommittee(subcommittee_index),
                 },
                 data: sync_message.as_ssz_bytes(),
