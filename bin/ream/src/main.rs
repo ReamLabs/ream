@@ -1515,10 +1515,20 @@ mod tests {
     }
 
     fn peer_count_is_ready(peer_count: &serde_json::Value, minimum_ready_peers: u64) -> bool {
-        peer_count_connected(peer_count) + peer_count_value(peer_count, "connecting")
-            >= minimum_ready_peers
-            && peer_count_value(peer_count, "disconnected") == 0
-            && peer_count_value(peer_count, "disconnecting") == 0
+        peer_count_connected(peer_count) >= minimum_ready_peers
+    }
+
+    fn peer_counts_are_ready(peer_counts: &[serde_json::Value]) -> bool {
+        let Some((bootnode_peer_count, follower_peer_counts)) = peer_counts.split_first() else {
+            return true;
+        };
+
+        peer_count_is_ready(
+            bootnode_peer_count,
+            minimum_ready_peer_count(peer_counts.len()),
+        ) && follower_peer_counts
+            .iter()
+            .all(|peer_count| peer_count_is_ready(peer_count, 1))
     }
 
     async fn wait_for_connected_beacon_peer(
@@ -1527,7 +1537,7 @@ mod tests {
         let start = Instant::now();
         let timeout_duration = Duration::from_secs(60);
         let required_ready_polls = 3;
-        let minimum_ready_peers = minimum_ready_peer_count(http_ports.len());
+        let bootnode_minimum_ready_peers = minimum_ready_peer_count(http_ports.len());
         let mut ready_polls = 0;
         loop {
             let mut peer_counts = Vec::new();
@@ -1535,9 +1545,7 @@ mod tests {
                 peer_counts.push(wait_for_beacon_json(*http_port, "/eth/v1/node/peer_count").await);
             }
 
-            let every_node_connected = peer_counts
-                .iter()
-                .all(|count| peer_count_is_ready(count, minimum_ready_peers));
+            let every_node_connected = peer_counts_are_ready(&peer_counts);
             let peer_count_summary = http_ports
                 .iter()
                 .copied()
@@ -1547,7 +1555,7 @@ mod tests {
             info!(
                 ready_polls,
                 required_ready_polls,
-                minimum_ready_peers,
+                bootnode_minimum_ready_peers,
                 ?peer_count_summary,
                 "beacon e2e peer readiness poll"
             );
@@ -2613,9 +2621,7 @@ mod tests {
             "validator node task exited early: {validators_finished:?}"
         );
         assert!(
-            peer_counts
-                .iter()
-                .all(|count| peer_count_is_ready(count, minimum_ready_peer_count(4))),
+            peer_counts_are_ready(&peer_counts),
             "beacon nodes did not report a connected peer: {peer_counts:?}"
         );
         info!(
