@@ -1490,11 +1490,17 @@ mod tests {
         peer_count_value(peer_count, "connected")
     }
 
-    fn peer_count_total(peer_count: &serde_json::Value) -> u64 {
-        peer_count_value(peer_count, "connected")
-            + peer_count_value(peer_count, "connecting")
-            + peer_count_value(peer_count, "disconnected")
-            + peer_count_value(peer_count, "disconnecting")
+    fn peer_count_debug_row(
+        http_port: u16,
+        peer_count: &serde_json::Value,
+    ) -> (u16, u64, u64, u64, u64) {
+        (
+            http_port,
+            peer_count_connected(peer_count),
+            peer_count_value(peer_count, "connecting"),
+            peer_count_value(peer_count, "disconnected"),
+            peer_count_value(peer_count, "disconnecting"),
+        )
     }
 
     async fn wait_for_connected_beacon_peer(
@@ -1502,18 +1508,35 @@ mod tests {
     ) -> Result<Vec<serde_json::Value>, Vec<serde_json::Value>> {
         let start = Instant::now();
         let timeout_duration = Duration::from_secs(60);
+        let required_ready_polls = 3;
+        let mut ready_polls = 0;
         loop {
             let mut peer_counts = Vec::new();
             for http_port in http_ports {
                 peer_counts.push(wait_for_beacon_json(*http_port, "/eth/v1/node/peer_count").await);
             }
 
-            let every_node_knows_a_peer =
-                peer_counts.iter().all(|count| peer_count_total(count) > 0);
-            let any_node_connected = peer_counts
+            let every_node_connected = peer_counts
                 .iter()
-                .any(|count| peer_count_connected(count) > 0);
-            if every_node_knows_a_peer && any_node_connected {
+                .all(|count| peer_count_connected(count) > 0);
+            let peer_count_summary = http_ports
+                .iter()
+                .copied()
+                .zip(peer_counts.iter())
+                .map(|(http_port, count)| peer_count_debug_row(http_port, count))
+                .collect::<Vec<_>>();
+            info!(
+                ready_polls,
+                required_ready_polls,
+                ?peer_count_summary,
+                "beacon e2e peer readiness poll"
+            );
+            if every_node_connected {
+                ready_polls += 1;
+            } else {
+                ready_polls = 0;
+            }
+            if ready_polls >= required_ready_polls {
                 return Ok(peer_counts);
             }
 
@@ -2318,7 +2341,7 @@ mod tests {
         assert!(
             peer_counts
                 .iter()
-                .any(|count| peer_count_connected(count) > 0),
+                .all(|count| peer_count_connected(count) > 0),
             "beacon nodes did not report a connected peer: {peer_counts:?}"
         );
     }
@@ -2565,7 +2588,7 @@ mod tests {
         assert!(
             peer_counts
                 .iter()
-                .any(|count| peer_count_connected(count) > 0),
+                .all(|count| peer_count_connected(count) > 0),
             "beacon nodes did not report a connected peer: {peer_counts:?}"
         );
         info!(

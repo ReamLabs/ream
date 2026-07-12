@@ -120,10 +120,14 @@ impl BlockRangeSyncer {
 
                 let data_to_fetch = block_cache.data_to_fetch(finalized_slot);
                 info!(
-                    "Forward sync status: Downloaded Blocks {}, Downloaded Blobs {}/{}, Stage {data_to_fetch}",
+                    "Forward sync status: Downloaded Blocks {}, Downloaded Blobs {}/{}, Finalized Slot {}, Initial Slot {}, Next Start Slot {}, Stage {data_to_fetch}, {}",
                     block_cache.block_count(),
                     block_cache.downloaded_blob_count(),
                     block_cache.blob_count(),
+                    finalized_slot,
+                    block_cache.initial_slot(),
+                    block_cache.next_start_slot(),
+                    self.peer_manager.peer_counts(),
                 );
 
                 match data_to_fetch {

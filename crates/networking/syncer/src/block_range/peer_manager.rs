@@ -95,10 +95,20 @@ impl PeerManager {
             .filter(|peer_info| matches!(peer_info.peer_status, PeerStatus::Idle))
             .count();
         let downloading_peers = total_peers - idle_peers;
+        let mut finalized_epochs = HashMap::new();
+        for peer in self.peers.values() {
+            let finalized_epoch = peer
+                .peer
+                .status
+                .as_ref()
+                .map(|status| status.finalized_epoch);
+            *finalized_epochs.entry(finalized_epoch).or_insert(0) += 1;
+        }
 
         format!(
-            "Total Peers: {total_peers}, Idle: {idle_peers}, Downloading: {downloading_peers}, Banned: {}",
-            self.banned_peers.len()
+            "Total Peers: {total_peers}, Idle: {idle_peers}, Downloading: {downloading_peers}, Banned: {}, Finalized Epochs: {:?}",
+            self.banned_peers.len(),
+            finalized_epochs
         )
     }
 

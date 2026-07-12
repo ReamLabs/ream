@@ -145,6 +145,14 @@ impl BlockCache {
         MAX_BLOCKS_PER_REQUEST
     }
 
+    pub fn initial_slot(&self) -> u64 {
+        self.initial_slot
+    }
+
+    pub fn next_start_slot(&self) -> u64 {
+        self.next_start_slot
+    }
+
     pub fn push_retry_range(&mut self, range: Range) {
         self.block_ranges_to_retry.push(range);
     }
