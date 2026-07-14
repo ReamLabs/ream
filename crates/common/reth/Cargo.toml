@@ -10,6 +10,7 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
+alloy-eips = "2.1.0"
 alloy-genesis = "2.1.0"
 alloy-primitives.workspace = true
 alloy-rpc-types-engine = "2.1.0"

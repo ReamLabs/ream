@@ -37,6 +37,15 @@ pub struct RethHandle {
     genesis_hash: B256,
 }
 
+impl std::fmt::Debug for RethHandle {
+    // The inner engine/payload channels aren't meaningfully printable.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RethHandle")
+            .field("genesis_hash", &self.genesis_hash)
+            .finish_non_exhaustive()
+    }
+}
+
 impl RethHandle {
     // Start a reth node with the given tokio runtime handle.
     pub async fn start(
@@ -143,7 +152,8 @@ pub fn custom_chain() -> Arc<ChainSpec> {
         "terminalTotalDifficulty": 0,
         "terminalTotalDifficultyPassed": true,
         "shanghaiTime": 0,
-        "cancunTime": 0
+        "cancunTime": 0,
+        "pragueTime": 0
     }
 }
 "#;
