@@ -1,7 +1,11 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
+use alloy_primitives::B256;
 use ream_data_availability::{
+    availability::ColumnAvailability,
     column::{CandidateBlock, CandidateColumn},
+    id::ColumnId,
+    reconstruction::ColumnReconstructor,
     store::{ColumnWriteStore, InsertOutcome},
     verifier::ColumnVerifier,
 };
@@ -9,34 +13,52 @@ use ream_executor::ReamExecutor;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, trace, warn};
 
-use crate::ingest::{IngestWorkItem, RetentionHint};
+use crate::ingest::{IngestWorkItem, ReconstructionRequest, RetentionHint};
+
+/// Default settling delay between a block becoming recoverable and the
+/// recovery attempt
+pub const DEFAULT_RECONSTRUCTION_DELAY: Duration = Duration::from_secs(3);
 
 /// Drains the ingest queue, verifying each candidate and persisting those
 /// that pass — the single consumer, and the store's only writer.
 pub struct DataAvailabilityVerificationService {
     receiver: mpsc::Receiver<IngestWorkItem>,
     verifier: Arc<dyn ColumnVerifier>,
+    /// Recovers a block's missing columns from the held ones
+    reconstructor: Arc<dyn ColumnReconstructor>,
     store: Arc<dyn ColumnWriteStore>,
     executor: ReamExecutor,
+    /// Weak self-handle for the delayed reconstruction triggers.
+    self_sender: mpsc::WeakSender<IngestWorkItem>,
+    /// How long a recoverable-but-incomplete block is given to complete
+    /// naturally before recovery is attempted.
+    reconstruction_delay: Duration,
 }
 
 impl DataAvailabilityVerificationService {
     pub fn new(
         receiver: mpsc::Receiver<IngestWorkItem>,
         verifier: Arc<dyn ColumnVerifier>,
+        reconstructor: Arc<dyn ColumnReconstructor>,
         store: Arc<dyn ColumnWriteStore>,
         executor: ReamExecutor,
+        self_sender: mpsc::WeakSender<IngestWorkItem>,
+        reconstruction_delay: Duration,
     ) -> Self {
         Self {
             receiver,
             verifier,
+            reconstructor,
             store,
             executor,
+            self_sender,
+            reconstruction_delay,
         }
     }
     /// Consume work items until the ingest channel closes.
     ///
-    /// TODO: batching can come once a batchable verifier exists.
+    /// A single sequential consumer: each item is fully handled before the next
+    /// is taken. That caps throughput but keeps the store single-writer.
     pub async fn run(mut self) {
         info!("Data-availability verification service started");
         while let Some(item) = self.receiver.recv().await {
@@ -46,9 +68,133 @@ impl DataAvailabilityVerificationService {
                     self.process_candidate_block(candidate).await
                 }
                 IngestWorkItem::Retention(hint) => self.process_retention(hint).await,
+                IngestWorkItem::Reconstruction(request) => {
+                    self.process_reconstruction(request).await
+                }
             }
         }
         info!("Data-availability verification service stopped: ingestion queue closed");
+    }
+
+    /// Recover a block's missing columns and re-admit them through the normal
+    /// verify-then-store path.
+    async fn process_reconstruction(&self, request: ReconstructionRequest) {
+        let block_root = request.block_root;
+
+        // Re-check: during the delay period, naturally-arriving columns can
+        // reach 128 columns and turn this reconstruction into this no-op.
+        let availability = self.store.availability(block_root);
+        if !availability.is_reconstructable() {
+            debug!(
+                "skipping reconstruction of block {block_root}: {held} columns held",
+                held = availability.held_count()
+            );
+            return;
+        }
+
+        let store = self.store.clone();
+        let reconstructor = self.reconstructor.clone();
+        match self
+            .executor
+            .spawn_blocking(move || {
+                Self::recover_block(
+                    store.as_ref(),
+                    reconstructor.as_ref(),
+                    block_root,
+                    availability,
+                )
+            })
+            .await
+        {
+            Ok(Some(block)) => self.process_candidate_block(block).await,
+            Ok(None) => {} // nothing to admit; the worker logged why
+            Err(err) => error!("reconstruction worker panicked or was cancelled: {err}"),
+        }
+    }
+
+    /// Worker body: fetch the block's held columns and recover the missing ones
+    fn recover_block(
+        store: &dyn ColumnWriteStore,
+        reconstructor: &dyn ColumnReconstructor,
+        block_root: B256,
+        availability: ColumnAvailability,
+    ) -> Option<CandidateBlock> {
+        let mut held = Vec::new();
+        for index in availability.held_indices() {
+            let id = ColumnId::new(block_root, index).expect("held indices are always in range");
+            match store.get(&id) {
+                Ok(Some(column)) => held.push(column),
+                // The index says held but the file is gone or unreadable;
+                // recovery still succeeds if at least half remain, so keep
+                // collecting.
+                Ok(None) => {}
+                Err(err) => {
+                    warn!("skipping unreadable column {index} of block {block_root}: {err}")
+                }
+            }
+        }
+        let context = held.first()?.context();
+
+        let recovered = match reconstructor.reconstruct(held) {
+            Ok(recovered) => recovered,
+            Err(err) => {
+                warn!("reconstruction of block {block_root} failed: {err}");
+                return None;
+            }
+        };
+        if recovered.is_empty() {
+            debug!("reconstruction of block {block_root} found nothing missing");
+            return None;
+        }
+
+        let count = recovered.len();
+        let columns = recovered
+            .into_iter()
+            .map(|column| (column.id.index(), column.payload))
+            .collect();
+        match CandidateBlock::new(block_root, context, columns) {
+            Ok(block) => {
+                info!(
+                    "recovered {count} missing columns for block {block_root}, resubmitting for verification"
+                );
+                Some(block)
+            }
+            Err(err) => {
+                warn!("recovered columns of block {block_root} form an invalid batch: {err}");
+                None
+            }
+        }
+    }
+
+    /// Arm the delayed reconstruction trigger if this write moved the block
+    /// *across* the recoverable threshold.
+    fn maybe_schedule_reconstruction(&self, block_root: B256, before: &ColumnAvailability) {
+        let after = self.store.availability(block_root);
+        // Arm only on the crossing: a block that was already recoverable
+        // before this work item was armed by an earlier one.
+        if before.is_reconstructable() || !after.is_reconstructable() {
+            return;
+        }
+
+        debug!(
+            "block {block_root} became recoverable with {held} columns, scheduling reconstruction in {delay:?}",
+            held = after.held_count(),
+            delay = self.reconstruction_delay
+        );
+        let sender = self.self_sender.clone();
+        let delay = self.reconstruction_delay;
+        self.executor.spawn(async move {
+            tokio::time::sleep(delay).await;
+            // All real handles gone: shutting down, drop the trigger.
+            let Some(sender) = sender.upgrade() else {
+                return;
+            };
+            let _ = sender
+                .send(IngestWorkItem::Reconstruction(ReconstructionRequest {
+                    block_root,
+                }))
+                .await;
+        });
     }
 
     async fn process_retention(&self, hint: RetentionHint) {
@@ -85,20 +231,17 @@ impl DataAvailabilityVerificationService {
             return;
         }
 
-        // Skip already-held columns before paying for verification. A failed
-        // pre-check must not drop the candidate: fall through and let
-        // verify + put decide.
-        match self.store.availability(id.block_root()) {
-            Ok(availability) if availability.holds(id.index()) => {
-                debug!(
-                    "skipping already-held column: block root {root}, column {index}",
-                    root = id.block_root(),
-                    index = id.index()
-                );
-                return;
-            }
-            Ok(_) => {}
-            Err(err) => debug!("presence pre-check failed, verifying anyway: {err}"),
+        // Skip already-held columns before paying for verification. The
+        // pre-insert view is kept so the reconstruction trigger can detect a
+        // threshold crossing.
+        let before = self.store.availability(id.block_root());
+        if before.holds(id.index()) {
+            debug!(
+                "skipping already-held column: block root {root}, column {index}",
+                root = id.block_root(),
+                index = id.index()
+            );
+            return;
         }
 
         let verified = match self
@@ -135,6 +278,7 @@ impl DataAvailabilityVerificationService {
                             root = id.block_root(),
                             index = id.index()
                         );
+                        self.maybe_schedule_reconstruction(id.block_root(), &before);
                     }
                     Ok(InsertOutcome::Duplicated) => {
                         warn!(
@@ -181,39 +325,29 @@ impl DataAvailabilityVerificationService {
             return;
         }
 
-        // One bitmap lookup covers the pre-check for the whole batch. As in
-        // the single-column path, a failed pre-check falls through to
-        // verification rather than dropping the batch.
-        let candidate = match self.store.availability(block_root) {
-            Ok(availability) => {
-                let (root, context, mut columns) = candidate.into_parts();
-                columns.retain(|(index, _)| {
-                    let held = availability.holds(*index);
-                    if held {
-                        trace!(
-                            "skipping already-held column: block root {block_root}, column {index}"
-                        );
-                    }
-                    !held
-                });
-                // Re-sending a stored block (e.g. a retry after a 503) is a
-                // normal path, not a fault.
-                if columns.is_empty() {
-                    debug!("skipping fully-held block batch: block root {block_root}");
-                    return;
-                }
-                // Re-assembly cannot fail
-                match CandidateBlock::new(root, context, columns) {
-                    Ok(block) => block,
-                    Err(err) => {
-                        error!("failed to rebuild filtered batch: {err}");
-                        return;
-                    }
-                }
+        // The pre-insert view is kept so the reconstruction trigger can
+        // detect a threshold crossing.
+        let before = self.store.availability(block_root);
+        let (root, context, mut columns) = candidate.into_parts();
+        columns.retain(|(index, _)| {
+            let held = before.holds(*index);
+            if held {
+                trace!("skipping already-held column: block root {block_root}, column {index}");
             }
+            !held
+        });
+        // Re-sending a stored block (e.g. a retry after a 503) is a
+        // normal path, not a fault.
+        if columns.is_empty() {
+            debug!("skipping fully-held block batch: block root {block_root}");
+            return;
+        }
+        // Re-assembly cannot fail
+        let candidate = match CandidateBlock::new(root, context, columns) {
+            Ok(block) => block,
             Err(err) => {
-                debug!("presence pre-check failed, verifying the whole batch: {err}");
-                candidate
+                error!("failed to rebuild filtered batch: {err}");
+                return;
             }
         };
 
@@ -279,6 +413,10 @@ impl DataAvailabilityVerificationService {
             }
         };
 
+        if stored > 0 {
+            self.maybe_schedule_reconstruction(block_root, &before);
+        }
+
         // One summary line per batch instead of one per column.
         if rejected > 0 {
             warn!(
@@ -298,13 +436,15 @@ mod tests {
             Arc,
             atomic::{AtomicU64, AtomicUsize, Ordering},
         },
+        time::Duration,
     };
 
     use alloy_primitives::B256;
     use ream_data_availability::{
         column::{CandidateBlock, CandidateColumn, ColumnContext, VerifiedColumn},
         error::ValidationError,
-        id::ColumnId,
+        id::{ColumnId, NUMBER_OF_COLUMNS},
+        reconstruction::ColumnReconstructor,
         store::{ColumnReadStore, ColumnWriteStore},
         verifier::ColumnVerifier,
     };
@@ -327,6 +467,19 @@ mod tests {
                 candidate.context,
                 candidate.payload,
             ))
+        }
+    }
+
+    /// Reconstruction double for tests that exercise other paths: loud if the
+    /// pipeline ever invokes it unexpectedly.
+    struct PanicReconstructor;
+
+    impl ColumnReconstructor for PanicReconstructor {
+        fn reconstruct(
+            &self,
+            _held: Vec<VerifiedColumn>,
+        ) -> Result<Vec<CandidateColumn>, ValidationError> {
+            panic!("reconstruct must not be called in this test");
         }
     }
 
@@ -357,8 +510,15 @@ mod tests {
         let store = Arc::new(FileColumnStore::new(root.clone()).expect("open store"));
         let verifier = Arc::new(AcceptAllVerifier);
         let (handle, rx) = ingest_channel(8);
-        let service =
-            DataAvailabilityVerificationService::new(rx, verifier, store.clone(), executor.clone());
+        let service = DataAvailabilityVerificationService::new(
+            rx,
+            verifier,
+            Arc::new(PanicReconstructor),
+            store.clone(),
+            executor.clone(),
+            handle.downgrade(),
+            Duration::ZERO,
+        );
 
         let candidates = vec![
             sample_candidate(B256::repeat_byte(1), 0, 10, b"col-0"),
@@ -399,8 +559,15 @@ mod tests {
         let store = Arc::new(FileColumnStore::new(root.clone()).expect("open store"));
         let verifier = Arc::new(AcceptAllVerifier);
         let (handle, rx) = ingest_channel(8);
-        let service =
-            DataAvailabilityVerificationService::new(rx, verifier, store.clone(), executor.clone());
+        let service = DataAvailabilityVerificationService::new(
+            rx,
+            verifier,
+            Arc::new(PanicReconstructor),
+            store.clone(),
+            executor.clone(),
+            handle.downgrade(),
+            Duration::ZERO,
+        );
 
         // Two old columns at slot 10, one newer at slot 20.
         let old_a = sample_candidate(B256::repeat_byte(1), 0, 10, b"old-a");
@@ -494,8 +661,11 @@ mod tests {
         let service = DataAvailabilityVerificationService::new(
             rx,
             verifier.clone(),
+            Arc::new(PanicReconstructor),
             store.clone(),
             executor.clone(),
+            handle.downgrade(),
+            Duration::ZERO,
         );
 
         let block_root = B256::repeat_byte(5);
@@ -529,8 +699,11 @@ mod tests {
         let service = DataAvailabilityVerificationService::new(
             rx,
             verifier.clone(),
+            Arc::new(PanicReconstructor),
             store.clone(),
             executor.clone(),
+            handle.downgrade(),
+            Duration::ZERO,
         );
 
         let block_root = B256::repeat_byte(6);
@@ -570,8 +743,15 @@ mod tests {
         let store = Arc::new(FileColumnStore::new(root.clone()).expect("open store"));
         let verifier = Arc::new(CountingVerifier::rejecting(vec![3]));
         let (handle, rx) = ingest_channel(8);
-        let service =
-            DataAvailabilityVerificationService::new(rx, verifier, store.clone(), executor.clone());
+        let service = DataAvailabilityVerificationService::new(
+            rx,
+            verifier,
+            Arc::new(PanicReconstructor),
+            store.clone(),
+            executor.clone(),
+            handle.downgrade(),
+            Duration::ZERO,
+        );
 
         let block_root = B256::repeat_byte(8);
         let block = sample_block(block_root, 40, &[2, 3, 4]);
@@ -608,8 +788,11 @@ mod tests {
         let service = DataAvailabilityVerificationService::new(
             rx,
             verifier.clone(),
+            Arc::new(PanicReconstructor),
             store.clone(),
             executor.clone(),
+            handle.downgrade(),
+            Duration::ZERO,
         );
 
         // The floor is already at 100 when the candidate arrives.
@@ -627,6 +810,263 @@ mod tests {
                 verifier.calls(),
                 0,
                 "a below-floor candidate must be skipped before verification"
+            );
+        });
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// Recovers by fabricating a candidate for every index missing from the
+    /// held set — enough to exercise the trigger/worker/re-entry plumbing
+    /// without real erasure coding (that lives in the KZG adapter and is
+    /// tested there).
+    struct FillMissingReconstructor {
+        calls: AtomicUsize,
+    }
+
+    impl FillMissingReconstructor {
+        fn new() -> Arc<Self> {
+            Arc::new(Self {
+                calls: AtomicUsize::new(0),
+            })
+        }
+
+        fn calls(&self) -> usize {
+            self.calls.load(Ordering::Relaxed)
+        }
+    }
+
+    impl ColumnReconstructor for FillMissingReconstructor {
+        fn reconstruct(
+            &self,
+            held: Vec<VerifiedColumn>,
+        ) -> Result<Vec<CandidateColumn>, ValidationError> {
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            let first = held.first().expect("the service never sends an empty set");
+            let (block_root, context) = (first.id().block_root(), first.context());
+            let mut held_mask = 0u128;
+            for column in &held {
+                held_mask |= 1 << column.id().index();
+            }
+            Ok((0..NUMBER_OF_COLUMNS)
+                .filter(|index| held_mask & (1 << index) == 0)
+                .map(|index| CandidateColumn {
+                    id: ColumnId::new(block_root, index).expect("index within range"),
+                    context,
+                    payload: vec![index as u8],
+                })
+                .collect())
+        }
+    }
+
+    /// Poll until the block holds every column or a deadline passes.
+    async fn wait_until_complete(store: &FileColumnStore, block_root: B256) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            let held = store.availability(block_root).held_count();
+            if held == NUMBER_OF_COLUMNS {
+                return;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "block did not self-heal in time ({held} columns held)"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+
+    /// A half-full block batch crosses the recovery threshold: after the
+    /// (zero) settling delay the service recovers the other half by itself,
+    /// and the recovered columns pass through the verifier — the gate is
+    /// never bypassed.
+    #[test]
+    fn incomplete_block_self_heals_through_the_verify_gate() {
+        let executor = ReamExecutor::new().expect("create executor");
+        let root = temp_root();
+        let store = Arc::new(FileColumnStore::new(root.clone()).expect("open store"));
+        let verifier = Arc::new(CountingVerifier::accepting_all());
+        let reconstructor = FillMissingReconstructor::new();
+        let (handle, rx) = ingest_channel(8);
+        let service = DataAvailabilityVerificationService::new(
+            rx,
+            verifier.clone(),
+            reconstructor.clone(),
+            store.clone(),
+            executor.clone(),
+            handle.downgrade(),
+            Duration::ZERO,
+        );
+
+        let block_root = B256::repeat_byte(9);
+        let first_half: Vec<u64> = (0..NUMBER_OF_COLUMNS / 2).collect();
+        let block = sample_block(block_root, 40, &first_half);
+
+        executor.runtime().block_on(async move {
+            let service_task = tokio::spawn(service.run());
+            handle.submit_block(block).await.expect("submit block");
+
+            // The self-heal round-trips through the queue, so the handle must
+            // stay alive (it backs the service's weak self-sender) until the
+            // block is complete.
+            wait_until_complete(&store, block_root).await;
+            drop(handle);
+            service_task.await.expect("service task joined");
+
+            assert_eq!(reconstructor.calls(), 1, "one crossing, one recovery");
+            assert_eq!(
+                verifier.calls(),
+                NUMBER_OF_COLUMNS as usize,
+                "64 ingested + 64 recovered columns all verified"
+            );
+            let recovered = ColumnId::new(block_root, 100).expect("valid index");
+            let stored = store.get(&recovered).expect("get").expect("present");
+            assert_eq!(stored.payload(), &[100u8]);
+            assert_eq!(stored.context().slot, 40);
+        });
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// A single trickled column that crosses the threshold triggers recovery
+    /// too — the trigger lives on both ingest paths.
+    #[test]
+    fn a_trickled_column_crossing_the_threshold_triggers_recovery() {
+        let executor = ReamExecutor::new().expect("create executor");
+        let root = temp_root();
+        let store = Arc::new(FileColumnStore::new(root.clone()).expect("open store"));
+        let verifier = Arc::new(CountingVerifier::accepting_all());
+        let reconstructor = FillMissingReconstructor::new();
+        let (handle, rx) = ingest_channel(8);
+        let service = DataAvailabilityVerificationService::new(
+            rx,
+            verifier,
+            reconstructor.clone(),
+            store.clone(),
+            executor.clone(),
+            handle.downgrade(),
+            Duration::ZERO,
+        );
+
+        // 63 columns are already held; the 64th arrives as a single candidate.
+        let block_root = B256::repeat_byte(10);
+        for index in 0..NUMBER_OF_COLUMNS / 2 - 1 {
+            store
+                .put(VerifiedColumn::new_unchecked(
+                    ColumnId::new(block_root, index).expect("valid index"),
+                    ColumnContext { slot: 40 },
+                    vec![index as u8],
+                ))
+                .expect("seed store");
+        }
+        let crossing = sample_candidate(block_root, NUMBER_OF_COLUMNS / 2 - 1, 40, b"cross");
+
+        executor.runtime().block_on(async move {
+            let service_task = tokio::spawn(service.run());
+            handle.submit(crossing).await.expect("submit");
+
+            wait_until_complete(&store, block_root).await;
+            drop(handle);
+            service_task.await.expect("service task joined");
+
+            assert_eq!(reconstructor.calls(), 1, "one crossing, one recovery");
+        });
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// When the rest of the block arrives during the settling delay, the
+    /// fired trigger re-checks, finds the block complete, and stands down
+    /// without recovering anything.
+    #[test]
+    fn reconstruction_stands_down_when_the_block_completes_naturally() {
+        let executor = ReamExecutor::new().expect("create executor");
+        let root = temp_root();
+        let store = Arc::new(FileColumnStore::new(root.clone()).expect("open store"));
+        let verifier = Arc::new(CountingVerifier::accepting_all());
+        let reconstructor = FillMissingReconstructor::new();
+        let (handle, rx) = ingest_channel(8);
+        let service = DataAvailabilityVerificationService::new(
+            rx,
+            verifier,
+            reconstructor.clone(),
+            store.clone(),
+            executor.clone(),
+            handle.downgrade(),
+            Duration::from_millis(300),
+        );
+
+        let block_root = B256::repeat_byte(11);
+        let first_half: Vec<u64> = (0..NUMBER_OF_COLUMNS / 2).collect();
+        let second_half: Vec<u64> = (NUMBER_OF_COLUMNS / 2..NUMBER_OF_COLUMNS).collect();
+
+        executor.runtime().block_on(async move {
+            let service_task = tokio::spawn(service.run());
+            // The first half arms the trigger; the second half completes the
+            // block well inside the 300ms delay.
+            handle
+                .submit_block(sample_block(block_root, 40, &first_half))
+                .await
+                .expect("submit first half");
+            handle
+                .submit_block(sample_block(block_root, 40, &second_half))
+                .await
+                .expect("submit second half");
+
+            // Wait past the delay so the trigger has fired and re-checked.
+            tokio::time::sleep(Duration::from_millis(900)).await;
+            drop(handle);
+            service_task.await.expect("service task joined");
+
+            assert_eq!(
+                reconstructor.calls(),
+                0,
+                "a complete block is never recovered"
+            );
+        });
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// Below half the columns recovery is mathematically impossible, so the
+    /// trigger is never armed at all.
+    #[test]
+    fn no_reconstruction_below_half_the_columns() {
+        let executor = ReamExecutor::new().expect("create executor");
+        let root = temp_root();
+        let store = Arc::new(FileColumnStore::new(root.clone()).expect("open store"));
+        let verifier = Arc::new(CountingVerifier::accepting_all());
+        let reconstructor = FillMissingReconstructor::new();
+        let (handle, rx) = ingest_channel(8);
+        let service = DataAvailabilityVerificationService::new(
+            rx,
+            verifier,
+            reconstructor.clone(),
+            store.clone(),
+            executor.clone(),
+            handle.downgrade(),
+            Duration::ZERO,
+        );
+
+        let block_root = B256::repeat_byte(12);
+        let below_half: Vec<u64> = (0..NUMBER_OF_COLUMNS / 2 - 1).collect();
+
+        executor.runtime().block_on(async move {
+            let service_task = tokio::spawn(service.run());
+            handle
+                .submit_block(sample_block(block_root, 40, &below_half))
+                .await
+                .expect("submit block");
+
+            // With a zero delay an armed trigger would fire immediately; give
+            // it ample room to prove it never does.
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            drop(handle);
+            service_task.await.expect("service task joined");
+
+            assert_eq!(
+                reconstructor.calls(),
+                0,
+                "below half there is nothing to arm"
             );
         });
 
