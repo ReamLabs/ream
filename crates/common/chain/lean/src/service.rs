@@ -258,22 +258,6 @@ enum SyncedForDuties {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DutyKind {
-    Block,
-    Attestation,
-}
-
-// TODO: Replace with `#[derive(strum::AsRefStr)]` after `strum` is added
-impl AsRef<str> for DutyKind {
-    fn as_ref(&self) -> &str {
-        match self {
-            Self::Block => "block",
-            Self::Attestation => "attestation",
-        }
-    }
-}
-
 /// LeanChainService is responsible for updating the [LeanChain] state
 pub struct LeanChainService {
     store: Arc<LeanStoreWriter>,
@@ -3041,10 +3025,10 @@ impl LeanChainService {
         Ok(())
     }
 
+    /// Sync-lag gate for attestation duties
     async fn is_synced_for_duties(
         &mut self,
         wall_clock_slot: u64,
-        duty: DutyKind,
     ) -> anyhow::Result<SyncedForDuties> {
         // head_slot: the slot of our local head block.
         // max_seen_slot: the freshest authenticated block we've stored.
@@ -3066,7 +3050,7 @@ impl LeanChainService {
                 .unwrap_or(head_slot);
             (head_slot, max_seen_slot)
         };
-        let duty = duty.as_ref();
+        let duty = "attestation";
 
         // `saturating_sub` so that a head ahead of wall clock returns zero lag instead of panic.
         let lag = wall_clock_slot.saturating_sub(head_slot);
@@ -3143,19 +3127,18 @@ impl LeanChainService {
     async fn skip_for_lag<T: std::fmt::Debug>(
         &mut self,
         slot: u64,
-        duty: DutyKind,
         response: oneshot::Sender<ServiceResponse<T>>,
     ) -> Option<oneshot::Sender<ServiceResponse<T>>> {
-        let decision = match self.is_synced_for_duties(slot, duty).await {
+        let decision = match self.is_synced_for_duties(slot).await {
             Ok(decision) => decision,
             Err(err) => {
                 warn!(
-                    duty = duty.as_ref(),
+                    duty = "attestation",
                     slot, "Failed to run sync-lag check: {err}",
                 );
                 if let Err(err) = response.send(ServiceResponse::Err(err)) {
                     warn!(
-                        duty = duty.as_ref(),
+                        duty = "attestation",
                         "Failed to send error response: {err:?}",
                     );
                 }
@@ -3170,14 +3153,14 @@ impl LeanChainService {
         else {
             return Some(response);
         };
-        inc_int_counter_vec(&VALIDATOR_DUTIES_SKIPPED_LAG_TOTAL, &[duty.as_ref()]);
+        inc_int_counter_vec(&VALIDATOR_DUTIES_SKIPPED_LAG_TOTAL, &["attestation"]);
         if let Err(err) = response.send(ServiceResponse::SyncLag {
             head_slot,
             lag,
             max_seen_slot,
         }) {
             warn!(
-                duty = duty.as_ref(),
+                duty = "attestation",
                 "Failed to send SyncLag response: {err:?}",
             );
         }
@@ -3190,13 +3173,6 @@ impl LeanChainService {
         response: oneshot::Sender<ServiceResponse<BlockWithSignatures>>,
     ) -> anyhow::Result<()> {
         let wall_slot = get_current_slot();
-
-        let Some(response) = self
-            .skip_for_lag(wall_slot, DutyKind::Block, response)
-            .await
-        else {
-            return Ok(());
-        };
 
         let block_with_signatures = match self
             .store
@@ -3237,10 +3213,7 @@ impl LeanChainService {
         slot: u64,
         response: oneshot::Sender<ServiceResponse<AttestationData>>,
     ) -> anyhow::Result<()> {
-        let Some(response) = self
-            .skip_for_lag(get_current_slot(), DutyKind::Attestation, response)
-            .await
-        else {
+        let Some(response) = self.skip_for_lag(get_current_slot(), response).await else {
             return Ok(());
         };
 

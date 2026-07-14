@@ -263,7 +263,7 @@ pub async fn build_block(
                 head_slot,
                 lag,
                 max_seen_slot,
-                "Skipping block proposal: validator is too far behind the chain head",
+                "Unreachable: Block production should not be gated by SyncLag",
             );
             return;
         }
