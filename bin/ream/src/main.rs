@@ -50,9 +50,11 @@ use ream_consensus_misc::{
     misc::compute_epoch_at_slot,
 };
 use ream_data_availability_node::{
-    ingest::ingest_channel, service::DataAvailabilityVerificationService, store::FileColumnStore,
+    ingest::ingest_channel,
+    service::{DEFAULT_RECONSTRUCTION_DELAY, DataAvailabilityVerificationService},
+    store::FileColumnStore,
 };
-use ream_data_availability_verifier_kzg::KzgVerifier;
+use ream_data_availability_verifier_kzg::KzgAdapter;
 use ream_events_beacon::BeaconEvent;
 use ream_execution_engine::ExecutionEngine;
 use ream_executor::ReamExecutor;
@@ -719,17 +721,22 @@ pub async fn run_data_availability_node(
     let max_blobs_per_block_electra =
         NonZeroUsize::new(network_spec.max_blobs_per_block_electra as usize)
             .expect("network spec max_blobs_per_block must be nonzero");
-    let verifier = Arc::new(KzgVerifier::new(
+    let verifier = Arc::new(KzgAdapter::new(
         network_spec.blob_schedule.clone(),
         max_blobs_per_block_electra,
     ));
 
     let (ingest_handle, rx) = ingest_channel(DATA_AVAILABILITY_VERIFICATION_QUEUE_CAPACITY);
+    // The KZG adapter is both the verifier and the reconstructor: the two
+    // capabilities share one trusted setup.
     let service = DataAvailabilityVerificationService::new(
         rx,
         verifier.clone(),
+        verifier.clone(),
         store.clone(),
         executor.clone(),
+        ingest_handle.downgrade(),
+        DEFAULT_RECONSTRUCTION_DELAY,
     );
     let mut service_task = AbortOnDrop(executor.spawn(service.run()));
 
@@ -740,7 +747,7 @@ pub async fn run_data_availability_node(
     // Warm the trusted setup (multi-second) off the async workers before the
     // first column arrives.
     if let Err(err) = executor
-        .spawn_blocking(KzgVerifier::warm_up_trusted_setup)
+        .spawn_blocking(KzgAdapter::warm_up_trusted_setup)
         .await
     {
         error!("failed to warm up KZG trusted setup: {err}");

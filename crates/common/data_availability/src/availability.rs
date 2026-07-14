@@ -112,12 +112,12 @@ mod tests {
         let held_of = |count: u32| (1u128 << count) - 1;
 
         // 63 of 128: below half, recovery is mathematically impossible.
-        assert!(!DaAvailability::new(held_of(63), all).is_reconstructable());
+        assert!(!ColumnAvailability::new(held_of(63), all).is_reconstructable());
         // 64 and 127: enough to recover, and something is missing.
-        assert!(DaAvailability::new(held_of(64), all).is_reconstructable());
-        assert!(DaAvailability::new(held_of(127), all).is_reconstructable());
+        assert!(ColumnAvailability::new(held_of(64), all).is_reconstructable());
+        assert!(ColumnAvailability::new(held_of(127), all).is_reconstructable());
         // Full set: nothing to recover.
-        assert!(!DaAvailability::new(all, all).is_reconstructable());
+        assert!(!ColumnAvailability::new(all, all).is_reconstructable());
     }
 
     #[test]
