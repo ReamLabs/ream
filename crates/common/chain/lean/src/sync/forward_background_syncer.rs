@@ -9,7 +9,7 @@ use ream_network_state_lean::NetworkState;
 use ream_storage::tables::{field::REDBField, table::REDBTable};
 use tree_hash::TreeHash;
 
-use crate::sync::job::queue::JobQueue;
+use crate::{slot::get_current_slot, sync::job::queue::JobQueue};
 
 pub struct ForwardBackgroundSyncer {
     pub store: Arc<LeanStoreWriter>,
@@ -107,9 +107,23 @@ impl ForwardBackgroundSyncer {
                     "Failed to find block with root {root:?} in pending blocks during insertion"
                 )
             })?;
-            let time = lean_network_spec().genesis_time
-                + (block.block.slot * lean_network_spec().seconds_per_slot);
             let block_slot = block.block.slot;
+
+            // Reject blocks that are ahead of wall-clock by more than one slot. This
+            // is a safety check to prevent importing blocks from malicious peers.
+            let wall_clock_slot = get_current_slot();
+            if block_slot > wall_clock_slot + 1 {
+                return Ok(ForwardSyncResults::BlockAheadOfWallClock {
+                    previous_queue: self.job_queue.clone(),
+                    bad_root: root,
+                    bad_slot: block_slot,
+                    wall_clock_slot,
+                });
+            }
+
+            let spec = lean_network_spec();
+            let time = spec.genesis_time + block_slot * spec.seconds_per_slot;
+
             store_writer.on_tick(time, false, false).await?;
             store_writer.on_block(&block, true).await?;
             blocks_synced += 1;
@@ -155,6 +169,12 @@ pub enum ForwardSyncResults {
         actual_root: B256,
         network_finalized_slot: u64,
     },
+    BlockAheadOfWallClock {
+        previous_queue: JobQueue,
+        bad_root: B256,
+        bad_slot: u64,
+        wall_clock_slot: u64,
+    },
 }
 
 #[cfg(test)]
@@ -164,7 +184,7 @@ mod tests {
     use libp2p_identity::PeerId;
     #[cfg(feature = "devnet5")]
     use ream_consensus_lean::attestation::MultiMessageAggregate;
-    use ream_consensus_lean::block::SignedBlock;
+    use ream_consensus_lean::block::{Block, SignedBlock};
     use ream_fork_choice_lean::store::Store;
     use ream_peer::{ConnectionState, Direction};
     use ream_sync::rwlock::Writer;
@@ -372,5 +392,92 @@ mod tests {
             }
             other => panic!("expected completed result, got {other:?}"),
         }
+    }
+
+    async fn run_crafted_high_slot_sync(
+        crafted_slot: u64,
+    ) -> (anyhow::Result<ForwardSyncResults>, u64) {
+        let store = sample_store(10).await;
+
+        let (head_root, genesis_block) = {
+            let db = store.store.lock().await;
+            let head_root = db.head_provider().get().unwrap();
+            let genesis_block = db.block_provider().get(head_root).unwrap().unwrap();
+            (head_root, genesis_block)
+        };
+
+        let crafted_block = SignedBlock {
+            block: Block {
+                slot: crafted_slot,
+                proposer_index: 0,
+                parent_root: head_root,
+                state_root: B256::ZERO,
+                body: genesis_block.block.body.clone(),
+            },
+            #[cfg(feature = "devnet5")]
+            proof: MultiMessageAggregate {
+                proof: ssz_types::VariableList::default(),
+            },
+        };
+        let crafted_root = crafted_block.block.tree_hash_root();
+
+        store
+            .store
+            .lock()
+            .await
+            .pending_blocks_provider()
+            .insert(crafted_root, crafted_block)
+            .unwrap();
+
+        let (writer, _reader) = Writer::new(store);
+        let writer = Arc::new(writer);
+        let network_state = writer.read().await.network_state.clone();
+        let mut queue = JobQueue::new(crafted_root, crafted_slot, crafted_slot);
+        queue.is_complete = true;
+
+        let mut syncer = ForwardBackgroundSyncer::new(writer.clone(), network_state, queue);
+        let result = syncer.start().await;
+        let final_clock = writer
+            .read()
+            .await
+            .store
+            .lock()
+            .await
+            .time_provider()
+            .get()
+            .unwrap();
+        (result, final_clock)
+    }
+
+    #[tokio::test]
+    async fn test_b2_high_slot_block_does_not_freeze_or_poison_clock() {
+        let (result, final_clock) = run_crafted_high_slot_sync(1_000_000_000_000).await;
+
+        match result.unwrap() {
+            ForwardSyncResults::BlockAheadOfWallClock { bad_slot, .. } => {
+                assert_eq!(bad_slot, 1_000_000_000_000);
+            }
+            other => panic!("expected BlockAheadOfWallClock, got {other:?}"),
+        }
+        assert!(
+            final_clock < 1_000,
+            "clock must not be poisoned toward the crafted slot"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_b2_near_max_slot_overflow_is_defended() {
+        let (result, final_clock) = run_crafted_high_slot_sync(u64::MAX - 5).await;
+
+        match result.unwrap() {
+            ForwardSyncResults::BlockAheadOfWallClock { bad_slot, .. } => {
+                assert_eq!(bad_slot, u64::MAX - 5);
+            }
+            other => panic!("expected BlockAheadOfWallClock, got {other:?}"),
+        }
+        assert!(
+            final_clock < 1_000,
+            "clock must not be poisoned toward the crafted slot"
+        );
     }
 }
