@@ -15,8 +15,8 @@ use tracing::{debug, error, info, trace, warn};
 
 use crate::ingest::{IngestWorkItem, ReconstructionRequest, RetentionHint};
 
-/// Default settling delay between a block becoming recoverable and the
-/// recovery attempt
+/// Default cap on the settling delay between a block becoming recoverable and
+/// the recovery attempt.
 pub const DEFAULT_RECONSTRUCTION_DELAY: Duration = Duration::from_secs(3);
 
 /// Drains the ingest queue, verifying each candidate and persisting those
@@ -30,9 +30,9 @@ pub struct DataAvailabilityVerificationService {
     executor: ReamExecutor,
     /// Weak self-handle for the delayed reconstruction triggers.
     self_sender: mpsc::WeakSender<IngestWorkItem>,
-    /// How long a recoverable-but-incomplete block is given to complete
-    /// naturally before recovery is attempted.
-    reconstruction_delay: Duration,
+    /// Cap on how long a recoverable-but-incomplete block is given to complete
+    /// naturally before recovery is attempted
+    max_reconstruction_delay: Duration,
 }
 
 impl DataAvailabilityVerificationService {
@@ -43,7 +43,7 @@ impl DataAvailabilityVerificationService {
         store: Arc<dyn ColumnWriteStore>,
         executor: ReamExecutor,
         self_sender: mpsc::WeakSender<IngestWorkItem>,
-        reconstruction_delay: Duration,
+        max_reconstruction_delay: Duration,
     ) -> Self {
         Self {
             receiver,
@@ -52,7 +52,7 @@ impl DataAvailabilityVerificationService {
             store,
             executor,
             self_sender,
-            reconstruction_delay,
+            max_reconstruction_delay,
         }
     }
     /// Consume work items until the ingest channel closes.
@@ -176,13 +176,14 @@ impl DataAvailabilityVerificationService {
             return;
         }
 
+        // Spec: https://ethereum.github.io/consensus-specs/fulu/das-core/#reconstruction-and-cross-seeding
+        // Sample the delay fresh per trigger, in [0, cap)
+        let delay = self.max_reconstruction_delay.mul_f64(rand::random::<f64>());
         debug!(
             "block {block_root} became recoverable with {held} columns, scheduling reconstruction in {delay:?}",
             held = after.held_count(),
-            delay = self.reconstruction_delay
         );
         let sender = self.self_sender.clone();
-        let delay = self.reconstruction_delay;
         self.executor.spawn(async move {
             tokio::time::sleep(delay).await;
             // All real handles gone: shutting down, drop the trigger.

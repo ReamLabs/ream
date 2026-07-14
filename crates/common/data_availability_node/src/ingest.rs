@@ -104,6 +104,7 @@ impl IngestHandle {
             })
     }
 
+    // TODO: will be removed after using DB instead file store
     /// A weak sender for the verification service's own delayed
     /// reconstruction triggers.
     ///
