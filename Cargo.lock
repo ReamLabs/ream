@@ -9043,6 +9043,7 @@ dependencies = [
  "ream-network-spec",
  "ream-network-state-lean",
  "ream-post-quantum-crypto",
+ "ream-reth-engine",
  "ream-storage",
  "ream-sync",
  "ream-test-utils",
@@ -9341,6 +9342,7 @@ dependencies = [
 name = "ream-reth-engine"
 version = "0.1.0"
 dependencies = [
+ "alloy-eips 2.1.0",
  "alloy-genesis",
  "alloy-primitives",
  "alloy-rpc-types-engine",

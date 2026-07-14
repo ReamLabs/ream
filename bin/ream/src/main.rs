@@ -466,7 +466,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     };
 
     #[cfg(feature = "reth")]
-    chain_service.set_reth_handle(reth_handle);
+    chain_service.set_reth_handle(reth_handle).await;
 
     #[cfg(feature = "reth")]
     let reth_exit = &mut reth_node.node_exit_future;

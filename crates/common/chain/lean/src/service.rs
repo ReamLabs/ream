@@ -301,7 +301,11 @@ impl LeanChainService {
     }
 
     #[cfg(feature = "reth")]
-    pub fn set_reth_handle(&mut self, reth_handle: RethHandle) {
+    pub async fn set_reth_handle(&mut self, reth_handle: RethHandle) {
+        self.store
+            .write()
+            .await
+            .set_reth_handle(reth_handle.clone());
         self.reth_handle = Some(reth_handle);
     }
 

@@ -57,6 +57,10 @@ use ream_post_quantum_crypto::lean_multisig::type_2::{
 #[cfg(feature = "devnet5")]
 use ream_post_quantum_crypto::leansig::public_key::PublicKey;
 use ream_post_quantum_crypto::leansig::signature::Signature;
+#[cfg(feature = "reth")]
+use ream_reth_engine::{
+    fork_choice::create_fork_choice_state, handle::RethHandle, payload::from_ream_execution_payload,
+};
 use ream_storage::{
     db::lean::LeanDB,
     tables::{field::REDBField, lean::gossip_signatures::GossipSignaturesTable, table::REDBTable},
@@ -77,6 +81,10 @@ pub struct Store {
     pub store: Arc<Mutex<LeanDB>>,
     pub network_state: Arc<NetworkState>,
     pub tick_interval_duration: Option<Instant>,
+    /// Handle to the embedded reth execution layer, used to validate and
+    /// canonicalize the execution payload carried by each imported block.
+    #[cfg(feature = "reth")]
+    pub reth_handle: Option<RethHandle>,
 }
 
 impl Store {
@@ -142,7 +150,16 @@ impl Store {
             store: Arc::new(Mutex::new(db)),
             network_state: Arc::new(NetworkState::new(anchor_checkpoint, anchor_checkpoint)),
             tick_interval_duration: None,
+            #[cfg(feature = "reth")]
+            reth_handle: None,
         })
+    }
+
+    /// Attach the embedded reth execution-layer handle so [`Self::on_block`] can
+    /// validate and canonicalize the execution payload of each imported block.
+    #[cfg(feature = "reth")]
+    pub fn set_reth_handle(&mut self, reth_handle: RethHandle) {
+        self.reth_handle = Some(reth_handle);
     }
 
     /// Use LMD GHOST to get the head, given a particular root (usually the
@@ -1330,6 +1347,47 @@ impl Store {
             }
         }
 
+        // Validate and canonicalize this block's execution payload against the
+        // embedded reth EL: newPayloadV4 executes/verifies it, then
+        // forkchoiceUpdated advances the EL head. Both proposer and
+        // non-proposer blocks flow through `on_block`
+        #[cfg(feature = "reth")]
+        if let Some(reth_handle) = &self.reth_handle {
+            let execution_payload = &block.body.execution_payload;
+            let head_el_hash = execution_payload.block_hash;
+
+            let el_hash_of = |root: B256| {
+                block_provider
+                    .get(root)
+                    .ok()
+                    .flatten()
+                    .map(|signed| signed.block.body.execution_payload.block_hash)
+            };
+            let safe_el_hash = el_hash_of(latest_justified.root).unwrap_or(head_el_hash);
+            let finalized_root = {
+                let db = self.store.lock().await;
+                db.latest_finalized_provider().get()?.root
+            };
+            let finalized_el_hash = el_hash_of(finalized_root).unwrap_or(head_el_hash);
+
+            let execution_data = from_ream_execution_payload(execution_payload, block.parent_root);
+            let payload_status = reth_handle
+                .import_payload(execution_data)
+                .await
+                .map_err(|err| anyhow!("EL newPayload failed: {err}"))?;
+            ensure!(
+                payload_status.is_valid(),
+                "EL rejected execution payload for block {block_root}: {payload_status:?}"
+            );
+            reth_handle
+                .update_forkchoice(
+                    create_fork_choice_state(head_el_hash, safe_el_hash, finalized_el_hash),
+                    None,
+                )
+                .await
+                .map_err(|err| anyhow!("EL forkchoiceUpdated (head) failed: {err}"))?;
+        }
+
         self.update_head().await?;
 
         stop_timer(block_processing_timer);
@@ -2155,6 +2213,8 @@ mod tests {
             store: test_store.store,
             network_state: test_store.network_state,
             tick_interval_duration: None,
+            #[cfg(feature = "reth")]
+            reth_handle: None,
         }
     }
 
