@@ -62,9 +62,7 @@ pub async fn get_columns(
     block_root: Path<ID>,
 ) -> Result<impl Responder, ApiError> {
     let block_root = block_root_from_id(block_root.into_inner())?;
-    let availability = store
-        .availability(block_root)
-        .map_err(|err| ApiError::InternalError(format!("availability lookup failed: {err}")))?;
+    let availability = store.availability(block_root);
 
     let mut columns = Vec::with_capacity(availability.held_count() as usize);
     for index in availability.held_indices() {

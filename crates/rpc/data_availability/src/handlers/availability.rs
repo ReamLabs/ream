@@ -36,8 +36,6 @@ pub async fn get_availability(
     block_root: Path<ID>,
 ) -> Result<impl Responder, ApiError> {
     let block_root = block_root_from_id(block_root.into_inner())?;
-    let availability = store
-        .availability(block_root)
-        .map_err(|err| ApiError::InternalError(format!("availability lookup failed: {err}")))?;
+    let availability = store.availability(block_root);
     Ok(HttpResponse::Ok().json(AvailabilityResponse::from(availability)))
 }
