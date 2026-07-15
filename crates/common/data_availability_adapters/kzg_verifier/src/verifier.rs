@@ -71,6 +71,13 @@ impl KzgAdapter {
         let _ = trusted_setup::blst_settings();
     }
 
+    /// The cell-recovery context, built from the trusted setup once and cached
+    /// for the process lifetime.
+    fn recovery_context() -> &'static DASContext {
+        static CONTEXT: OnceLock<DASContext> = OnceLock::new();
+        CONTEXT.get_or_init(|| DASContext::new(&TrustedSetup::default(), UsePrecomp::No))
+    }
+
     fn decode(&self, bytes: &[u8]) -> Result<DataColumnSidecar, ValidationError> {
         DataColumnSidecar::from_ssz_bytes(bytes)
             .map_err(|err| ValidationError::MalformedPayload(format!("{err:?}")))
@@ -265,13 +272,13 @@ impl ColumnReconstructor for KzgAdapter {
         // blob row, so the held cell indices are the same for every row.
         let cell_indices: Vec<u64> = sidecars.iter().map(|sidecar| sidecar.index).collect();
         let mut cells_and_proofs = Vec::with_capacity(blob_count);
-        let das_context = DASContext::new(&TrustedSetup::default(), UsePrecomp::No);
+        let das_context = Self::recovery_context();
         for row in 0..blob_count {
             let cells: Vec<_> = sidecars
                 .iter()
                 .map(|sidecar| sidecar.column[row].clone())
                 .collect();
-            let recovered = recover_cells_and_kzg_proofs(cell_indices.clone(), cells, &das_context)
+            let recovered = recover_cells_and_kzg_proofs(cell_indices.clone(), cells, das_context)
                 .map_err(|err| {
                     ValidationError::ReconstructionFailure(format!("blob row {row}: {err:?}"))
                 })?;
