@@ -98,7 +98,7 @@ jobs:
           cache-on-failure: true
 
       - name: Test consensus spec tests
-        run: cd testing/ef-tests && make test
+        run: make test-ef
 
   lean-spec-tests:
     runs-on: ubuntu-latest

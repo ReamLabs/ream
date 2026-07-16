@@ -46,6 +46,14 @@ test: test-devnet5
 test-devnet5:
 	cargo test --workspace --no-default-features --features "devnet5" -- --nocapture
 
+.PHONY: test-ef
+test-ef: # Download test vectors and run the EF spec tests.
+	$(MAKE) -C testing/ef-tests test
+
+.PHONY: clean-ef
+clean-ef: # Clean up downloaded EF test vectors.
+	$(MAKE) -C testing/ef-tests clean
+
 .PHONY: fmt
 fmt: # Run `rustfmt` on the entire workspace and enfore closure variables on `map_err` to be `err`
 	cargo +nightly fmt --all
