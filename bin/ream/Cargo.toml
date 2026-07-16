@@ -45,7 +45,9 @@ serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true
 ssz_types.workspace = true
-tikv-jemallocator.workspace = true
+tikv-jemallocator = { workspace = true, features = [
+    "unprefixed_malloc_on_supported_platforms",
+] }
 tokio.workspace = true
 tracing = { workspace = true, features = ["log"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
