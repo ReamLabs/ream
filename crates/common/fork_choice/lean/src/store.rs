@@ -2482,6 +2482,12 @@ impl Store {
         if head_state.latest_block_header.slot == 0 {
             source.root = head_root;
         }
+
+        let target = self.get_attestation_target().await?;
+        ensure!(
+            source.slot <= target.slot,
+            "Source must be older or equal to the target"
+        );
         Ok(AttestationData {
             slot,
             head: Checkpoint {
@@ -2492,7 +2498,7 @@ impl Store {
                     .block
                     .slot,
             },
-            target: self.get_attestation_target().await?,
+            target,
             source,
         })
     }
