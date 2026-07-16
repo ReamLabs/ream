@@ -16,6 +16,9 @@ use ream_peer::{ConnectionState, Direction};
 
 use crate::cached_peer::CachedPeer;
 
+const MODIFIED_Z_SCORE_NUMERATOR: u128 = 6_745;
+const MODIFIED_Z_SCORE_OUTLIER_THRESHOLD: u128 = 35_000;
+
 #[derive(Debug)]
 pub struct NetworkState {
     pub peer_table: Arc<Mutex<HashMap<PeerId, CachedPeer>>>,
@@ -136,10 +139,6 @@ impl NetworkState {
             .cloned()
             .collect();
 
-        if connected_peers.len() > 2 {
-            return None;
-        }
-
         let head_candidates: Vec<_> = connected_peers
             .iter()
             .filter_map(|peer| peer.head_checkpoint.map(|checkpoint| (peer, checkpoint)))
@@ -148,24 +147,42 @@ impl NetworkState {
             return None;
         }
 
-        if Self::common_checkpoint_from_peers(connected_peers.iter(), |peer| {
-            peer.finalized_checkpoint
-        })
-        .is_some()
-        {
-            return head_candidates
-                .into_iter()
-                .max_by_key(|(peer, checkpoint)| {
-                    (
-                        checkpoint.slot,
-                        peer.peer_score,
-                        peer.last_status_update,
-                        peer.peer_id.to_bytes(),
-                    )
-                })
-                .map(|(_, checkpoint)| checkpoint);
+        let has_common_finalized =
+            Self::common_checkpoint_from_peers(connected_peers.iter(), |peer| {
+                peer.finalized_checkpoint
+            })
+            .is_some();
+
+        if head_candidates.len() <= 2 {
+            if has_common_finalized {
+                return Self::highest_slot_checkpoint(head_candidates);
+            }
+
+            return Self::highest_scored_checkpoint(head_candidates);
         }
 
+        Self::clustered_highest_checkpoint(&head_candidates)
+    }
+
+    fn highest_slot_checkpoint<'a>(
+        head_candidates: impl IntoIterator<Item = (&'a CachedPeer, Checkpoint)>,
+    ) -> Option<Checkpoint> {
+        head_candidates
+            .into_iter()
+            .max_by_key(|(peer, checkpoint)| {
+                (
+                    checkpoint.slot,
+                    peer.peer_score,
+                    peer.last_status_update,
+                    peer.peer_id.to_bytes(),
+                )
+            })
+            .map(|(_, checkpoint)| checkpoint)
+    }
+
+    fn highest_scored_checkpoint<'a>(
+        head_candidates: impl IntoIterator<Item = (&'a CachedPeer, Checkpoint)>,
+    ) -> Option<Checkpoint> {
         head_candidates
             .into_iter()
             .max_by_key(|(peer, checkpoint)| {
@@ -177,6 +194,60 @@ impl NetworkState {
                 )
             })
             .map(|(_, checkpoint)| checkpoint)
+    }
+
+    fn clustered_highest_checkpoint(
+        head_candidates: &[(&CachedPeer, Checkpoint)],
+    ) -> Option<Checkpoint> {
+        let mut slots: Vec<_> = head_candidates
+            .iter()
+            .map(|(_, checkpoint)| checkpoint.slot)
+            .collect();
+        slots.sort_unstable();
+
+        let median_slot = Self::median_slot(&slots);
+        let mut deviations: Vec<_> = slots
+            .iter()
+            .map(|slot| Self::slot_deviation(*slot, median_slot))
+            .collect();
+        deviations.sort_unstable();
+        let median_deviation = Self::median(&deviations);
+
+        Self::highest_slot_checkpoint(head_candidates.iter().copied().filter(|(_, checkpoint)| {
+            Self::slot_is_cluster_member(checkpoint.slot, median_slot, median_deviation)
+        }))
+    }
+
+    fn slot_is_cluster_member(slot: u64, median_slot: u128, median_deviation: u128) -> bool {
+        let deviation = Self::slot_deviation(slot, median_slot);
+        if median_deviation == 0 {
+            return deviation == 0;
+        }
+
+        deviation * MODIFIED_Z_SCORE_NUMERATOR
+            <= median_deviation * MODIFIED_Z_SCORE_OUTLIER_THRESHOLD
+    }
+
+    fn median_slot(sorted_slots: &[u64]) -> u128 {
+        let mid = sorted_slots.len() / 2;
+        if sorted_slots.len().is_multiple_of(2) {
+            u128::from(sorted_slots[mid - 1]) + u128::from(sorted_slots[mid])
+        } else {
+            u128::from(sorted_slots[mid]) * 2
+        }
+    }
+
+    fn median(sorted_values: &[u128]) -> u128 {
+        let mid = sorted_values.len() / 2;
+        if sorted_values.len().is_multiple_of(2) {
+            (sorted_values[mid - 1] + sorted_values[mid]) / 2
+        } else {
+            sorted_values[mid]
+        }
+    }
+
+    fn slot_deviation(slot: u64, median_slot: u128) -> u128 {
+        (u128::from(slot) * 2).abs_diff(median_slot)
     }
 
     pub fn common_finalized_checkpoint(&self) -> Option<Checkpoint> {
@@ -260,9 +331,8 @@ mod tests {
     use super::*;
 
     fn checkpoint(byte: u8, slot: u64) -> Checkpoint {
-        let _ = byte;
         Checkpoint {
-            root: Default::default(),
+            root: [byte; 32].into(),
             slot,
         }
     }
@@ -414,6 +484,160 @@ mod tests {
         assert_eq!(
             network_state.preferred_highest_checkpoint(),
             Some(peer_a_head)
+        );
+    }
+
+    #[test]
+    fn preferred_highest_checkpoint_uses_highest_checkpoint_in_slot_cluster() {
+        let network_state = NetworkState::new(checkpoint(0x01, 0), checkpoint(0x01, 0));
+        let peers = [
+            PeerId::random(),
+            PeerId::random(),
+            PeerId::random(),
+            PeerId::random(),
+        ];
+        let shared_finalized = checkpoint(0x20, 10);
+
+        for peer_id in peers {
+            network_state.upsert_peer(
+                peer_id,
+                None,
+                ConnectionState::Connected,
+                Direction::Outbound,
+            );
+        }
+
+        let preferred_head = checkpoint(0x33, 103);
+        network_state.update_peer_checkpoints(peers[0], checkpoint(0x30, 100), shared_finalized);
+        network_state.update_peer_checkpoints(peers[1], checkpoint(0x31, 101), shared_finalized);
+        network_state.update_peer_checkpoints(peers[2], checkpoint(0x32, 102), shared_finalized);
+        network_state.update_peer_checkpoints(peers[3], preferred_head, shared_finalized);
+
+        assert_eq!(network_state.common_highest_checkpoint(), None);
+        assert_eq!(
+            network_state.preferred_highest_checkpoint(),
+            Some(preferred_head)
+        );
+    }
+
+    #[test]
+    fn preferred_highest_checkpoint_avoids_high_slot_outlier() {
+        let network_state = NetworkState::new(checkpoint(0x01, 0), checkpoint(0x01, 0));
+        let peers = [
+            PeerId::random(),
+            PeerId::random(),
+            PeerId::random(),
+            PeerId::random(),
+            PeerId::random(),
+        ];
+        let shared_finalized = checkpoint(0x20, 10);
+
+        for peer_id in peers {
+            network_state.upsert_peer(
+                peer_id,
+                None,
+                ConnectionState::Connected,
+                Direction::Outbound,
+            );
+        }
+
+        let preferred_head = checkpoint(0x33, 103);
+        network_state.update_peer_checkpoints(peers[0], checkpoint(0x30, 100), shared_finalized);
+        network_state.update_peer_checkpoints(peers[1], checkpoint(0x31, 101), shared_finalized);
+        network_state.update_peer_checkpoints(peers[2], checkpoint(0x32, 102), shared_finalized);
+        network_state.update_peer_checkpoints(peers[3], preferred_head, shared_finalized);
+        network_state.update_peer_checkpoints(peers[4], checkpoint(0x40, 500), shared_finalized);
+
+        assert_eq!(network_state.common_highest_checkpoint(), None);
+        assert_eq!(
+            network_state.preferred_highest_checkpoint(),
+            Some(preferred_head)
+        );
+    }
+
+    #[test]
+    fn preferred_highest_checkpoint_uses_slot_cluster_when_finalized_checkpoints_split() {
+        let network_state = NetworkState::new(checkpoint(0x01, 0), checkpoint(0x01, 0));
+        let peers = [
+            PeerId::random(),
+            PeerId::random(),
+            PeerId::random(),
+            PeerId::random(),
+            PeerId::random(),
+        ];
+
+        for peer_id in peers {
+            network_state.upsert_peer(
+                peer_id,
+                None,
+                ConnectionState::Connected,
+                Direction::Outbound,
+            );
+        }
+
+        let preferred_head = checkpoint(0x33, 103);
+        network_state.update_peer_checkpoints(
+            peers[0],
+            checkpoint(0x30, 100),
+            checkpoint(0x50, 10),
+        );
+        network_state.update_peer_checkpoints(
+            peers[1],
+            checkpoint(0x31, 101),
+            checkpoint(0x51, 11),
+        );
+        network_state.update_peer_checkpoints(
+            peers[2],
+            checkpoint(0x32, 102),
+            checkpoint(0x52, 12),
+        );
+        network_state.update_peer_checkpoints(peers[3], preferred_head, checkpoint(0x53, 13));
+        network_state.update_peer_checkpoints(
+            peers[4],
+            checkpoint(0x40, 500),
+            checkpoint(0x60, 400),
+        );
+
+        assert_eq!(network_state.common_highest_checkpoint(), None);
+        assert_eq!(network_state.common_finalized_checkpoint(), None);
+        assert_eq!(
+            network_state.preferred_highest_checkpoint(),
+            Some(preferred_head)
+        );
+    }
+
+    #[test]
+    fn preferred_highest_checkpoint_avoids_low_slot_outlier() {
+        let network_state = NetworkState::new(checkpoint(0x01, 0), checkpoint(0x01, 0));
+        let peers = [
+            PeerId::random(),
+            PeerId::random(),
+            PeerId::random(),
+            PeerId::random(),
+            PeerId::random(),
+        ];
+        let shared_finalized = checkpoint(0x20, 10);
+
+        for peer_id in peers {
+            network_state.upsert_peer(
+                peer_id,
+                None,
+                ConnectionState::Connected,
+                Direction::Outbound,
+            );
+        }
+
+        let preferred_head = checkpoint(0x34, 504);
+        network_state.update_peer_checkpoints(peers[0], checkpoint(0x20, 100), shared_finalized);
+        network_state.update_peer_checkpoints(peers[1], checkpoint(0x30, 500), shared_finalized);
+        network_state.update_peer_checkpoints(peers[2], checkpoint(0x31, 501), shared_finalized);
+        network_state.update_peer_checkpoints(peers[3], checkpoint(0x32, 502), shared_finalized);
+        network_state.update_peer_checkpoints(peers[4], preferred_head, shared_finalized);
+
+        assert_eq!(network_state.common_highest_checkpoint(), None);
+        assert_eq!(
+            network_state.preferred_highest_checkpoint(),
+            Some(preferred_head)
         );
     }
 }
