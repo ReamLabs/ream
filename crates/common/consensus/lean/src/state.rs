@@ -497,13 +497,6 @@ impl LeanState {
                 if is_target_next_valid_justifiable_slot {
                     let delta = (attestation.source().slot - self.latest_finalized.slot) as usize;
                     if delta > 0 {
-                        ensure!(
-                            justifications_map
-                                .keys()
-                                .all(|root| root_to_slot.contains_key(root)),
-                            "Justification root missing from root_to_slot"
-                        );
-
                         let mut new_bitlist =
                             BitList::with_capacity(self.justified_slots.len() - delta)
                                 .map_err(|err| anyhow!("Failed to create BitList: {err:?}"))?;
@@ -517,6 +510,8 @@ impl LeanState {
                         }
                         self.justified_slots = new_bitlist;
 
+                        // Drop pending tallies for roots that are no longer on the canonical
+                        // finalized window. Roots outside root_to_slot are off-chain here.
                         justifications_map.retain(|root, _| match root_to_slot.get(root) {
                             Some(slots) => *slots > attestation.source().slot,
                             None => false,
