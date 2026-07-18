@@ -23,6 +23,7 @@ ream-consensus-misc.workspace = true
 ream-events-beacon.workspace = true
 ream-execution-engine.workspace = true
 ream-fork-choice-beacon.workspace = true
+ream-metrics.workspace = true
 ream-network-spec.workspace = true
 ream-operation-pool.workspace = true
 ream-req-resp.workspace = true

@@ -19,6 +19,10 @@ use ream_consensus_misc::{
     constants::beacon::{GENESIS_EPOCH, GENESIS_SLOT, INTERVALS_PER_SLOT, SLOTS_PER_EPOCH},
     misc::{compute_epoch_at_slot, compute_start_slot_at_epoch, is_shuffling_stable},
 };
+use ream_metrics::{
+    BEACON_CURRENT_ACTIVE_VALIDATORS, BEACON_CURRENT_JUSTIFIED_EPOCH, BEACON_FINALIZED_EPOCH,
+    BEACON_PREVIOUS_JUSTIFIED_EPOCH,
+};
 use ream_network_spec::networks::beacon_network_spec;
 use ream_operation_pool::OperationPool;
 use ream_polynomial_commitments::handlers::verify_data_column_sidecar_kzg_proofs;
@@ -244,19 +248,27 @@ impl Store {
         &mut self,
         justified_checkpoint: Checkpoint,
         finalized_checkpoint: Checkpoint,
+        previous_justified_checkpoint: Checkpoint,
     ) -> anyhow::Result<()> {
         // Update justified checkpoint
         if justified_checkpoint.epoch > self.db.justified_checkpoint_provider().get()?.epoch {
             self.db
                 .justified_checkpoint_provider()
                 .insert(justified_checkpoint)?;
+            BEACON_CURRENT_JUSTIFIED_EPOCH.set(justified_checkpoint.epoch as i64);
         }
+
+        self.db
+            .previous_justified_checkpoint_provider()
+            .insert(previous_justified_checkpoint)?;
+        BEACON_PREVIOUS_JUSTIFIED_EPOCH.set(previous_justified_checkpoint.epoch as i64);
 
         // Update finalized checkpoint
         if finalized_checkpoint.epoch > self.db.finalized_checkpoint_provider().get()?.epoch {
             self.db
                 .finalized_checkpoint_provider()
                 .insert(finalized_checkpoint)?;
+            BEACON_FINALIZED_EPOCH.set(finalized_checkpoint.epoch as i64);
             // Clean operation pool
             if let Some(state) = self.db.state_provider().get(finalized_checkpoint.root)? {
                 self.operation_pool.clean_signed_voluntary_exits(&state);
@@ -624,9 +636,25 @@ impl Store {
 
         // If a new epoch, pull-up justification and finalization from previous epoch
         if current_slot > previous_slot && compute_slots_since_epoch_start(current_slot) == 0 {
+            let head = self.get_head()?;
+            if let Some(state) = self.db.state_provider().get(head)? {
+                let active_count = state
+                    .get_active_validator_indices(state.get_current_epoch())
+                    .len();
+                BEACON_CURRENT_ACTIVE_VALIDATORS.set(active_count as i64);
+            } else {
+                tracing::warn!("Could not find head state for active validators metric");
+            }
+
+            let unrealized_justified = self.db.unrealized_justified_checkpoint_provider().get()?;
+            let unrealized_finalized = self.db.unrealized_finalized_checkpoint_provider().get()?;
+
+            // On epoch boundary, previous_justified becomes what was previously current justified
+            let previous_justified = self.db.justified_checkpoint_provider().get()?;
             self.update_checkpoints(
-                self.db.unrealized_justified_checkpoint_provider().get()?,
-                self.db.unrealized_finalized_checkpoint_provider().get()?,
+                unrealized_justified,
+                unrealized_finalized,
+                previous_justified,
             )?;
         }
 
@@ -781,6 +809,12 @@ impl Store {
         // Pull up the post-state of the block to the next epoch boundary
         state.process_justification_and_finalization()?;
 
+        BEACON_CURRENT_ACTIVE_VALIDATORS.set(
+            state
+                .get_active_validator_indices(state.get_current_epoch())
+                .len() as i64,
+        );
+
         self.db
             .unrealized_justifications_provider()
             .insert(block_root, state.current_justified_checkpoint)?;
@@ -803,6 +837,7 @@ impl Store {
             self.update_checkpoints(
                 state.current_justified_checkpoint,
                 state.finalized_checkpoint,
+                state.previous_justified_checkpoint,
             )?;
         }
 
@@ -850,6 +885,11 @@ pub fn get_forkchoice_store(
         signature,
     };
 
+    let previous_justified_checkpoint = Checkpoint {
+        epoch: anchor_epoch,
+        root: anchor_root,
+    };
+
     db.time_provider().insert(
         anchor_state.genesis_time + beacon_network_spec().seconds_per_slot() * anchor_state.slot,
     )?;
@@ -877,6 +917,8 @@ pub fn get_forkchoice_store(
         .insert(justified_checkpoint, anchor_state)?;
     db.unrealized_justifications_provider()
         .insert(anchor_root, justified_checkpoint)?;
+    db.previous_justified_checkpoint_provider()
+        .insert(previous_justified_checkpoint)?;
 
     let operation_pool = Arc::new(OperationPool::default());
 

@@ -16,6 +16,7 @@ use crate::{
             finalized_checkpoint::FinalizedCheckpointField, genesis_time::GenesisTimeField,
             justified_checkpoint::JustifiedCheckpointField, latest_messages::LatestMessagesTable,
             parent_root_index::ParentRootIndexMultimapTable,
+            previous_justified_checkpoint::PreviousJustifiedCheckpointField,
             proposer_boost_root::ProposerBoostRootField, slot_index::BeaconSlotIndexTable,
             state_root_index::BeaconStateRootIndexTable, time::TimeField,
             unrealized_finalized_checkpoint::UnrealizedFinalizedCheckpointField,
@@ -98,6 +99,12 @@ impl BeaconDB {
 
     pub fn proposer_boost_root_provider(&self) -> ProposerBoostRootField {
         ProposerBoostRootField {
+            db: self.db.clone(),
+        }
+    }
+
+    pub fn previous_justified_checkpoint_provider(&self) -> PreviousJustifiedCheckpointField {
+        PreviousJustifiedCheckpointField {
             db: self.db.clone(),
         }
     }
