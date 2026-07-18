@@ -10,6 +10,7 @@ pub mod genesis_time;
 pub mod justified_checkpoint;
 pub mod latest_messages;
 pub mod parent_root_index;
+pub mod previous_justified_checkpoint;
 pub mod proposer_boost_root;
 pub mod slot_index;
 pub mod state_root_index;

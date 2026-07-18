@@ -23,6 +23,13 @@ use ream_execution_rpc_types::{
     get_payload::{Payload, PayloadV4, PayloadV5},
     payload_status::{PayloadStatus, PayloadStatusV1},
 };
+use ream_metrics::{
+    BEACON_ENGINE_GET_BLOBS_V2_REQUEST_DURATION_SECONDS, BEACON_ENGINE_GET_BLOBS_V2_REQUESTS_TOTAL,
+    BEACON_ENGINE_GET_BLOBS_V2_RESPONSES_TOTAL,
+    BEACON_ENGINE_GET_BLOBS_V3_COMPLETE_RESPONSES_TOTAL,
+    BEACON_ENGINE_GET_BLOBS_V3_PARTIAL_RESPONSES_TOTAL,
+    BEACON_ENGINE_GET_BLOBS_V3_REQUEST_DURATION_SECONDS, BEACON_ENGINE_GET_BLOBS_V3_REQUESTS_TOTAL,
+};
 use reqwest::{Client, Request, Url};
 use serde_json::json;
 use ssz::Encode;
@@ -516,6 +523,8 @@ impl ExecutionApi for ExecutionEngine {
         &self,
         blob_version_hashes: Vec<B256>,
     ) -> anyhow::Result<Option<Vec<BlobAndProofV2>>> {
+        BEACON_ENGINE_GET_BLOBS_V2_REQUESTS_TOTAL.inc();
+        let timer = BEACON_ENGINE_GET_BLOBS_V2_REQUEST_DURATION_SECONDS.start_timer();
         let request = JsonRpcRequest {
             id: 1,
             jsonrpc: "2.0".into(),
@@ -524,19 +533,27 @@ impl ExecutionApi for ExecutionEngine {
         };
 
         let req = self.build_request(request)?;
-
-        self.http_client
+        let result = self
+            .http_client
             .execute(req)
             .await?
             .json::<JsonRpcResponse<Option<Vec<BlobAndProofV2>>>>()
             .await?
-            .to_result()
+            .to_result();
+
+        timer.observe_duration();
+        if result.is_ok() {
+            BEACON_ENGINE_GET_BLOBS_V2_RESPONSES_TOTAL.inc();
+        }
+        result
     }
 
     async fn engine_get_blobs_v3(
         &self,
         blob_version_hashes: Vec<B256>,
     ) -> anyhow::Result<Option<Vec<Option<BlobAndProofV2>>>> {
+        BEACON_ENGINE_GET_BLOBS_V3_REQUESTS_TOTAL.inc();
+        let timer = BEACON_ENGINE_GET_BLOBS_V3_REQUEST_DURATION_SECONDS.start_timer();
         let request = JsonRpcRequest {
             id: 1,
             jsonrpc: "2.0".into(),
@@ -546,11 +563,22 @@ impl ExecutionApi for ExecutionEngine {
 
         let req = self.build_request(request)?;
 
-        self.http_client
+        let result = self
+            .http_client
             .execute(req)
             .await?
             .json::<JsonRpcResponse<Option<Vec<Option<BlobAndProofV2>>>>>()
             .await?
-            .to_result()
+            .to_result();
+
+        timer.observe_duration();
+        if let Ok(Some(ref blobs)) = result {
+            if blobs.iter().all(Option::is_some) {
+                BEACON_ENGINE_GET_BLOBS_V3_COMPLETE_RESPONSES_TOTAL.inc();
+            } else {
+                BEACON_ENGINE_GET_BLOBS_V3_PARTIAL_RESPONSES_TOTAL.inc();
+            }
+        }
+        result
     }
 }

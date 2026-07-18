@@ -8,6 +8,11 @@ use ream_consensus_misc::{
     constants::beacon::{DOMAIN_BEACON_PROPOSER, GENESIS_SLOT},
     misc::{compute_epoch_at_slot, compute_signing_root, compute_start_slot_at_epoch},
 };
+use ream_metrics::{
+    BEACON_DATA_COLUMN_SIDECAR_GOSSIP_VERIFICATION_SECONDS,
+    BEACON_DATA_COLUMN_SIDECAR_PROCESSING_REQUESTS_TOTAL,
+    BEACON_DATA_COLUMN_SIDECAR_PROCESSING_SUCCESSES_TOTAL,
+};
 use ream_network_spec::networks::beacon_network_spec;
 use ream_polynomial_commitments::handlers::verify_data_column_sidecar_kzg_proofs;
 use ream_storage::{
@@ -18,6 +23,32 @@ use ream_storage::{
 use super::result::ValidationResult;
 
 pub async fn validate_data_column_sidecar_full(
+    data_column_sidecar: &DataColumnSidecar,
+    beacon_chain: &BeaconChain,
+    current_time_ms: u64,
+    subnet_id: u64,
+    cached_db: &BeaconCacheDB,
+) -> anyhow::Result<ValidationResult> {
+    BEACON_DATA_COLUMN_SIDECAR_PROCESSING_REQUESTS_TOTAL.inc();
+    let timer = BEACON_DATA_COLUMN_SIDECAR_GOSSIP_VERIFICATION_SECONDS.start_timer();
+
+    let result = validate_data_column_sidecar_full_inner(
+        data_column_sidecar,
+        beacon_chain,
+        current_time_ms,
+        subnet_id,
+        cached_db,
+    )
+    .await;
+
+    timer.observe_duration();
+    if matches!(result, Ok(ValidationResult::Accept)) {
+        BEACON_DATA_COLUMN_SIDECAR_PROCESSING_SUCCESSES_TOTAL.inc();
+    }
+    result
+}
+
+async fn validate_data_column_sidecar_full_inner(
     data_column_sidecar: &DataColumnSidecar,
     beacon_chain: &BeaconChain,
     current_time_ms: u64,

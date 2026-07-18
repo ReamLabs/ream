@@ -7,6 +7,7 @@ use ream_consensus_misc::polynomial_commitments::{
     kzg_commitment::KZGCommitment, kzg_proof::KZGProof,
 };
 use ream_execution_rpc_types::get_blobs::Blob;
+use ream_metrics::BEACON_KZG_VERIFICATION_DATA_COLUMN_BATCH_SECONDS;
 use rust_kzg_blst::{
     eip_7594::BlstBackend,
     types::{fr::FsFr, g1::FsG1, kzg_settings::FsKZGSettings},
@@ -54,6 +55,8 @@ pub fn verify_cell_kzg_proof_batch(
     cells: &VariableList<Cell, MaxBlobCommitmentsPerBlock>,
     proofs_bytes: &VariableList<KZGProof, MaxBlobCommitmentsPerBlock>,
 ) -> anyhow::Result<bool> {
+    let _timer = BEACON_KZG_VERIFICATION_DATA_COLUMN_BATCH_SECONDS.start_timer();
+
     verify_cell_kzg_proof_batch_refs(
         &commitments_bytes.iter().collect::<Vec<_>>(),
         cell_indices,
@@ -88,6 +91,8 @@ fn verify_cell_kzg_proof_batch_refs(
     cells: &[&Cell],
     proofs_bytes: &[&KZGProof],
 ) -> anyhow::Result<bool> {
+    let _timer = BEACON_KZG_VERIFICATION_DATA_COLUMN_BATCH_SECONDS.start_timer();
+
     if commitments_bytes.len() != cells.len()
         || cells.len() != proofs_bytes.len()
         || proofs_bytes.len() != cell_indices.len()

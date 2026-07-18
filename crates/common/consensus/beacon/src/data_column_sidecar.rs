@@ -5,6 +5,10 @@ use ream_consensus_misc::{
     polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
 };
 use ream_merkle::is_valid_merkle_branch;
+use ream_metrics::{
+    BEACON_DATA_COLUMN_SIDECAR_COMPUTATION_SECONDS,
+    BEACON_DATA_COLUMN_SIDECAR_INCLUSION_PROOF_VERIFICATION_SECONDS,
+};
 use ream_network_spec::networks::beacon_network_spec;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
@@ -64,6 +68,7 @@ impl DataColumnSidecar {
 
     /// Verifies that the kzg_commitments list is included in the block body
     pub fn verify_inclusion_proof(&self) -> bool {
+        let _timer = BEACON_DATA_COLUMN_SIDECAR_INCLUSION_PROOF_VERIFICATION_SECONDS.start_timer();
         is_valid_merkle_branch(
             self.kzg_commitments.tree_hash_root(),
             &self.kzg_commitments_inclusion_proof,
@@ -111,6 +116,8 @@ pub fn get_data_column_sidecars(
     kzg_commitments_inclusion_proof: FixedVector<B256, typenum::U4>,
     cells_and_kzg_proofs: Vec<(Vec<Cell>, Vec<KZGProof>)>,
 ) -> Result<Vec<DataColumnSidecar>, DataColumnSidecarError> {
+    let _timer = BEACON_DATA_COLUMN_SIDECAR_COMPUTATION_SECONDS.start_timer();
+
     if cells_and_kzg_proofs.len() != kzg_commitments.len() {
         return Err(DataColumnSidecarError::CommitmentCountMismatch {
             actual: cells_and_kzg_proofs.len(),
