@@ -8,6 +8,7 @@ use ream_consensus_misc::{
     constants::beacon::INTERVALS_PER_SLOT, misc::compute_start_slot_at_epoch,
 };
 use ream_execution_engine::engine_trait::ExecutionApi;
+use ream_metrics::BEACON_PROCESSED_DEPOSITS_TOTAL;
 use ream_network_spec::networks::beacon_network_spec;
 use ream_storage::{
     errors::StoreError,
@@ -85,6 +86,8 @@ pub async fn on_block(
         .state_transition(signed_block, true, execution_engine)
         .await?;
 
+    BEACON_PROCESSED_DEPOSITS_TOTAL.set(state.eth1_deposit_index as i64);
+
     // Add new block to the store
     store
         .db
@@ -120,6 +123,7 @@ pub async fn on_block(
     store.update_checkpoints(
         state.current_justified_checkpoint,
         state.finalized_checkpoint,
+        state.previous_justified_checkpoint,
     )?;
 
     // Eagerly compute unrealized justification and finality.

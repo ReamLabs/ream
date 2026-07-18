@@ -10,3 +10,9 @@ scrape_configs:
         - host.docker.internal:8080
         labels:
           instance: local_node
+  - job_name: "beacon_node"
+    static_configs:
+      - targets:
+        - host.docker.internal:8008
+        labels:
+          instance: local_node

@@ -1,17 +1,21 @@
 use std::sync::Arc;
 
-use anyhow::bail;
+use anyhow::{anyhow, bail};
 use ream_consensus_beacon::{
     attestation::Attestation, attester_slashing::AttesterSlashing,
     electra::beacon_block::SignedBeaconBlock,
 };
-use ream_consensus_misc::constants::beacon::{FULU_FORK_EPOCH, genesis_validators_root};
+use ream_consensus_misc::{
+    constants::beacon::{FULU_FORK_EPOCH, genesis_validators_root},
+    misc::compute_epoch_at_slot,
+};
 use ream_events_beacon::{BeaconEvent, BeaconEventSender, event::chain::BlockEvent};
 use ream_execution_engine::ExecutionEngine;
 use ream_fork_choice_beacon::{
     handlers::{on_attestation, on_attester_slashing, on_block, on_tick},
     store::Store,
 };
+use ream_metrics::{BEACON_HEAD_EPOCH, BEACON_HEAD_SLOT, BEACON_REORGS_TOTAL};
 use ream_network_spec::networks::beacon_network_spec;
 use ream_operation_pool::OperationPool;
 use ream_req_resp::beacon::messages::status::Status;
@@ -48,6 +52,7 @@ impl BeaconChain {
 
     pub async fn process_block(&self, signed_block: SignedBeaconBlock) -> anyhow::Result<()> {
         let mut store = self.store.lock().await;
+        let previous_head = store.get_head().ok();
 
         on_block(
             &mut store,
@@ -57,7 +62,34 @@ impl BeaconChain {
         )
         .await?;
 
-        // Build and Emit Block event
+        let new_head = store.get_head()?;
+        let new_head_block = store
+            .db
+            .block_provider()
+            .get(new_head)?
+            .ok_or_else(|| anyhow!("head block not found in store"))?;
+        let new_head_slot = new_head_block.message.slot;
+
+        BEACON_HEAD_SLOT.set(new_head_slot as i64);
+        BEACON_HEAD_EPOCH.set(compute_epoch_at_slot(new_head_slot) as i64);
+
+        // Detect canonical chain reorgs for beacon_reorgs_total.
+        // A head change alone is insufficient because normal chain extensions
+        // also change the head. We only count a reorg when the previous head
+        // is no longer an ancestor of the new head.
+        if let Some(previous_head) = previous_head
+            && previous_head != new_head
+            && let Some(previous_head_block) = store.db.block_provider().get(previous_head)?
+        {
+            let previous_head_slot = previous_head_block.message.slot;
+            let still_ancestor =
+                store.get_ancestor(new_head, previous_head_slot).ok() == Some(previous_head);
+
+            if !still_ancestor {
+                BEACON_REORGS_TOTAL.inc();
+            }
+        }
+
         let finalized_checkpoint = store.db.finalized_checkpoint_provider().get().ok();
         let block_event =
             BlockEvent::from_block(&signed_block, finalized_checkpoint, |block_root, epoch| {
