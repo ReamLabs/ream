@@ -38,6 +38,7 @@ ream-execution-rpc-types.workspace = true
 ream-executor.workspace = true
 ream-fork-choice-beacon.workspace = true
 ream-light-client.workspace = true
+ream-metrics.workspace = true
 ream-network-spec.workspace = true
 ream-operation-pool.workspace = true
 ream-p2p.workspace = true

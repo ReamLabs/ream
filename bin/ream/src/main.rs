@@ -56,7 +56,8 @@ use ream_fork_choice_lean::{
 };
 use ream_keystore::keystore::EncryptedKeystore;
 use ream_metrics::{
-    ATTESTATION_COMMITTEE_SUBNET, NODE_INFO, NODE_START_TIME_SECONDS, set_int_gauge_vec,
+    ATTESTATION_COMMITTEE_SUBNET, NODE_INFO, NODE_START_TIME_SECONDS, init_node_metrics,
+    set_int_gauge_vec,
 };
 use ream_network_manager::service::NetworkManagerService;
 use ream_network_spec::networks::{
@@ -496,6 +497,17 @@ async fn run_beacon_node_inner(
     initialize_globals: bool,
 ) {
     info!("starting up beacon node...");
+
+    if config.enable_metrics {
+        let address = SocketAddr::new(config.metrics_address, config.metrics_port);
+        prometheus_exporter::start(address).expect("Failed to start prometheus exporter");
+        info!(
+            "Metrics started on {}:{}",
+            config.metrics_address, config.metrics_port
+        );
+
+        init_node_metrics();
+    }
 
     if initialize_globals {
         set_beacon_network_spec(config.network.clone());

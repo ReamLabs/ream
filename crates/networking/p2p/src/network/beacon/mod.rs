@@ -34,6 +34,7 @@ use peer::CachedPeer;
 use ream_consensus_misc::constants::beacon::{FULU_FORK_EPOCH, genesis_validators_root};
 use ream_discv5::discovery::{Discovery, DiscoveryOutEvent, QueryType};
 use ream_executor::ReamExecutor;
+use ream_metrics::set_peer_count;
 use ream_network_spec::networks::beacon_network_spec;
 use ream_peer::{ConnectionState, Direction};
 use ream_req_resp::{
@@ -514,7 +515,7 @@ impl Network {
                     ));
                     self.send_request(peer_id, ping_message);
                 }
-
+                set_peer_count(self.network_state.connected_peers().len() as i64);
                 None
             }
             SwarmEvent::ConnectionClosed {
@@ -527,6 +528,7 @@ impl Network {
                         .update_peer_state(peer_id, ConnectionState::Disconnected);
                     self.peers_to_ping.remove(&peer_id);
                     trace!("Peer {peer_id} connection closed. Removed from peers_to_ping.");
+                    set_peer_count(self.network_state.connected_peers().len() as i64);
                     Some(ReamNetworkEvent::PeerDisconnected(peer_id))
                 } else {
                     None

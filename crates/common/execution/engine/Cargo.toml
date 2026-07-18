@@ -31,6 +31,7 @@ tree_hash_derive.workspace = true
 # ream dependencies
 ream-consensus-misc.workspace = true
 ream-execution-rpc-types.workspace = true
+ream-metrics.workspace = true
 
 [lints]
 workspace = true
