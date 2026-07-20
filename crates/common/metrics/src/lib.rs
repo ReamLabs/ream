@@ -534,7 +534,7 @@ lazy_static::lazy_static! {
         let histogram_opts = HistogramOpts::new(
             "lean_tick_interval_duration_seconds",
             "Tracks elapsed time between clock ticks in seconds"
-        ).buckets(vec![0.4, 0.6, 0.75, 0.8, 0.805, 0.81, 0.815, 0.82, 0.825, 0.85, 0.9, 1.0, 1.2, 1.6]);
+        ).buckets(vec![0.4, 0.6, 0.75, 0.8, 0.805, 0.81, 0.815, 0.82, 0.825, 0.85, 0.9, 1.0, 1.2, 1.6, 1.8, 2.0, 2.5, 3.0, 4.0]);
         register_histogram_vec_with_registry!(
             histogram_opts,
             &[],
