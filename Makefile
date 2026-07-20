@@ -14,6 +14,9 @@ CARGO_INSTALL_EXTRA_FLAGS ?=
 
 CARGO_TARGET_DIR ?= target
 
+IMAGE ?= ream-local
+TAG ?= dev
+
 ##@ Help
 
 .PHONY: help
@@ -139,3 +142,12 @@ docker-build-push:
 		--build-arg BUILD_DATE=$(BUILD_DATE) \
 		--provenance=false \
 		--push
+
+.PHONY: docker-local
+docker-local:
+	docker build \
+		-f Dockerfile \
+		--build-arg BUILD_PROFILE=release \
+		--build-arg FEATURES="$(FEATURES)" \
+		-t $(IMAGE):$(TAG) \
+		.

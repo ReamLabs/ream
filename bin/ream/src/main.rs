@@ -33,7 +33,9 @@ use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_chain_lean::{
     messages::LeanChainServiceMessage, p2p_request::LeanP2PRequest, service::LeanChainService,
 };
-use ream_checkpoint_sync_beacon::initialize_db_from_checkpoint;
+use ream_checkpoint_sync_beacon::{
+    initialize_db_from_checkpoint, initialize_db_from_genesis_state,
+};
 use ream_checkpoint_sync_lean::{LeanCheckpointClient, verify_checkpoint_state};
 #[cfg(feature = "devnet5")]
 use ream_consensus_lean::attestation::MultiMessageAggregate;
@@ -508,13 +510,18 @@ async fn run_beacon_node_inner(
 
     info!("ream beacon database has been initialized");
 
-    let _is_ws_verified = initialize_db_from_checkpoint(
-        beacon_db.clone(),
-        config.checkpoint_sync_url.clone(),
-        config.weak_subjectivity_checkpoint,
-    )
-    .await
-    .expect("Unable to initialize database from checkpoint");
+    if let Some(genesis_state_path) = &config.genesis_state_path {
+        initialize_db_from_genesis_state(beacon_db.clone(), genesis_state_path)
+            .expect("Unable to initialize database from genesis state");
+    } else {
+        let _is_ws_verified = initialize_db_from_checkpoint(
+            beacon_db.clone(),
+            config.checkpoint_sync_url.clone(),
+            config.weak_subjectivity_checkpoint,
+        )
+        .await
+        .expect("Unable to initialize database from checkpoint");
+    }
 
     info!("Database Initialization completed");
 

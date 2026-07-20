@@ -12,7 +12,6 @@ use crate::cli::constants::{
     DEFAULT_HTTP_ALLOW_ORIGIN, DEFAULT_HTTP_PORT, DEFAULT_NETWORK, DEFAULT_SOCKET_ADDRESS,
     DEFAULT_SOCKET_PORT,
 };
-
 #[derive(Debug, Parser)]
 pub struct BeaconNodeConfig {
     #[arg(
@@ -59,6 +58,17 @@ pub struct BeaconNodeConfig {
         help = "Weak subjectivity checkpoint in format <0xblock_root>:<epoch>"
     )]
     pub weak_subjectivity_checkpoint: Option<Checkpoint>,
+
+    #[arg(
+        long,
+        help = "Path to an SSZ-encoded genesis BeaconState file. Bootstraps the database directly \
+            from genesis, skipping checkpoint sync entirely. Use this for local devnets (e.g. \
+            Kurtosis) where no already-synced peer exists to checkpoint-sync from. Mutually \
+            exclusive with --checkpoint-sync-url in practice — if both are unset and the network \
+            has no default checkpoint sync sources (dev, custom), startup will fail.",
+        conflicts_with = "checkpoint_sync_url"
+    )]
+    pub genesis_state_path: Option<PathBuf>,
 
     #[arg(
         long,
