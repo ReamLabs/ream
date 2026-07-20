@@ -35,14 +35,17 @@ use ream_consensus_beacon::{
 };
 use ream_consensus_misc::{
     attestation_data::AttestationData,
+    checkpoint::Checkpoint,
     constants::beacon::{
         DOMAIN_AGGREGATE_AND_PROOF, DOMAIN_BEACON_ATTESTER, DOMAIN_RANDAO, DOMAIN_SYNC_COMMITTEE,
-        MAX_COMMITTEES_PER_SLOT, PROPOSER_REWARD_QUOTIENT, SLOTS_PER_EPOCH,
+        FULU_FORK_EPOCH, MAX_COMMITTEES_PER_SLOT, PROPOSER_REWARD_QUOTIENT, SLOTS_PER_EPOCH,
         SYNC_COMMITTEE_PROPOSER_REWARD_QUOTIENT, WHISTLEBLOWER_REWARD_QUOTIENT,
     },
     deposit::Deposit,
     fork_name::ForkName,
-    misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
+    misc::{
+        compute_domain, compute_epoch_at_slot, compute_signing_root, compute_start_slot_at_epoch,
+    },
     polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
     validator::Validator,
 };
@@ -57,15 +60,13 @@ use ream_execution_rpc_types::{
 };
 use ream_fork_choice_beacon::store::Store;
 use ream_network_manager::gossipsub::validate::sync_committee_contribution_and_proof::get_sync_subcommittee_pubkeys;
+use ream_network_spec::networks::beacon_network_spec;
 use ream_operation_pool::OperationPool;
 use ream_p2p::{
     gossipsub::beacon::topics::{GossipTopic, GossipTopicKind},
     network::beacon::Network,
 };
-use ream_storage::{
-    db::beacon::BeaconDB,
-    tables::{field::REDBField, table::REDBTable},
-};
+use ream_storage::{db::beacon::BeaconDB, tables::table::REDBTable};
 use ream_sync_committee_pool::SyncCommitteePool;
 use ream_validator_beacon::{
     aggregate_and_proof::SignedAggregateAndProof,
@@ -97,6 +98,10 @@ use super::state::get_state_from_id;
 ///  For slots in Electra and later, this AttestationData must have a committee_index of 0.
 const ELECTRA_COMMITTEE_INDEX: u64 = 0;
 const MAX_VALIDATOR_COUNT: usize = 100;
+
+fn gossip_fork_digest(state: &BeaconState) -> B32 {
+    beacon_network_spec().fork_digest(FULU_FORK_EPOCH, state.genesis_validators_root)
+}
 
 fn build_validator_balances(
     validators: &[(Validator, u64)],
@@ -288,7 +293,6 @@ pub async fn post_validators_from_state(
     db: Data<BeaconDB>,
     state_id: Path<ID>,
     request: Json<ValidatorsPostRequest>,
-    _status_query: Json<StatusQuery>,
 ) -> Result<impl Responder, ApiError> {
     let ValidatorsPostRequest { ids, statuses, .. } = request.into_inner();
     let status_query = StatusQuery { status: statuses };
@@ -504,6 +508,7 @@ fn check_validator_participation(
         Ok(validator.is_active_validator(epoch))
     }
 }
+
 #[get("/validator/attestation_data")]
 pub async fn get_attestation_data(
     db: Data<BeaconDB>,
@@ -516,7 +521,7 @@ pub async fn get_attestation_data(
         None,
     );
 
-    if store.is_syncing().map_err(|err| {
+    if store.is_syncing_for_validator_api().map_err(|err| {
         ApiError::InternalError(format!("Failed to check syncing status, err: {err:?}"))
     })? {
         return Err(ApiError::UnderSyncing);
@@ -524,9 +529,9 @@ pub async fn get_attestation_data(
 
     let slot = query.slot;
 
-    let current_slot = store
-        .get_current_slot()
-        .map_err(|err| ApiError::InternalError(format!("Failed to slot_index, error: {err:?}")))?;
+    let current_slot = store.get_current_slot().map_err(|err| {
+        ApiError::InternalError(format!("Failed to get current slot, err: {err:?}"))
+    })?;
 
     if slot > current_slot + 1 {
         return Err(ApiError::InvalidParameter(format!(
@@ -534,24 +539,52 @@ pub async fn get_attestation_data(
         )));
     }
 
-    let beacon_block_root = db
-        .slot_index_provider()
-        .get_highest_root()
-        .map_err(|err| ApiError::InternalError(format!("Failed to slot_index, error: {err:?}")))?
-        .ok_or(ApiError::NotFound(
-            "Failed to find highest block root".to_string(),
-        ))?;
+    let head_root = store
+        .get_head()
+        .map_err(|err| ApiError::InternalError(format!("Failed to get head root: {err:?}")))?;
 
-    let source_checkpoint = db.justified_checkpoint_provider().get().map_err(|err| {
-        ApiError::InternalError(format!("Failed to get source checkpoint, error: {err:?}"))
-    })?;
+    let state = db
+        .state_provider()
+        .get(head_root)
+        .map_err(|err| ApiError::InternalError(format!("Failed to get state, error: {err:?}")))?
+        .ok_or_else(|| ApiError::NotFound(format!("Failed to find state for root {head_root}")))?;
 
-    let target_checkpoint = db
-        .unrealized_justified_checkpoint_provider()
-        .get()
-        .map_err(|err| {
-            ApiError::InternalError(format!("Failed to target checkpoint, error: {err:?}"))
-        })?;
+    let beacon_block_root = if slot >= state.slot {
+        head_root
+    } else {
+        state
+            .get_block_root_at_slot(slot)
+            .or_else(|_| store.get_ancestor(head_root, slot))
+            .map_err(|err| {
+                ApiError::InternalError(format!(
+                    "Failed to get attestation beacon block root, error: {err:?}"
+                ))
+            })?
+    };
+
+    let target_epoch = compute_epoch_at_slot(slot);
+    let source_checkpoint = if target_epoch == state.get_previous_epoch() {
+        state.previous_justified_checkpoint
+    } else {
+        state.current_justified_checkpoint
+    };
+    let target_slot = compute_start_slot_at_epoch(target_epoch);
+    let target_root = if state.slot <= target_slot {
+        beacon_block_root
+    } else {
+        state
+            .get_block_root(target_epoch)
+            .or_else(|_| store.get_checkpoint_block(beacon_block_root, target_epoch))
+            .map_err(|err| {
+                ApiError::InternalError(format!(
+                    "Failed to get target checkpoint block, error: {err:?}"
+                ))
+            })?
+    };
+    let target_checkpoint = Checkpoint {
+        epoch: target_epoch,
+        root: target_root,
+    };
 
     Ok(HttpResponse::Ok().json(DataResponse::new(AttestationData {
         slot,
@@ -587,7 +620,7 @@ pub async fn get_sync_committee_contribution(
 ) -> Result<impl Responder, ApiError> {
     let store = Store::new(db.get_ref().clone(), operation_pool.get_ref().clone(), None);
 
-    if store.is_syncing().map_err(|err| {
+    if store.is_syncing_for_validator_api().map_err(|err| {
         ApiError::InternalError(format!("Failed to check syncing status, err: {err:?}"))
     })? {
         return Err(ApiError::UnderSyncing);
@@ -806,7 +839,7 @@ pub async fn post_beacon_committee_subscriptions(
         let subnet_id =
             compute_subnet_for_attestation(sub.committees_at_slot, sub.slot, sub.committee_index);
 
-        let fork = state.fork.current_version;
+        let fork = gossip_fork_digest(&state);
 
         subnets.insert((subnet_id, fork));
     }
@@ -909,7 +942,7 @@ pub async fn post_sync_committee_subscriptions(
             )));
         }
 
-        let fork = state.fork.current_version;
+        let fork = gossip_fork_digest(&state);
         for subnet_id in validator_subnets {
             subnets_to_subscribe.insert((subnet_id, fork));
         }
@@ -954,8 +987,8 @@ fn verify_validator_registration_signature(
 #[post("/validator/register_validator")]
 pub async fn post_register_validator(
     db: Data<BeaconDB>,
-    builder_client: Option<
-        Data<Arc<ream_validator_beacon::builder::builder_client::BuilderClient>>,
+    builder_client: Data<
+        Option<Arc<ream_validator_beacon::builder::builder_client::BuilderClient>>,
     >,
     registrations: Json<Vec<SignedValidatorRegistrationV1>>,
 ) -> Result<impl Responder, ApiError> {
@@ -1002,7 +1035,7 @@ pub async fn post_register_validator(
         }
 
         // Forward immediately to builder if available
-        if let Some(ref client) = builder_client {
+        if let Some(client) = builder_client.get_ref().as_ref() {
             client
                 .register_validator(registration)
                 .await
@@ -1123,8 +1156,8 @@ pub async fn post_contribution_and_proofs(
 ) -> Result<impl Responder, ApiError> {
     let store = Store::new(db.get_ref().clone(), operation_pool.get_ref().clone(), None);
 
-    if store.is_syncing().map_err(|err| {
-        ApiError::InternalError(format!("Failed to check syncing status: {err:?}"))
+    if store.is_syncing_for_validator_api().map_err(|err| {
+        ApiError::InternalError(format!("Failed to check syncing status, err: {err:?}"))
     })? {
         return Err(ApiError::UnderSyncing);
     }
@@ -1374,8 +1407,8 @@ pub async fn get_blocks_v3(
     query: Query<BlockQuery>,
     db: Data<BeaconDB>,
     operation_pool: Data<Arc<OperationPool>>,
-    execution_engine: Option<Data<ExecutionEngine>>,
-    builder_client: Option<Data<Arc<BuilderClient>>>,
+    execution_engine: Data<Option<ExecutionEngine>>,
+    builder_client: Data<Option<Arc<BuilderClient>>>,
 ) -> Result<impl Responder, ApiError> {
     let slot = path.into_inner();
     let query_params = query.into_inner();
@@ -1384,9 +1417,15 @@ pub async fn get_blocks_v3(
     let skip_randao_verification = query_params.skip_randao_verification.unwrap_or(false);
     let builder_boost_factor = query_params.builder_boost_factor.unwrap_or(100);
 
-    let mut state = db.get_latest_state().map_err(|err| {
-        ApiError::InternalError(format!("Unable to fetch the latest state: {err}"))
-    })?;
+    let store = Store::new(db.get_ref().clone(), operation_pool.get_ref().clone(), None);
+    let head_root = store
+        .get_head()
+        .map_err(|err| ApiError::InternalError(format!("Failed to get head root: {err:?}")))?;
+    let mut state = db
+        .state_provider()
+        .get(head_root)
+        .map_err(|err| ApiError::InternalError(format!("Failed to get state, error: {err:?}")))?
+        .ok_or_else(|| ApiError::NotFound(format!("Failed to find state for root {head_root}")))?;
 
     let current_slot = state.slot;
 
@@ -1395,6 +1434,11 @@ pub async fn get_blocks_v3(
             "Current slot is greater than requested slot".into(),
         ));
     }
+
+    // Process slots to get state at the requested slot.
+    state
+        .process_slots(slot)
+        .map_err(|err| ApiError::InternalError(format!("Failed to process slots: {err}")))?;
 
     let proposer_index = state.get_beacon_proposer_index(Some(slot)).map_err(|err| {
         ApiError::InternalError(format!(
@@ -1417,11 +1461,6 @@ pub async fn get_blocks_v3(
         skip_randao_verification,
         &proposer_public_key,
     )?;
-
-    // Process slots to get state at the requested slot
-    state
-        .process_slots(slot)
-        .map_err(|err| ApiError::InternalError(format!("Failed to process slots: {err}")))?;
 
     let fee_recipient = operation_pool
         .get_proposer_preparation(proposer_index)
@@ -1449,21 +1488,21 @@ pub async fn get_blocks_v3(
         parent_beacon_block_root: state.latest_block_header.tree_hash_root(),
     };
 
-    let Some(execution_engine) = execution_engine else {
+    let Some(execution_engine) = execution_engine.get_ref().as_ref() else {
         return Err(ApiError::InternalError(
             "Execution engine not available".into(),
         ));
     };
 
     let (local_payload, local_execution_value) = get_local_execution_payload(
-        &execution_engine,
+        execution_engine,
         fork_name,
         forkchoice_state,
         payload_attribute,
     )
     .await?;
 
-    let builder_client_ref = builder_client.as_ref().map(|bc| bc.as_ref());
+    let builder_client_ref = builder_client.get_ref().as_ref();
     let (use_builder, builder_bid, builder_value) = compare_builder_vs_local(
         builder_client_ref,
         state.latest_execution_payload_header.block_hash,
@@ -1483,7 +1522,7 @@ pub async fn get_blocks_v3(
         .try_into()
         .unwrap_or_default();
     let attestations: VariableList<Attestation, U8> = operation_pool
-        .get_all_attestations()
+        .get_attestations_for_block(&state)
         .try_into()
         .unwrap_or_default();
     let deposits: VariableList<Deposit, U16> = operation_pool
@@ -1494,12 +1533,15 @@ pub async fn get_blocks_v3(
         .get_signed_voluntary_exits()
         .try_into()
         .unwrap_or_default();
-    let sync_aggregate = operation_pool
+    let mut sync_aggregate = operation_pool
         .get_sync_aggregate(
             slot.saturating_sub(1),
             state.latest_block_header.tree_hash_root(),
         )
         .unwrap_or_default();
+    if sync_aggregate.sync_committee_bits.num_set_bits() == 0 {
+        sync_aggregate.sync_committee_signature = BLSSignature::infinity();
+    }
     let bls_to_execution_changes: VariableList<SignedBLSToExecutionChange, U16> = operation_pool
         .get_signed_bls_to_execution_changes()
         .try_into()
@@ -1606,13 +1648,21 @@ pub async fn get_blocks_v3(
         execution_requests,
     };
 
-    let block = BeaconBlock {
+    let mut block = BeaconBlock {
         slot,
         proposer_index,
         parent_root: state.latest_block_header.tree_hash_root(),
-        state_root: state.tree_hash_root(),
+        state_root: B256::default(),
         body: block_body,
     };
+    let mut post_state = state.clone();
+    post_state
+        .process_block(&block, &Option::<ExecutionEngine>::None)
+        .await
+        .map_err(|err| {
+            ApiError::InternalError(format!("Failed to compute post-state root: {err}"))
+        })?;
+    block.state_root = post_state.tree_hash_root();
 
     let blob_versioned_hashes: Vec<B256> = blob_kzg_commitments
         .iter()

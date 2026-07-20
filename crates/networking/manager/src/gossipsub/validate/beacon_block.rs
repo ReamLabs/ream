@@ -103,6 +103,10 @@ pub async fn validate_beacon_block(
         ));
     }
 
+    if is_parent {
+        return Ok(ValidationResult::Accept);
+    }
+
     // [IGNORE] The block is from a slot greater than the latest finalized slot.
     if block.message.slot
         <= compute_start_slot_at_epoch(store.db.finalized_checkpoint_provider().get()?.epoch)

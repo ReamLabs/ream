@@ -154,14 +154,12 @@ impl BlockCache {
             Some(range) => return DataToFetch::BlockRange(range),
             None => {
                 let estimated_blocks_to_fetch = self.estimated_blocks_to_fetch();
-                if estimated_blocks_to_fetch > 0 && self.next_start_slot <= finalized_slot {
+                if estimated_blocks_to_fetch > 0 && self.next_start_slot < finalized_slot {
                     let blocks_to_fill = estimated_blocks_to_fetch
                         .min(MAX_BLOCKS_PER_REQUEST.min(finalized_slot - self.next_start_slot));
+                    let start_slot = self.next_start_slot + 1;
                     self.next_start_slot += blocks_to_fill;
-                    return DataToFetch::BlockRange(Range::new(
-                        self.next_start_slot,
-                        blocks_to_fill,
-                    ));
+                    return DataToFetch::BlockRange(Range::new(start_slot, blocks_to_fill));
                 }
             }
         }
@@ -266,5 +264,36 @@ impl std::fmt::Display for DataToFetch {
             DataToFetch::DownloadsInProgress => write!(f, "DownloadsInProgress"),
             DataToFetch::Finished => write!(f, "Finished"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ream_network_spec::networks::beacon::initialize_test_network_spec;
+
+    use super::*;
+
+    #[test]
+    fn data_to_fetch_finishes_at_finalized_slot() {
+        initialize_test_network_spec();
+        let mut cache = BlockCache::new(B256::ZERO, 10);
+
+        assert_eq!(cache.data_to_fetch(10), DataToFetch::Finished);
+    }
+
+    #[test]
+    fn data_to_fetch_requests_contiguous_non_empty_ranges() {
+        initialize_test_network_spec();
+        let mut cache = BlockCache::new(B256::ZERO, 10);
+
+        assert_eq!(
+            cache.data_to_fetch(25),
+            DataToFetch::BlockRange(Range::new(11, 10))
+        );
+        assert_eq!(
+            cache.data_to_fetch(25),
+            DataToFetch::BlockRange(Range::new(21, 5))
+        );
+        assert_eq!(cache.data_to_fetch(25), DataToFetch::Finished);
     }
 }

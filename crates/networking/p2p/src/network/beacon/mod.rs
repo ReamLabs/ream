@@ -20,7 +20,9 @@ use libp2p::{
     connection_limits::{self, ConnectionLimits},
     core::ConnectedPoint,
     futures::StreamExt,
-    gossipsub::{Event as GossipsubEvent, IdentTopic as Topic, Message, MessageAuthenticity},
+    gossipsub::{
+        Event as GossipsubEvent, IdentTopic as Topic, Message, MessageAuthenticity, MessageId,
+    },
     identify,
     multiaddr::Protocol,
     swarm::{self, ConnectionId, NetworkBehaviour, SwarmEvent},
@@ -92,6 +94,8 @@ pub enum ReamNetworkEvent {
         message: BeaconRequestMessage,
     },
     GossipsubMessage {
+        propagation_source: PeerId,
+        message_id: MessageId,
         message: Message,
     },
 }
@@ -104,6 +108,7 @@ pub struct Network {
     request_id: u64,
     network_state: Arc<NetworkState>,
     peers_to_ping: HashSetDelay<PeerId>,
+    bootnodes: Vec<Enr>,
 }
 
 impl Network {
@@ -221,6 +226,7 @@ impl Network {
             request_id: 0,
             network_state,
             peers_to_ping: HashSetDelay::new(PING_INTERVAL_DURATION),
+            bootnodes: config.discv5_config.bootnodes.clone(),
         };
 
         network.start_network_worker(config).await?;
@@ -304,9 +310,19 @@ impl Network {
         manager_sender: UnboundedSender<ReamNetworkEvent>,
         mut p2p_receiver: UnboundedReceiver<P2PMessage>,
     ) {
+        let mut bootnode_redial_interval = interval(Duration::from_secs(20));
         let mut status_interval = interval(Duration::from_secs(30));
         loop {
             tokio::select! {
+                _ = bootnode_redial_interval.tick() => {
+                    let bootnodes = self
+                        .bootnodes
+                        .iter()
+                        .cloned()
+                        .map(|bootnode| (bootnode, None))
+                        .collect();
+                    self.handle_discovered_peers(bootnodes);
+                }
                 Some(event) = self.swarm.next() => {
                     if let Some(event) = self.parse_swarm_event(event).await && let Err(err) = manager_sender.send(event) {
                         warn!("Failed to send event: {err:?}");
@@ -346,6 +362,20 @@ impl Network {
                         P2PMessage::Gossip(message) => {
                             if let Err(err) = self.swarm.behaviour_mut().gossipsub.publish(message.topic, message.data) {
                                 warn!("Failed to publish gossip message: {err}");
+                            }
+                        }
+                        P2PMessage::ReportGossipValidation { message_id, propagation_source, acceptance } => {
+                            if !self
+                                .swarm
+                                .behaviour_mut()
+                                .gossipsub
+                                .report_message_validation_result(
+                                    &message_id,
+                                    &propagation_source,
+                                    acceptance,
+                                )
+                            {
+                                trace!("Gossipsub message was not in validation cache: {message_id}");
                             }
                         }
                     }
@@ -533,12 +563,36 @@ impl Network {
     fn handle_discovered_peers(&mut self, peers: HashMap<Enr, Option<Instant>>) {
         trace!("Discovered peers: {peers:?}");
         for (enr, _) in peers {
+            let Some(peer_id) = peer_id_from_enr(&enr) else {
+                trace!("Skipping peer with no peer id in ENR: {enr:?}");
+                continue;
+            };
+            if peer_id == self.peer_id {
+                trace!("Skipping self peer: {peer_id:?}");
+                continue;
+            }
+
+            let peer_state = self
+                .network_state
+                .peer_table
+                .read()
+                .get(&peer_id)
+                .map(|peer| peer.state);
+            if matches!(
+                peer_state,
+                Some(ConnectionState::Connected | ConnectionState::Connecting)
+            ) {
+                trace!("Peer {peer_id:?} is already {peer_state:?}, skipping dial");
+                continue;
+            }
+
             let mut multiaddrs: Vec<Multiaddr> = Vec::new();
             if let Some(ip) = enr.ip4()
                 && let Some(tcp) = enr.tcp4()
             {
                 let mut multiaddr: Multiaddr = ip.into();
                 multiaddr.push(Protocol::Tcp(tcp));
+                multiaddr.push(Protocol::P2p(peer_id));
                 multiaddrs.push(multiaddr);
             }
             if let Some(ip6) = enr.ip6()
@@ -546,32 +600,32 @@ impl Network {
             {
                 let mut multiaddr: Multiaddr = ip6.into();
                 multiaddr.push(Protocol::Tcp(tcp6));
+                multiaddr.push(Protocol::P2p(peer_id));
                 multiaddrs.push(multiaddr);
             }
 
-            let mut successfully_dialed = false;
+            let mut dialed_address = None;
             for multiaddr in multiaddrs {
+                let address = multiaddr.clone();
                 if let Err(err) = self.swarm.dial(multiaddr) {
                     warn!("Failed to dial peer: {err:?}");
                 } else {
-                    successfully_dialed = true;
+                    dialed_address.get_or_insert(address);
                 }
             }
 
-            if !successfully_dialed {
+            let Some(address) = dialed_address else {
                 trace!("Failed to dial any multiaddr for peer: {:?}", enr);
                 continue;
-            }
+            };
 
-            if let Some(peer_id) = peer_id_from_enr(&enr) {
-                self.network_state.upsert_peer(
-                    peer_id,
-                    None,
-                    ConnectionState::Connecting,
-                    Direction::Outbound,
-                    Some(enr.clone()),
-                );
-            }
+            self.network_state.upsert_peer(
+                peer_id,
+                Some(address),
+                ConnectionState::Connecting,
+                Direction::Outbound,
+                Some(enr.clone()),
+            );
         }
     }
 
@@ -801,10 +855,14 @@ impl Network {
     fn handle_gossipsub_event(&mut self, event: GossipsubEvent) -> Option<ReamNetworkEvent> {
         match event {
             GossipsubEvent::Message {
-                propagation_source: _,
-                message_id: _,
+                propagation_source,
+                message_id,
                 message,
-            } => Some(ReamNetworkEvent::GossipsubMessage { message }),
+            } => Some(ReamNetworkEvent::GossipsubMessage {
+                propagation_source,
+                message_id,
+                message,
+            }),
             GossipsubEvent::Subscribed { peer_id, topic } => {
                 trace!("Peer {peer_id} subscribed to topic: {topic:?}");
                 None

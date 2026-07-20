@@ -91,9 +91,11 @@ ream-validator-beacon.workspace = true
 ream-validator-lean.workspace = true
 
 [dev-dependencies]
+ream-bls.workspace = true
+ream-mock-execution-engine.workspace = true
 reqwest.workspace = true
 serial_test = "3.4.0"
-snap.workspace = true
+sha2.workspace = true
 
 [lints]
 workspace = true
