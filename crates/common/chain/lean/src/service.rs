@@ -2048,6 +2048,26 @@ impl LeanChainService {
                     );
                 }
             }
+            ForwardSyncResults::BlockAheadOfWallClock {
+                previous_queue,
+                bad_root,
+                bad_slot,
+                wall_clock_slot,
+            } => {
+                let removed_pending_block = self.remove_pending_block(bad_root).await?;
+                self.backfill_state
+                    .remove_processed_queue(previous_queue.starting_root);
+                self.dropped_backfill_roots.insert(bad_root);
+                warn!(
+                    starting_root = ?previous_queue.starting_root,
+                    starting_slot = previous_queue.starting_slot,
+                    bad_root = ?bad_root,
+                    bad_slot,
+                    wall_clock_slot,
+                    removed_pending_block,
+                    "Forward background sync block slot ahead of wall clock; purged bad pending block and suppressing the root",
+                );
+            }
         }
 
         Ok(())
