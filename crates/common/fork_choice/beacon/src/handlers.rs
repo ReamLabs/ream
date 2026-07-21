@@ -17,6 +17,7 @@ use ream_storage::{
         table::REDBTable,
     },
 };
+use tracing::warn;
 use tree_hash::TreeHash;
 
 use crate::store::Store;
@@ -62,16 +63,13 @@ pub async fn on_block(
         store.db.finalized_checkpoint_provider().get()?.epoch,
     )?;
     ensure!(store.db.finalized_checkpoint_provider().get()?.root == finalized_checkpoint_block);
-    if verify_blob_availability && !block.body.blob_kzg_commitments.is_empty() {
-        // Check if data is available (Fulu: uses column sidecars instead of blobs)
-        // If not, this block MAY be queued and subsequently considered when data becomes
-        // available *Note*: Extraneous or invalid data (in addition to the
-        // expected/referenced valid data) received on the p2p network MUST NOT invalidate
-        // a block that is otherwise valid and available
-        ensure!(
-            store.is_data_available(block_root)?,
-            "Data not available for block root: {block_root:x}",
-        );
+
+    // TODO(#1483): queue as pending and re-check once sidecars arrive, instead of importing now.
+    if verify_blob_availability
+        && !block.body.blob_kzg_commitments.is_empty()
+        && !store.is_data_available(block_root)?
+    {
+        warn!("Data not available yet for block root: {block_root:x}, importing anyway");
     }
 
     // Check the block is valid and compute the post-state

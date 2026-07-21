@@ -20,6 +20,7 @@ use ream_consensus_beacon::{
     attestation::Attestation,
     attester_slashing::AttesterSlashing,
     beacon_committee_selection::BeaconCommitteeSelection,
+    blob_sidecar::BlobIdentifier,
     bls_to_execution_change::SignedBLSToExecutionChange,
     electra::{
         beacon_block::BeaconBlock,
@@ -66,7 +67,10 @@ use ream_p2p::{
     gossipsub::beacon::topics::{GossipTopic, GossipTopicKind},
     network::beacon::Network,
 };
-use ream_storage::{db::beacon::BeaconDB, tables::table::REDBTable};
+use ream_storage::{
+    db::beacon::BeaconDB,
+    tables::table::{CustomTable, REDBTable},
+};
 use ream_sync_committee_pool::SyncCommitteePool;
 use ream_validator_beacon::{
     aggregate_and_proof::SignedAggregateAndProof,
@@ -1685,15 +1689,26 @@ pub async fn get_blocks_v3(
         ));
     }
 
-    let blobs: Vec<_> = blobs_and_proofs
-        .into_iter()
-        .map(|bap| {
-            bap.expect(
-                "Missing blob and proof from execution engine: expected BlobAndProofV1, got None",
-            )
-            .blob
-        })
-        .collect();
+    let block_root = block.tree_hash_root();
+    let blobs_and_proofs_provider = db.blobs_and_proofs_provider();
+    let mut blobs = Vec::with_capacity(blobs_and_proofs.len());
+    for (index, bap) in blobs_and_proofs.into_iter().enumerate() {
+        let blob_and_proof = bap.expect(
+            "Missing blob and proof from execution engine: expected BlobAndProofV1, got None",
+        );
+
+        // On failure, this block just won't have its data column sidecars broadcast later
+        // (`broadcast_data_column_sidecars` finds no cached blob and skips); the block itself is
+        // still proposed.
+        if let Err(err) = blobs_and_proofs_provider.insert(
+            BlobIdentifier::new(block_root, index as u64),
+            blob_and_proof.clone(),
+        ) {
+            tracing::error!("Failed to cache blob {index} for block {block_root:?}: {err}");
+        }
+
+        blobs.push(blob_and_proof.blob);
+    }
 
     let response = ProduceBlockResponse {
         version: fork_name.to_string(),
