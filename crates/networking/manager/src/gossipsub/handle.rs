@@ -1,3 +1,5 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use libp2p::gossipsub::Message;
 use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_consensus_beacon::{
@@ -468,9 +470,18 @@ pub async fn handle_gossipsub_message(
                     }
                 };
 
+                let current_time_ms = match SystemTime::now().duration_since(UNIX_EPOCH) {
+                    Ok(duration) => u64::try_from(duration.as_millis()).unwrap_or(u64::MAX),
+                    Err(err) => {
+                        error!("Failed to get current time for data column validation: {err}");
+                        return;
+                    }
+                };
+
                 let validation_result = match validate_data_column_sidecar_full(
                     &data_column_sidecar,
                     beacon_chain,
+                    current_time_ms,
                     subnet_id,
                     cached_db,
                 )
