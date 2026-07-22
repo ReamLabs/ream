@@ -5,8 +5,10 @@
 // the shared knobs — the `fake_xmss` toggle and the modeled sim-cost sleeps on
 // Shadow's virtual clock. Uses a similiar approach to ethlambda and zeam.
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::time::Duration;
+use std::{
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
+    time::Duration,
+};
 
 // Process-global config: set once via `init`, then read lock-free at every call
 // site. Rates are stored as `f64` bits (no `AtomicF64`); `0` means unset/disabled.

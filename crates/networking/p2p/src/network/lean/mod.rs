@@ -59,7 +59,6 @@ use ream_req_resp::{
     messages::{RequestMessage, ResponseMessage},
 };
 use ssz::Encode;
-use tree_hash::TreeHash;
 use tokio::{
     sync::{
         mpsc::{self, UnboundedReceiver, UnboundedSender},
@@ -68,6 +67,7 @@ use tokio::{
     time::{Duration, interval},
 };
 use tracing::{error, info, trace, warn};
+use tree_hash::TreeHash;
 
 use crate::{
     bootnodes::Bootnodes,
@@ -801,7 +801,12 @@ impl LeanNetworkService {
         let bytes = data.len();
         match self.swarm.behaviour_mut().gossipsub.publish(topic, data) {
             Ok(_) => {
-                info!(slot, subnet_id, validator = validator_id, "Broadcasted {name}");
+                info!(
+                    slot,
+                    subnet_id,
+                    validator = validator_id,
+                    "Broadcasted {name}"
+                );
                 log_gossip_bandwidth("out", name, bytes, slot);
             }
             Err(PublishError::Duplicate) => {

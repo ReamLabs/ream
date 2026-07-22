@@ -23,9 +23,9 @@ impl UdpSocketState {
     pub fn send(&self, socket: UdpSockRef<'_>, transmit: &Transmit<'_>) -> io::Result<()> {
         match send(socket, transmit) {
             Ok(()) => Ok(()),
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock => Err(e),
-            Err(e) => {
-                log_sendmsg_error(&self.last_send_error, e, transmit);
+            Err(err) if err.kind() == io::ErrorKind::WouldBlock => Err(err),
+            Err(err) => {
+                log_sendmsg_error(&self.last_send_error, err, transmit);
 
                 Ok(())
             }

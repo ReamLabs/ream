@@ -6,6 +6,10 @@ BIN_DIR = "dist/bin"
 # Cargo features for builds.
 FEATURES ?=
 
+# Devnet feature selected for Shadow builds (devnet4/devnet5 are mutually
+# exclusive, and `--no-default-features` drops the default `devnet4`).
+SHADOW_DEVNET ?= devnet5
+
 # Cargo profile for builds.
 PROFILE ?= release
 
@@ -122,6 +126,23 @@ pr: lint update-book-cli clean-deps test # Run all checks for a PR.
 
 build-%:
 	cross build --bin ream --target $* --features "$(FEATURES)" --profile "$(PROFILE)" $(EXTRA_FLAGS)
+
+##@ Shadow simulator
+
+.PHONY: shadow-build
+shadow-build: # Shadow-compatible binary (single-threaded, no jemalloc, quinn-udp patch).
+	./shadow/build.sh cargo build --profile "$(PROFILE)" \
+		--no-default-features --features "shadow-integration $(SHADOW_DEVNET)" --bin ream
+
+.PHONY: shadow-docker-build
+shadow-docker-build: # Build a Shadow-compatible Docker image, tagged ...:latest-shadow.
+	docker build --file ./Dockerfile . \
+		--build-arg SHADOW=1 \
+		--build-arg NO_DEFAULT_FEATURES=--no-default-features \
+		--build-arg FEATURES="shadow-integration $(SHADOW_DEVNET)" \
+		--build-arg LOCKED= \
+		--build-arg BUILD_PROFILE=$(PROFILE) \
+		--tag ghcr.io/reamlabs/ream:latest-shadow
 
 .PHONY: docker-build-push
 docker-build-push:

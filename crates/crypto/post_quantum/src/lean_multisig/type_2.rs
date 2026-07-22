@@ -54,7 +54,9 @@ pub fn type_1_aggregate(
     // Fake-XMSS: hand back a stamped husk clone instead of proving.
     #[cfg(feature = "shadow-integration")]
     if shadow_cost::fake_xmss() {
-        shadow_cost::sleep(shadow_cost::aggregate_delay(children.len() + raw_xmss.len()));
+        shadow_cost::sleep(shadow_cost::aggregate_delay(
+            children.len() + raw_xmss.len(),
+        ));
         return Ok(shadow_prototype::stamped_type_1(message, slot));
     }
 
@@ -204,7 +206,7 @@ pub fn type_2_verify_block(
 /// back clones (with `(message, slot)` / component infos stamped in) instead of
 /// proving. The wire form (`compress_without_pubkeys`) stays a valid, decodable,
 /// per-`(message, slot)`-deterministic proof, so `from_wire` works unchanged.
-/// 
+///
 /// This is the best solution other than changing the type_2 api
 /// to (bytes) -> bytes, rather than using SingleMessageAggregate/Multi-MessageAggregate
 /// which can be converted to bytes but has validation checks which arbitrary
@@ -228,16 +230,14 @@ mod shadow_prototype {
             // decode calls `get_aggregation_bytecode()`, which requires the
             // aggregation bytecode to be initialized first.
             super::type_2_setup_verifier();
-            SingleMessageAggregate::decompress(TYPE_1_BYTES)
-                .expect("shadow Type-1 Prototype error")
+            SingleMessageAggregate::decompress(TYPE_1_BYTES).expect("shadow Type-1 Prototype error")
         })
     }
 
     fn type_2() -> &'static MultiMessageAggregate {
         TYPE_2.get_or_init(|| {
             super::type_2_setup_verifier();
-            MultiMessageAggregate::decompress(TYPE_2_BYTES)
-                .expect("shadow Type-2 Prototype error")
+            MultiMessageAggregate::decompress(TYPE_2_BYTES).expect("shadow Type-2 Prototype error")
         })
     }
 
@@ -269,4 +269,3 @@ mod shadow_prototype {
         }
     }
 }
-
