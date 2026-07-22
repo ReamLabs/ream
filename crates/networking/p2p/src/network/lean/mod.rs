@@ -59,6 +59,7 @@ use ream_req_resp::{
     messages::{RequestMessage, ResponseMessage},
 };
 use ssz::Encode;
+use tree_hash::TreeHash;
 use tokio::{
     sync::{
         mpsc::{self, UnboundedReceiver, UnboundedSender},
@@ -92,6 +93,29 @@ const SLOW_PEER_CONSECUTIVE_WINDOW: Duration = Duration::from_secs(5);
 const SLOW_PEER_DISCONNECT_THRESHOLD: u32 = 5;
 const SLOW_PEER_MIN_CONNECTED_PEERS_FOR_DISCONNECT: usize = 6;
 const SLOW_PEER_BAN_DURATION: Duration = Duration::from_secs(30 * 60);
+
+/// Emit a per-message P2P bandwidth-accounting line consumed by the
+/// lean-shadow-fuzzer observatory. `direction` is `"in"`/`"out"`; `bytes` is the
+/// serialized (pre-snappy SSZ) message length, matching the `GOSSIP_*_SIZE_BYTES`
+/// metrics. `delivery` distinguishes first-delivery from duplicate-inclusive:
+/// libp2p gossipsub de-duplicates before the app layer, so inbound is always
+/// first-delivery (gossip-amplification bytes are not observable here).
+fn log_gossip_bandwidth(direction: &str, message_kind: &str, bytes: usize, slot: u64) {
+    let delivery = if direction == "out" {
+        "local"
+    } else {
+        "first_delivery"
+    };
+    info!(
+        direction,
+        protocol = "gossip",
+        message_kind,
+        bytes,
+        delivery,
+        consensus_slot = slot,
+        "P2P bandwidth event",
+    );
+}
 
 #[derive(Debug, Default)]
 struct SlowPeerTracker {
@@ -598,10 +622,12 @@ impl LeanNetworkService {
                         }
                         GossipAttestation { subnet_id, attestation } => {
                             let slot = attestation.message.slot;
+                            let validator_id = attestation.validator_id;
                             self.publish_gossip_to_subnet(
                                 subnet_id,
                                 attestation.as_ssz_bytes(),
                                 slot,
+                                validator_id,
                                 "attestation"
                             );
                         }
@@ -742,8 +768,12 @@ impl LeanNetworkService {
             .map(|topic| IdentTopic::from(topic.clone()))
             .unwrap_or_else(|| panic!("Lean{name} topic configured"));
 
+        let bytes = data.len();
         match self.swarm.behaviour_mut().gossipsub.publish(topic, data) {
-            Ok(_) => info!(slot, "Broadcasted {name}"),
+            Ok(_) => {
+                info!(slot, "Broadcasted {name}");
+                log_gossip_bandwidth("out", name, bytes, slot);
+            }
             Err(PublishError::Duplicate) => {
                 trace!(slot, "{name} already published (duplicate)");
             }
@@ -751,7 +781,14 @@ impl LeanNetworkService {
         }
     }
 
-    fn publish_gossip_to_subnet(&mut self, subnet_id: u64, data: Vec<u8>, slot: u64, name: &str) {
+    fn publish_gossip_to_subnet(
+        &mut self,
+        subnet_id: u64,
+        data: Vec<u8>,
+        slot: u64,
+        validator_id: u64,
+        name: &str,
+    ) {
         let topic = self
             .network_config
             .gossipsub_config
@@ -761,8 +798,12 @@ impl LeanNetworkService {
             .map(|topic| IdentTopic::from(topic.clone()))
             .unwrap_or_else(|| panic!("Lean attestation subnet {subnet_id} topic not configured"));
 
+        let bytes = data.len();
         match self.swarm.behaviour_mut().gossipsub.publish(topic, data) {
-            Ok(_) => info!(slot, subnet_id, "Broadcasted {name}"),
+            Ok(_) => {
+                info!(slot, subnet_id, validator = validator_id, "Broadcasted {name}");
+                log_gossip_bandwidth("out", name, bytes, slot);
+            }
             Err(PublishError::Duplicate) => {
                 trace!(slot, subnet_id, "{name} already published (duplicate)");
             }
@@ -880,12 +921,18 @@ impl LeanNetworkService {
             GossipsubEvent::Message { message, .. } => {
                 match LeanGossipsubMessage::decode(&message.topic, &message.data) {
                     Ok(LeanGossipsubMessage::Block(signed_block)) => {
-                        observe_histogram_vec(
-                            &GOSSIP_BLOCK_SIZE_BYTES,
-                            message.data.len() as f64,
-                            &[],
-                        );
+                        let bytes = message.data.len();
+                        observe_histogram_vec(&GOSSIP_BLOCK_SIZE_BYTES, bytes as f64, &[]);
                         let slot = signed_block.block.slot;
+
+                        info!(
+                            slot,
+                            proposer = signed_block.block.proposer_index,
+                            block_root = %signed_block.block.tree_hash_root(),
+                            parent_root = %signed_block.block.parent_root,
+                            "Received block from gossip",
+                        );
+                        log_gossip_bandwidth("in", "block", bytes, slot);
 
                         if let Err(err) =
                             self.chain_message_sender
@@ -901,12 +948,21 @@ impl LeanNetworkService {
                         subnet_id,
                         attestation: signed_attestation,
                     }) => {
-                        observe_histogram_vec(
-                            &GOSSIP_ATTESTATION_SIZE_BYTES,
-                            message.data.len() as f64,
-                            &[],
-                        );
+                        let bytes = message.data.len();
+                        observe_histogram_vec(&GOSSIP_ATTESTATION_SIZE_BYTES, bytes as f64, &[]);
                         let slot = signed_attestation.message.slot;
+
+                        info!(
+                            slot,
+                            validator = signed_attestation.validator_id,
+                            head_root = %signed_attestation.message.head.root,
+                            target_slot = signed_attestation.message.target.slot,
+                            target_root = %signed_attestation.message.target.root,
+                            source_slot = signed_attestation.message.source.slot,
+                            source_root = %signed_attestation.message.source.root,
+                            "Received attestation from gossip",
+                        );
+                        log_gossip_bandwidth("in", "attestation", bytes, slot);
 
                         if let Err(err) = self.chain_message_sender.send(
                             LeanChainServiceMessage::ProcessAttestation {
@@ -921,12 +977,12 @@ impl LeanNetworkService {
                         }
                     }
                     Ok(LeanGossipsubMessage::AggregatedAttestation(aggregated_attestation)) => {
-                        observe_histogram_vec(
-                            &GOSSIP_AGGREGATION_SIZE_BYTES,
-                            message.data.len() as f64,
-                            &[],
-                        );
+                        let bytes = message.data.len();
+                        observe_histogram_vec(&GOSSIP_AGGREGATION_SIZE_BYTES, bytes as f64, &[]);
                         let slot = aggregated_attestation.data.slot;
+
+                        info!(slot, "Received aggregated attestation from gossip");
+                        log_gossip_bandwidth("in", "aggregated_attestation", bytes, slot);
 
                         if let Err(err) = self.chain_message_sender.send(
                             LeanChainServiceMessage::ProcessAggregatedAttestation {
