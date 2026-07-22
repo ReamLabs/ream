@@ -1,12 +1,19 @@
+use std::sync::OnceLock;
+
 use anyhow::{Ok, Result, anyhow, ensure};
 use ream_consensus_misc::{
     constants::beacon::CELLS_PER_EXT_BLOB, polynomial_commitments::kzg_proof::KZGProof,
 };
 use ream_execution_rpc_types::get_blobs::Blob;
-use rust_eth_kzg::{Cell as KZGCell, DASContext, KZGProof as Proof};
+use rust_eth_kzg::{Cell as KZGCell, DASContext, KZGProof as Proof, TrustedSetup, UsePrecomp};
 use ssz_types::FixedVector;
 
 use crate::data_column_sidecar::Cell;
+
+pub fn das_context() -> &'static DASContext {
+    static DAS_CONTEXT: OnceLock<DASContext> = OnceLock::new();
+    DAS_CONTEXT.get_or_init(|| DASContext::new(&TrustedSetup::default(), UsePrecomp::No))
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MatrixEntry {

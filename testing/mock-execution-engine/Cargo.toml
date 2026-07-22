@@ -13,8 +13,11 @@ version.workspace = true
 [dependencies]
 actix-web.workspace = true
 alloy-primitives.workspace = true
+alloy-rlp.workspace = true
 anyhow.workspace = true
+ream-consensus-misc.workspace = true
 ream-execution-rpc-types.workspace = true
+rust_eth_kzg.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 ssz_types.workspace = true

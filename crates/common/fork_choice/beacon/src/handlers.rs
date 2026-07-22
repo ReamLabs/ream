@@ -61,12 +61,11 @@ pub async fn on_block(
         store.db.finalized_checkpoint_provider().get()?.epoch,
     )?;
     ensure!(store.db.finalized_checkpoint_provider().get()?.root == finalized_checkpoint_block);
+
+    // Blocks routinely arrive before their column sidecars, so this rejects on the first gossip
+    // attempt and relies on the block-range syncer to retry once sidecars have landed.
+    // TODO(#1483): queue as pending and re-check once sidecars arrive, instead of rejecting now.
     if verify_blob_availability && !block.body.blob_kzg_commitments.is_empty() {
-        // Check if data is available (Fulu: uses column sidecars instead of blobs)
-        // If not, this block MAY be queued and subsequently considered when data becomes
-        // available *Note*: Extraneous or invalid data (in addition to the
-        // expected/referenced valid data) received on the p2p network MUST NOT invalidate
-        // a block that is otherwise valid and available
         ensure!(
             store.is_data_available(block_root)?,
             "Data not available for block root: {block_root:x}",

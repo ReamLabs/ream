@@ -8,6 +8,7 @@ use actix_web::{
     web::{Data, Json, Path, Payload, Query},
 };
 use alloy_primitives::B256;
+use anyhow::anyhow;
 use futures::StreamExt;
 use ream_api_types_beacon::{
     block::BroadcastValidation,
@@ -20,6 +21,10 @@ use ream_api_types_beacon::{
 use ream_api_types_common::{error::ApiError, id::ID};
 use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_consensus_beacon::{
+    blob_sidecar::BlobIdentifier,
+    data_column_sidecar::{
+        ColumnIdentifier, DataColumnSidecar, get_data_column_sidecars_from_block,
+    },
     electra::{
         beacon_block::{BeaconBlock, SignedBeaconBlock},
         beacon_block_body::BeaconBlockBody,
@@ -27,6 +32,7 @@ use ream_consensus_beacon::{
         blinded_beacon_block::SignedBlindedBeaconBlock,
     },
     genesis::Genesis,
+    matrix_entry::{compute_cells_and_kzg_proofs, das_context},
 };
 use ream_consensus_misc::constants::beacon::{
     FULU_FORK_EPOCH, WHISTLEBLOWER_REWARD_QUOTIENT, genesis_validators_root,
@@ -40,7 +46,11 @@ use ream_p2p::{
 use ream_storage::{
     cache::{AddressSlotIdentifier, BeaconCacheDB},
     db::beacon::BeaconDB,
-    tables::{field::REDBField, table::REDBTable},
+    tables::{
+        beacon::{blobs_and_proofs::BlobsAndProofsTable, column_sidecars::ColumnSidecarsTable},
+        field::REDBField,
+        table::{CustomTable, REDBTable},
+    },
 };
 use ream_validator_beacon::builder::builder_client::BuilderClient;
 use serde::{Deserialize, Serialize};
@@ -551,6 +561,13 @@ async fn publish_and_process_block(
         data: signed_block.as_ssz_bytes(),
     });
 
+    broadcast_data_column_sidecars(
+        signed_block.clone(),
+        beacon_chain.as_ref(),
+        p2p_sender.as_ref(),
+    )
+    .await;
+
     // Integrate into state (after broadcast)
     let integration_success = match beacon_chain.process_block(signed_block.clone()).await {
         Ok(()) => true,
@@ -570,6 +587,105 @@ async fn publish_and_process_block(
         Ok(HttpResponse::Ok().finish())
     } else {
         Ok(HttpResponse::Accepted().finish())
+    }
+}
+
+fn build_and_store_data_column_sidecars(
+    signed_block: &SignedBeaconBlock,
+    block_root: B256,
+    commitment_count: usize,
+    blobs_and_proofs_provider: &BlobsAndProofsTable,
+    column_sidecars_provider: &ColumnSidecarsTable,
+) -> anyhow::Result<Vec<DataColumnSidecar>> {
+    let mut cells_and_kzg_proofs = Vec::with_capacity(commitment_count);
+    for index in 0..commitment_count as u64 {
+        let blob = blobs_and_proofs_provider
+            .get(BlobIdentifier::new(block_root, index))
+            .map_err(|err| {
+                anyhow!("Failed to read cached blob {index} for block {block_root:?}: {err}")
+            })?
+            .ok_or_else(|| anyhow!("No cached blob {index} for block {block_root:?}"))?
+            .blob;
+
+        cells_and_kzg_proofs.push(compute_cells_and_kzg_proofs(&blob, das_context()).map_err(
+            |err| anyhow!("Failed to compute cells/KZG proofs for blob {index}: {err}"),
+        )?);
+    }
+
+    let sidecars = get_data_column_sidecars_from_block(signed_block, cells_and_kzg_proofs)
+        .map_err(|err| {
+            anyhow!("Failed to build data column sidecars for block {block_root:?}: {err}")
+        })?;
+
+    for sidecar in &sidecars {
+        column_sidecars_provider
+            .insert(
+                ColumnIdentifier::new(block_root, sidecar.index),
+                sidecar.clone(),
+            )
+            .map_err(|err| {
+                anyhow!(
+                    "Failed to store own data column sidecar {} for block {block_root:?}: {err}",
+                    sidecar.index
+                )
+            })?;
+    }
+
+    Ok(sidecars)
+}
+
+/// Builds and gossips `DataColumnSidecar`s for a just-broadcast block, if it carries blobs.
+async fn broadcast_data_column_sidecars(
+    signed_block: SignedBeaconBlock,
+    beacon_chain: &BeaconChain,
+    p2p_sender: &P2PSender,
+) {
+    let commitment_count = signed_block.message.body.blob_kzg_commitments.len();
+    if commitment_count == 0 {
+        return;
+    }
+
+    let block_root = signed_block.message.tree_hash_root();
+    let (blobs_and_proofs_provider, column_sidecars_provider) = {
+        let store = beacon_chain.store.lock().await;
+        (
+            store.db.blobs_and_proofs_provider(),
+            store.db.column_sidecars_provider(),
+        )
+    };
+
+    let sidecars = match tokio::task::spawn_blocking(move || {
+        build_and_store_data_column_sidecars(
+            &signed_block,
+            block_root,
+            commitment_count,
+            &blobs_and_proofs_provider,
+            &column_sidecars_provider,
+        )
+    })
+    .await
+    {
+        Ok(Ok(sidecars)) => sidecars,
+        Ok(Err(err)) => {
+            warn!("Skipping data column sidecar broadcast for block {block_root:?}: {err}");
+            return;
+        }
+        Err(err) => {
+            error!("Data column sidecar task for block {block_root:?} panicked: {err}");
+            return;
+        }
+    };
+
+    let fork_digest = beacon_network_spec().fork_digest(FULU_FORK_EPOCH, genesis_validators_root());
+    for sidecar in sidecars {
+        let topic = GossipTopic {
+            fork: fork_digest,
+            kind: GossipTopicKind::DataColumnSidecar(sidecar.compute_subnet()),
+        };
+        p2p_sender.send_gossip(GossipMessage {
+            topic,
+            data: sidecar.as_ssz_bytes(),
+        });
     }
 }
 

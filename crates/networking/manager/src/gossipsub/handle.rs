@@ -560,9 +560,9 @@ pub async fn handle_gossipsub_message(
                     }
                 };
 
+                let acceptance = message_acceptance(&validation_result);
                 match validation_result {
                     ValidationResult::Accept => {
-                        let data_column_sidecar_bytes = data_column_sidecar.as_ssz_bytes();
                         if let Err(err) = beacon_chain
                             .store
                             .lock()
@@ -582,8 +582,6 @@ pub async fn handle_gossipsub_message(
                         {
                             error!("Failed to insert data_column_sidecar: {err}");
                         }
-
-                        forward_gossip_message(&message, p2p_sender, data_column_sidecar_bytes);
                     }
                     ValidationResult::Reject(reason) => {
                         info!("Data column sidecar rejected: {reason}");
@@ -592,7 +590,7 @@ pub async fn handle_gossipsub_message(
                         info!("Data column sidecar ignored: {reason}");
                     }
                 }
-                MessageAcceptance::Ignore
+                acceptance
             }
             GossipsubMessage::LightClientFinalityUpdate(light_client_finality_update) => {
                 info!(
@@ -697,5 +695,89 @@ pub async fn handle_gossipsub_message(
             trace!("Failed to decode gossip message: {err:?}");
             MessageAcceptance::Reject
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use libp2p::gossipsub::TopicHash;
+    use ream_consensus_beacon::data_column_sidecar::{Cell, DataColumnSidecar};
+    use ream_consensus_misc::{
+        beacon_block_header::SignedBeaconBlockHeader,
+        polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
+    };
+    use ream_network_spec::networks::initialize_test_network_spec;
+    use ream_operation_pool::OperationPool;
+    use ream_p2p::network::beacon::channel::P2PMessage;
+    use ream_storage::db::ReamDB;
+    use ream_sync_committee_pool::SyncCommitteePool;
+    use ssz_types::{FixedVector, VariableList};
+    use tempfile::TempDir;
+    use tokio::sync::mpsc;
+
+    use super::*;
+
+    /// Kept alongside the chain so the dir isn't dropped (and cleaned up) until the test ends.
+    fn test_beacon_chain() -> (TempDir, BeaconChain) {
+        let data_dir = tempfile::tempdir().expect("tempdir should be created");
+        let beacon_db = ReamDB::new(data_dir.path().to_path_buf())
+            .expect("ReamDB should init")
+            .init_beacon_db()
+            .expect("beacon DB tables should init");
+        let beacon_chain = BeaconChain::new(
+            beacon_db,
+            Arc::new(OperationPool::default()),
+            Arc::new(SyncCommitteePool::default()),
+            None,
+            None,
+        );
+        (data_dir, beacon_chain)
+    }
+
+    fn sidecar_with_index(index: u64) -> DataColumnSidecar {
+        DataColumnSidecar {
+            index,
+            column: VariableList::new(vec![Cell::default()]).expect("single-entry list fits"),
+            kzg_commitments: VariableList::new(vec![KZGCommitment::empty_for_testing()])
+                .expect("single-entry list fits"),
+            kzg_proofs: VariableList::new(vec![KZGProof::default()])
+                .expect("single-entry list fits"),
+            signed_block_header: SignedBeaconBlockHeader::default(),
+            kzg_commitments_inclusion_proof: FixedVector::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn data_column_sidecar_wrong_subnet_is_rejected_and_reported() {
+        initialize_test_network_spec();
+        let (_data_dir, beacon_chain) = test_beacon_chain();
+        let cached_db = BeaconCacheDB::default();
+        let (gossip_tx, _gossip_rx) = mpsc::unbounded_channel::<P2PMessage>();
+        let p2p_sender = P2PSender(gossip_tx);
+
+        // Subnet 5 (index % 128) delivered on topic subnet 6 - a mismatch rejected early.
+        let sidecar = sidecar_with_index(5);
+        let topic: TopicHash = GossipTopic {
+            // Must be the real digest: `decode` rejects any topic whose fork doesn't match.
+            fork: beacon_network_spec().fork_digest(FULU_FORK_EPOCH, genesis_validators_root()),
+            kind: GossipTopicKind::DataColumnSidecar(6),
+        }
+        .into();
+        let message = Message {
+            source: None,
+            data: sidecar.as_ssz_bytes(),
+            sequence_number: None,
+            topic,
+        };
+
+        let acceptance =
+            handle_gossipsub_message(message, &beacon_chain, &cached_db, &p2p_sender).await;
+
+        assert!(
+            matches!(acceptance, MessageAcceptance::Reject),
+            "expected Reject, got {acceptance:?}"
+        );
     }
 }

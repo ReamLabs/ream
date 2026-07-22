@@ -17,6 +17,7 @@ devnet5 = ["ream-network-manager/devnet5", "ream-storage/devnet5", "ream-p2p/dev
 actix-web.workspace = true
 actix-web-lab.workspace = true
 alloy-primitives.workspace = true
+anyhow.workspace = true
 discv5.workspace = true
 ethereum_serde_utils.workspace = true
 ethereum_ssz.workspace = true

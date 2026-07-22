@@ -950,6 +950,7 @@ mod tests {
     };
     use ream_bls::{BLSSignature, PrivateKey, PublicKey};
     use ream_consensus_beacon::{
+        data_column_sidecar::{ColumnIdentifier, NUMBER_OF_COLUMNS},
         electra::{
             beacon_block::{BeaconBlock, SignedBeaconBlock},
             beacon_block_body::BeaconBlockBody,
@@ -989,7 +990,10 @@ mod tests {
     use ream_storage::{
         db::ReamDB,
         dir::setup_data_dir,
-        tables::{field::REDBField, table::REDBTable},
+        tables::{
+            field::REDBField,
+            table::{CustomTable, REDBTable},
+        },
     };
     use serde_json::Value;
     use serial_test::serial;
@@ -1419,6 +1423,33 @@ mod tests {
         config
     }
 
+    async fn find_slot_with_blob_commitments(
+        http_port: u16,
+        max_slot: u64,
+    ) -> Option<(u64, serde_json::Value)> {
+        let client = reqwest::Client::new();
+        for slot in 1..=max_slot {
+            let url = format!("http://127.0.0.1:{http_port}/eth/v2/beacon/blocks/{slot}");
+            let Ok(response) = client.get(&url).send().await else {
+                continue;
+            };
+            if !response.status().is_success() {
+                continue;
+            }
+            let Ok(body) = response.json::<serde_json::Value>().await else {
+                continue;
+            };
+            let commitment_count = body["data"]["message"]["body"]["blob_kzg_commitments"]
+                .as_array()
+                .map(Vec::len)
+                .unwrap_or(0);
+            if commitment_count > 0 {
+                return Some((slot, body));
+            }
+        }
+        None
+    }
+
     async fn wait_for_beacon_json(http_port: u16, path: &str) -> serde_json::Value {
         let client = reqwest::Client::new();
         let url = format!("http://127.0.0.1:{http_port}{path}");
@@ -1681,6 +1712,33 @@ mod tests {
             statuses.push(beacon_node_status(*http_port).await);
         }
         statuses
+    }
+
+    async fn wait_for_all_data_column_sidecars(db: &ReamDB, block_root: B256) {
+        let beacon_db = db
+            .init_beacon_db()
+            .expect("unable to init Ream Beacon Database for inspection");
+        let column_sidecars_provider = beacon_db.column_sidecars_provider();
+
+        let start = Instant::now();
+        let timeout_duration = Duration::from_secs(30);
+        loop {
+            let missing_index = (0..NUMBER_OF_COLUMNS).find(|&index| {
+                column_sidecars_provider
+                    .get(ColumnIdentifier::new(block_root, index))
+                    .expect("column sidecar lookup should not error")
+                    .is_none()
+            });
+            let Some(missing_index) = missing_index else {
+                return;
+            };
+
+            assert!(
+                start.elapsed() < timeout_duration,
+                "timed out waiting for data column sidecar {missing_index} for block {block_root:?}"
+            );
+            sleep(Duration::from_millis(250)).await;
+        }
     }
 
     async fn wait_for_head_slot_at_least(http_port: u16, min_slot: u64) -> (u64, String) {
@@ -2501,6 +2559,449 @@ mod tests {
             ?node_2_finality,
             ?validators_finished,
             "Beacon block production e2e test completed"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_beacon_nodes_propagate_data_column_sidecars() {
+        init_test_tracing();
+
+        let port_offset = beacon_port_offset();
+        let mut node_1_config = beacon_node_config_from_args(port_offset, None);
+        initialize_beacon_e2e_network_spec(node_1_config.network.clone());
+        let public_keys = beacon_e2e_public_keys();
+        let (genesis_state, genesis_block) = build_dev_genesis(&public_keys);
+
+        let node_1_db = create_beacon_test_node_db("beacon_node_data_column_sidecars", 1);
+        let node_2_db = create_beacon_test_node_db("beacon_node_data_column_sidecars", 2);
+        let genesis_execution_block_hash = genesis_state.latest_execution_payload_header.block_hash;
+        let genesis_validators_root =
+            seed_beacon_test_db(&node_1_db, genesis_state.clone(), &genesis_block);
+        let node_2_genesis_validators_root =
+            seed_beacon_test_db(&node_2_db, genesis_state, &genesis_block);
+        assert_eq!(
+            genesis_validators_root, node_2_genesis_validators_root,
+            "beacon e2e node 2 must be seeded from the same genesis"
+        );
+        initialize_beacon_e2e_genesis_root(genesis_validators_root);
+
+        // Cheap clones, kept for inspecting storage while the node tasks are still running.
+        let node_1_db_for_check = node_1_db.clone();
+        let node_2_db_for_check = node_2_db.clone();
+
+        let control_executor = ReamExecutor::new().unwrap();
+        let node_1_executor = ReamExecutor::new().unwrap();
+        let node_2_executor = ReamExecutor::new().unwrap();
+        let validator_executors: Vec<_> = (0..BEACON_E2E_VALIDATOR_NODE_COUNT)
+            .map(|_| ReamExecutor::new().unwrap())
+            .collect();
+        let node_1_executor_handle = node_1_executor.clone();
+        let node_2_executor_handle = node_2_executor.clone();
+        let validator_executor_handles = validator_executors.to_vec();
+        let node_1_http_port = node_1_config.http_port;
+
+        let result = control_executor.clone().runtime().block_on(async move {
+            let test_dir = temp_dir().join(format!(
+                "{APP_NAME}_beacon_data_column_sidecars_{}",
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .expect("System time is before UNIX epoch")
+                    .as_nanos()
+            ));
+            fs::create_dir_all(&test_dir).expect("Failed to create beacon e2e test dir");
+            let jwt_secret_path = test_dir.join("jwt.hex");
+            fs::write(
+                &jwt_secret_path,
+                "0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a",
+            )
+            .expect("Failed to write mock EL JWT secret");
+
+            let mock_execution_server = MockExecutionServer::start(genesis_execution_block_hash);
+            // Every payload produced from here on carries one blob.
+            mock_execution_server
+                .generator()
+                .lock()
+                .expect("mock EL generator lock poisoned")
+                .set_blobs_per_payload(1);
+            let execution_endpoint = mock_execution_server.url();
+            node_1_config.execution_endpoint = Some(execution_endpoint.clone());
+            node_1_config.execution_jwt_secret = Some(jwt_secret_path.clone());
+
+            let node_1_handle =
+                spawn_beacon_test_node(node_1_config, node_1_db, node_1_executor_handle.clone());
+            let node_1_identity = wait_for_beacon_identity(node_1_http_port).await;
+            let node_1_enr = node_1_identity["data"]["enr"]
+                .as_str()
+                .expect("identity response should contain ENR")
+                .to_string();
+
+            let mut node_2_config =
+                beacon_node_config_from_args(port_offset + 1, Some(node_1_enr.clone()));
+            node_2_config.execution_endpoint = Some(execution_endpoint);
+            node_2_config.execution_jwt_secret = Some(jwt_secret_path);
+            let node_2_http_port = node_2_config.http_port;
+            let node_2_handle =
+                spawn_beacon_test_node(node_2_config, node_2_db, node_2_executor_handle.clone());
+            let peer_counts =
+                wait_for_connected_beacon_peer(&[node_1_http_port, node_2_http_port]).await;
+
+            let validator_handles = spawn_validator_test_nodes(
+                &[node_1_http_port, node_2_http_port],
+                &test_dir,
+                &validator_executor_handles,
+            );
+
+            // Slots can be missed, so wait a few out then scan for one that has blobs.
+            let warmup_head = wait_for_head_slot_at_least(node_1_http_port, 3).await;
+
+            // One block with blobs is enough; stop so later slots don't add to the (real, and in
+            // debug builds slow) KZG workload while we wait for propagation below.
+            mock_execution_server
+                .generator()
+                .lock()
+                .expect("mock EL generator lock poisoned")
+                .set_blobs_per_payload(0);
+
+            let (target_slot, target_block) = find_slot_with_blob_commitments(
+                node_1_http_port,
+                warmup_head.0,
+            )
+            .await
+            .unwrap_or_else(|| {
+                panic!(
+                    "no block up to slot {} carried blob commitments while blobs were enabled",
+                    warmup_head.0
+                )
+            });
+            let commitment_count = target_block["data"]["message"]["body"]["blob_kzg_commitments"]
+                .as_array()
+                .map(Vec::len)
+                .unwrap_or(0);
+
+            let root_response = wait_for_beacon_json(
+                node_1_http_port,
+                &format!("/eth/v1/beacon/blocks/{target_slot}/root"),
+            )
+            .await;
+            let block_root: B256 = root_response["data"]["root"]
+                .as_str()
+                .expect("root response should include a root")
+                .parse()
+                .expect("root should be a valid B256");
+
+            // Make sure node_2 has imported the same block before checking its column storage.
+            wait_for_head_slot_at_least(node_2_http_port, target_slot).await;
+
+            // `on_block` no longer waits on availability, so head can advance before all 128
+            // columns have propagated - wait for them explicitly on both nodes.
+            wait_for_all_data_column_sidecars(&node_1_db_for_check, block_root).await;
+            wait_for_all_data_column_sidecars(&node_2_db_for_check, block_root).await;
+
+            let node_1_finished = node_1_handle.is_finished();
+            let node_2_finished = node_2_handle.is_finished();
+            let validator_finished = validator_handles
+                .iter()
+                .map(tokio::task::JoinHandle::is_finished)
+                .collect::<Vec<_>>();
+
+            shutdown_validator_test_nodes(&validator_executor_handles, validator_handles).await;
+            shutdown_beacon_test_node(&node_2_executor_handle, node_2_handle).await;
+            shutdown_beacon_test_node(&node_1_executor_handle, node_1_handle).await;
+            mock_execution_server.stop().await;
+
+            (
+                peer_counts,
+                node_1_finished,
+                node_2_finished,
+                validator_finished,
+                target_slot,
+                block_root,
+                commitment_count,
+            )
+        });
+
+        for validator_executor in validator_executors {
+            validator_executor.shutdown_runtime();
+        }
+        node_2_executor.shutdown_runtime();
+        node_1_executor.shutdown_runtime();
+
+        let (
+            peer_counts,
+            node_1_finished,
+            node_2_finished,
+            validators_finished,
+            target_slot,
+            block_root,
+            commitment_count,
+        ) = result;
+        let peer_counts = peer_counts.unwrap_or_else(|peer_counts| {
+            panic!("Timed out waiting for beacon nodes to connect: {peer_counts:?}")
+        });
+        assert!(!node_1_finished, "node 1 task exited early");
+        assert!(!node_2_finished, "node 2 task exited early");
+        assert!(
+            validators_finished
+                .iter()
+                .all(|validator_finished| !validator_finished),
+            "validator node task exited early: {validators_finished:?}"
+        );
+        assert!(
+            peer_counts
+                .iter()
+                .any(|count| peer_count_connected(count) > 0),
+            "beacon nodes did not report a connected peer: {peer_counts:?}"
+        );
+
+        info!(
+            target_slot,
+            ?block_root,
+            commitment_count,
+            ?validators_finished,
+            "Beacon data column sidecar propagation e2e test completed"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_beacon_nodes_propagate_data_column_sidecars_multi_hop() {
+        init_test_tracing();
+
+        let port_offset = beacon_port_offset();
+        let mut node_1_config = beacon_node_config_from_args(port_offset, None);
+        // Both chain endpoints have active discovery disabled so the only way node_3 can end up
+        // with node_1's sidecars is via node_2 forwarding them - not by discovering node_1
+        // directly.
+        node_1_config.disable_discovery = true;
+        initialize_beacon_e2e_network_spec(node_1_config.network.clone());
+        let public_keys = beacon_e2e_public_keys();
+        let (genesis_state, genesis_block) = build_dev_genesis(&public_keys);
+
+        let node_1_db = create_beacon_test_node_db("beacon_node_data_column_sidecars_multi_hop", 1);
+        let node_2_db = create_beacon_test_node_db("beacon_node_data_column_sidecars_multi_hop", 2);
+        let node_3_db = create_beacon_test_node_db("beacon_node_data_column_sidecars_multi_hop", 3);
+        let genesis_execution_block_hash = genesis_state.latest_execution_payload_header.block_hash;
+        let genesis_validators_root =
+            seed_beacon_test_db(&node_1_db, genesis_state.clone(), &genesis_block);
+        let node_2_genesis_validators_root =
+            seed_beacon_test_db(&node_2_db, genesis_state.clone(), &genesis_block);
+        let node_3_genesis_validators_root =
+            seed_beacon_test_db(&node_3_db, genesis_state, &genesis_block);
+        assert_eq!(
+            genesis_validators_root, node_2_genesis_validators_root,
+            "beacon e2e node 2 must be seeded from the same genesis"
+        );
+        assert_eq!(
+            genesis_validators_root, node_3_genesis_validators_root,
+            "beacon e2e node 3 must be seeded from the same genesis"
+        );
+        initialize_beacon_e2e_genesis_root(genesis_validators_root);
+
+        // Cheap clones, kept for inspecting storage while the node tasks are still running.
+        let node_1_db_for_check = node_1_db.clone();
+        let node_2_db_for_check = node_2_db.clone();
+        let node_3_db_for_check = node_3_db.clone();
+
+        let control_executor = ReamExecutor::new().unwrap();
+        let node_1_executor = ReamExecutor::new().unwrap();
+        let node_2_executor = ReamExecutor::new().unwrap();
+        let node_3_executor = ReamExecutor::new().unwrap();
+        let validator_executors: Vec<_> = (0..BEACON_E2E_VALIDATOR_NODE_COUNT)
+            .map(|_| ReamExecutor::new().unwrap())
+            .collect();
+        let node_1_executor_handle = node_1_executor.clone();
+        let node_2_executor_handle = node_2_executor.clone();
+        let node_3_executor_handle = node_3_executor.clone();
+        let validator_executor_handles = validator_executors.to_vec();
+        let node_1_http_port = node_1_config.http_port;
+
+        let result = control_executor.clone().runtime().block_on(async move {
+            let test_dir = temp_dir().join(format!(
+                "{APP_NAME}_beacon_data_column_sidecars_multi_hop_{}",
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .expect("System time is before UNIX epoch")
+                    .as_nanos()
+            ));
+            fs::create_dir_all(&test_dir).expect("Failed to create beacon e2e test dir");
+            let jwt_secret_path = test_dir.join("jwt.hex");
+            fs::write(
+                &jwt_secret_path,
+                "0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a",
+            )
+            .expect("Failed to write mock EL JWT secret");
+
+            let mock_execution_server = MockExecutionServer::start(genesis_execution_block_hash);
+            // Every payload produced from here on carries one blob.
+            mock_execution_server
+                .generator()
+                .lock()
+                .expect("mock EL generator lock poisoned")
+                .set_blobs_per_payload(1);
+            let execution_endpoint = mock_execution_server.url();
+            node_1_config.execution_endpoint = Some(execution_endpoint.clone());
+            node_1_config.execution_jwt_secret = Some(jwt_secret_path.clone());
+
+            let node_1_handle =
+                spawn_beacon_test_node(node_1_config, node_1_db, node_1_executor_handle.clone());
+            let node_1_identity = wait_for_beacon_identity(node_1_http_port).await;
+            let node_1_enr = node_1_identity["data"]["enr"]
+                .as_str()
+                .expect("identity response should contain ENR")
+                .to_string();
+
+            let mut node_2_config =
+                beacon_node_config_from_args(port_offset + 1, Some(node_1_enr.clone()));
+            node_2_config.execution_endpoint = Some(execution_endpoint.clone());
+            node_2_config.execution_jwt_secret = Some(jwt_secret_path.clone());
+            let node_2_http_port = node_2_config.http_port;
+            let node_2_handle =
+                spawn_beacon_test_node(node_2_config, node_2_db, node_2_executor_handle.clone());
+            let node_2_identity = wait_for_beacon_identity(node_2_http_port).await;
+            let node_2_enr = node_2_identity["data"]["enr"]
+                .as_str()
+                .expect("identity response should contain ENR")
+                .to_string();
+
+            // node_3 is only ever told about node_2's ENR, never node_1's, and can't discover
+            // node_1 through node_2's routing table either since its own discovery is disabled.
+            let mut node_3_config = beacon_node_config_from_args(port_offset + 2, Some(node_2_enr));
+            node_3_config.disable_discovery = true;
+            node_3_config.execution_endpoint = Some(execution_endpoint);
+            node_3_config.execution_jwt_secret = Some(jwt_secret_path);
+            let node_3_http_port = node_3_config.http_port;
+            let node_3_handle =
+                spawn_beacon_test_node(node_3_config, node_3_db, node_3_executor_handle.clone());
+
+            let peer_counts = wait_for_connected_beacon_peer(&[
+                node_1_http_port,
+                node_2_http_port,
+                node_3_http_port,
+            ])
+            .await;
+
+            let validator_handles = spawn_validator_test_nodes(
+                &[node_1_http_port, node_2_http_port],
+                &test_dir,
+                &validator_executor_handles,
+            );
+
+            // Slots can be missed, so wait a few out then scan for one that has blobs.
+            let warmup_head = wait_for_head_slot_at_least(node_1_http_port, 3).await;
+
+            // One block with blobs is enough; stop so later slots don't add to the (real, and in
+            // debug builds slow) KZG workload while we wait for propagation below.
+            mock_execution_server
+                .generator()
+                .lock()
+                .expect("mock EL generator lock poisoned")
+                .set_blobs_per_payload(0);
+
+            let (target_slot, target_block) = find_slot_with_blob_commitments(
+                node_1_http_port,
+                warmup_head.0,
+            )
+            .await
+            .unwrap_or_else(|| {
+                panic!(
+                    "no block up to slot {} carried blob commitments while blobs were enabled",
+                    warmup_head.0
+                )
+            });
+            let commitment_count = target_block["data"]["message"]["body"]["blob_kzg_commitments"]
+                .as_array()
+                .map(Vec::len)
+                .unwrap_or(0);
+
+            let root_response = wait_for_beacon_json(
+                node_1_http_port,
+                &format!("/eth/v1/beacon/blocks/{target_slot}/root"),
+            )
+            .await;
+            let block_root: B256 = root_response["data"]["root"]
+                .as_str()
+                .expect("root response should include a root")
+                .parse()
+                .expect("root should be a valid B256");
+
+            // node_3 has no direct link to node_1 (the proposer), so it reaching the same head
+            // and storing every column proves node_2 actually forwarded the gossip onward.
+            wait_for_head_slot_at_least(node_2_http_port, target_slot).await;
+            wait_for_head_slot_at_least(node_3_http_port, target_slot).await;
+
+            wait_for_all_data_column_sidecars(&node_1_db_for_check, block_root).await;
+            wait_for_all_data_column_sidecars(&node_2_db_for_check, block_root).await;
+            wait_for_all_data_column_sidecars(&node_3_db_for_check, block_root).await;
+
+            let node_1_finished = node_1_handle.is_finished();
+            let node_2_finished = node_2_handle.is_finished();
+            let node_3_finished = node_3_handle.is_finished();
+            let validator_finished = validator_handles
+                .iter()
+                .map(tokio::task::JoinHandle::is_finished)
+                .collect::<Vec<_>>();
+
+            shutdown_validator_test_nodes(&validator_executor_handles, validator_handles).await;
+            shutdown_beacon_test_node(&node_3_executor_handle, node_3_handle).await;
+            shutdown_beacon_test_node(&node_2_executor_handle, node_2_handle).await;
+            shutdown_beacon_test_node(&node_1_executor_handle, node_1_handle).await;
+            mock_execution_server.stop().await;
+
+            (
+                peer_counts,
+                node_1_finished,
+                node_2_finished,
+                node_3_finished,
+                validator_finished,
+                target_slot,
+                block_root,
+                commitment_count,
+            )
+        });
+
+        for validator_executor in validator_executors {
+            validator_executor.shutdown_runtime();
+        }
+        node_3_executor.shutdown_runtime();
+        node_2_executor.shutdown_runtime();
+        node_1_executor.shutdown_runtime();
+
+        let (
+            peer_counts,
+            node_1_finished,
+            node_2_finished,
+            node_3_finished,
+            validators_finished,
+            target_slot,
+            block_root,
+            commitment_count,
+        ) = result;
+        let peer_counts = peer_counts.unwrap_or_else(|peer_counts| {
+            panic!("Timed out waiting for beacon nodes to connect: {peer_counts:?}")
+        });
+        assert!(!node_1_finished, "node 1 task exited early");
+        assert!(!node_2_finished, "node 2 task exited early");
+        assert!(!node_3_finished, "node 3 task exited early");
+        assert!(
+            validators_finished
+                .iter()
+                .all(|validator_finished| !validator_finished),
+            "validator node task exited early: {validators_finished:?}"
+        );
+        assert!(
+            peer_counts
+                .iter()
+                .any(|count| peer_count_connected(count) > 0),
+            "beacon nodes did not report a connected peer: {peer_counts:?}"
+        );
+
+        info!(
+            target_slot,
+            ?block_root,
+            commitment_count,
+            ?validators_finished,
+            "Beacon data column sidecar multi-hop propagation e2e test completed"
         );
     }
 
