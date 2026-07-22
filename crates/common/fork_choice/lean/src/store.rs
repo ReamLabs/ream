@@ -18,7 +18,7 @@ use ream_consensus_lean::{
     checkpoint::Checkpoint,
     slot::{is_justifiable_after, justified_index_after},
     state::{LeanState, attestation_data_matches_chain},
-    validator::{Validator, is_proposer},
+    validator::is_proposer,
 };
 use ream_consensus_misc::constants::lean::{
     GOSSIP_DISPARITY_INTERVALS, INTERVALS_PER_SLOT, MAX_ATTESTATIONS_DATA,
@@ -1475,12 +1475,6 @@ impl Store {
         let aggregator_start = Instant::now();
         let (aggregated_attestations, aggregated_proofs) =
             self.select_aggregated_proofs(attestations).await?;
-
-        let (aggregated_attestations, aggregated_proofs) = compact_aggregated_proofs(
-            aggregated_attestations,
-            aggregated_proofs,
-            &head_state.validators,
-        )?;
         observe_block_proposal_phase("proof_aggregation", aggregator_start.elapsed());
         stop_timer(payload_aggregation_timer);
         observe_histogram_vec(
@@ -2654,150 +2648,6 @@ fn shift_projected_finalized_slot(
 
     *justified_slots = shifted;
     Ok(())
-}
-
-fn compact_aggregated_proofs(
-    attestations: Vec<AggregatedAttestation>,
-    proofs: Vec<PayloadProof>,
-    validators: &VariableList<Validator, U4096>,
-) -> anyhow::Result<(Vec<AggregatedAttestation>, Vec<PayloadProof>)> {
-    ensure!(
-        attestations.len() == proofs.len(),
-        "Mismatched attestations ({}) and proofs ({}) lengths",
-        attestations.len(),
-        proofs.len(),
-    );
-
-    if attestations.len() <= 1 {
-        return Ok((attestations, proofs));
-    }
-
-    let mut order = Vec::new();
-    let mut group_index: HashMap<AttestationData, usize> = HashMap::new();
-    let mut groups: Vec<Vec<usize>> = Vec::new();
-    for (attestation_index, attestation) in attestations.iter().enumerate() {
-        match group_index.get(&attestation.message) {
-            Some(&index) => groups
-                .get_mut(index)
-                .ok_or_else(|| anyhow!("group_index pointed to missing group at {index}"))?
-                .push(attestation_index),
-            None => {
-                group_index.insert(attestation.message.clone(), groups.len());
-                order.push(attestation.message.clone());
-                groups.push(vec![attestation_index]);
-            }
-        }
-    }
-
-    if order.len() == attestations.len() {
-        return Ok((attestations, proofs));
-    }
-
-    let mut remaining_attestations: Vec<_> = attestations.into_iter().map(Some).collect();
-    let mut remaining_proofs: Vec<_> = proofs.into_iter().map(Some).collect();
-
-    let mut out_attestations = Vec::with_capacity(order.len());
-    let mut out_proofs = Vec::with_capacity(order.len());
-
-    for (data, indices) in order.into_iter().zip(groups) {
-        if let [single_index] = indices.as_slice() {
-            out_attestations.push(
-                remaining_attestations
-                    .get_mut(*single_index)
-                    .and_then(Option::take)
-                    .ok_or_else(|| {
-                        anyhow!("attestation slot {single_index} missing or already taken")
-                    })?,
-            );
-            out_proofs.push(
-                remaining_proofs
-                    .get_mut(*single_index)
-                    .and_then(Option::take)
-                    .ok_or_else(|| anyhow!("proof slot {single_index} missing or already taken"))?,
-            );
-            continue;
-        }
-
-        let mut group_proofs = indices
-            .iter()
-            .map(|&index| {
-                remaining_proofs
-                    .get_mut(index)
-                    .and_then(Option::take)
-                    .ok_or_else(|| anyhow!("proof slot {index} missing or already taken"))
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
-        group_proofs.sort_by_key(|proof| proof.to_validator_indices());
-
-        for &index in &indices {
-            if let Some(slot) = remaining_attestations.get_mut(index) {
-                slot.take();
-            }
-        }
-
-        let mut merged_bits = BitList::<U4096>::with_capacity(validators.len())
-            .map_err(|err| anyhow!("BitList error: {err:?}"))?;
-        for proof in &group_proofs {
-            for (index, bit) in proof.participants.iter().enumerate() {
-                if bit {
-                    merged_bits
-                        .set(index, true)
-                        .map_err(|err| anyhow!("BitList error: {err:?}"))?;
-                }
-            }
-        }
-
-        let children_public_keys = group_proofs
-            .iter()
-            .map(|proof| {
-                proof
-                    .to_validator_indices()
-                    .into_iter()
-                    .map(|validator_index| {
-                        validators
-                            .get(validator_index as usize)
-                            .map(|validator| validator.attestation_public_key)
-                            .ok_or_else(|| {
-                                anyhow!(
-                                    "Validator index {validator_index} out of range during compaction"
-                                )
-                            })
-                    })
-                    .collect::<anyhow::Result<Vec<_>>>()
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
-
-        let data_root = data.tree_hash_root();
-        let building_timer = start_timer(&PQ_SIG_AGGREGATED_SIGNATURES_BUILDING_TIME, &[]);
-
-        #[cfg(feature = "devnet5")]
-        let merged_proof_data = {
-            let children = group_proofs
-                .iter()
-                .zip(children_public_keys.iter())
-                .map(|(proof, public_keys)| type_1_from_wire(&proof.proof, public_keys))
-                .collect::<anyhow::Result<Vec<_>>>()?;
-            let merged = type_1_aggregate(&children, &[], &data_root.0, data.slot as u32)?;
-            type_1_to_wire(&merged)
-        };
-
-        stop_timer(building_timer);
-        inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_TOTAL, &[]);
-
-        let merged_proof = PayloadProof::new(
-            merged_bits.clone(),
-            VariableList::new(merged_proof_data)
-                .map_err(|err| anyhow!("Merged proof exceeds size limit: {err:?}"))?,
-        );
-
-        out_attestations.push(AggregatedAttestation {
-            aggregation_bits: merged_bits,
-            message: data,
-        });
-        out_proofs.push(merged_proof);
-    }
-
-    Ok((out_attestations, out_proofs))
 }
 
 #[cfg(test)]
