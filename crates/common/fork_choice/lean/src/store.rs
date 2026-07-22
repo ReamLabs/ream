@@ -69,7 +69,7 @@ use ssz_types::{
 use tokio::sync::Mutex;
 use tree_hash::TreeHash;
 
-use crate::constants::JUSTIFICATION_LOOKBACK_SLOTS;
+use crate::constants::{ATTESTATION_RETENTION_SLOTS, JUSTIFICATION_LOOKBACK_SLOTS};
 
 pub type LeanStoreWriter = Writer<Store>;
 pub type LeanStoreReader = Reader<Store>;
@@ -264,22 +264,33 @@ impl Store {
     ) -> anyhow::Result<(B256, u64)> {
         let mut root = provided_root;
 
-        let (slot_index_table, block_provider) = {
+        let (slot_index_table, block_provider, children_index_provider) = {
             let db = self.store.lock().await;
-            (db.slot_index_provider(), db.block_provider())
+            (
+                db.slot_index_provider(),
+                db.block_provider(),
+                db.children_index_provider(),
+            )
         };
 
+        let index_map = children_index_provider.get_index_map()?;
+
         // Start at genesis by default
-        if root == B256::ZERO || block_provider.get(root)?.is_none() {
+        if root == B256::ZERO || !index_map.contains_key(&root) {
             root = slot_index_table
                 .get_oldest_root()?
                 .ok_or(anyhow!("No blocks found to calculate fork choice"))?;
         }
-        let start_slot = block_provider
-            .get(root)?
-            .ok_or(anyhow!("Failed to get block for root {root:?}"))?
-            .block
-            .slot;
+        let start_slot = match index_map.get(&root) {
+            Some(&(_, slot)) => slot,
+            None => {
+                block_provider
+                    .get(root)?
+                    .ok_or(anyhow!("Failed to get block for root {root:?}"))?
+                    .block
+                    .slot
+            }
+        };
         // For each block, count the number of votes for that block. A vote
         // for any descendant of a block also counts as a vote for that block
         let mut weights = HashMap::<B256, u64>::new();
@@ -288,21 +299,28 @@ impl Store {
             let attestation = attestation?;
             let mut current_root = attestation.message.head.root;
 
-            while let Some(block) = block_provider.get(current_root)? {
-                let block = block.block;
-
-                if block.slot <= start_slot {
+            while let Some(&(parent_root, slot)) = index_map.get(&current_root) {
+                if slot <= start_slot {
                     break;
                 }
 
                 *weights.entry(current_root).or_insert(0) += 1;
 
-                current_root = block.parent_root;
+                current_root = parent_root;
             }
         }
 
         // Identify the children of each block
-        let children_map = block_provider.get_children_map(min_score, &weights)?;
+        let mut children_map = HashMap::<B256, Vec<B256>>::new();
+        for (&block_root, &(parent_root, _)) in &index_map {
+            if parent_root == B256::ZERO {
+                continue;
+            }
+            if min_score > 0 && *weights.get(&block_root).unwrap_or(&0) < min_score {
+                continue;
+            }
+            children_map.entry(parent_root).or_default().push(block_root);
+        }
 
         // Start at the root (latest justified hash or genesis) and repeatedly
         // choose the child with the most latest votes, tiebreaking by slot then hash
@@ -314,11 +332,9 @@ impl Store {
                 .iter()
                 .map(|child_hash| {
                     let vote_weight = *weights.get(child_hash).unwrap_or(&0);
-                    let slot = block_provider
-                        .get(*child_hash)
-                        .ok()
-                        .flatten()
-                        .map(|block| block.block.slot)
+                    let slot = index_map
+                        .get(child_hash)
+                        .map(|&(_, slot)| slot)
                         .unwrap_or(0);
                     (*child_hash, slot, (vote_weight, *child_hash))
                 })
@@ -595,16 +611,27 @@ impl Store {
             .slot;
         let mut finalized_root = new_head;
 
-        while let Some(block) = block_provider.get(finalized_root)? {
-            if block.block.slot <= target_finalized_slot {
+        let index_map = {
+            let db = self.store.lock().await;
+            db.children_index_provider().get_index_map()?
+        };
+        let lookup_slot = |root: B256| -> anyhow::Result<Option<(B256, u64)>> {
+            if let Some(&(parent_root, slot)) = index_map.get(&root) {
+                return Ok(Some((parent_root, slot)));
+            }
+            Ok(block_provider
+                .get(root)?
+                .map(|block| (block.block.parent_root, block.block.slot)))
+        };
+
+        while let Some((parent_root, slot)) = lookup_slot(finalized_root)? {
+            if slot <= target_finalized_slot {
                 break;
             }
-            finalized_root = block.block.parent_root;
+            finalized_root = parent_root;
         }
 
-        let final_finalized_checkpoint = if block_provider
-            .get(finalized_root)?
-            .map(|block| block.block.slot)
+        let final_finalized_checkpoint = if lookup_slot(finalized_root)?.map(|(_, slot)| slot)
             == Some(target_finalized_slot)
         {
             Checkpoint {
@@ -2524,10 +2551,28 @@ impl Store {
 
         children_index_provider.prune_finalized(finalized_slot)?;
 
+        let head_slot = self.network_state.head_checkpoint.read().slot;
+        let cutoff_slot = finalized_slot.max(head_slot.saturating_sub(ATTESTATION_RETENTION_SLOTS));
+
+        let protected_roots: HashSet<B256> = latest_known_aggregated_payloads_provider
+            .iter_keys()?
+            .into_iter()
+            .map(|key| key.data_root)
+            .chain(
+                latest_new_aggregated_payloads_provider
+                    .iter()?
+                    .into_iter()
+                    .map(|(key, _)| key.data_root),
+            )
+            .collect();
+
         let stale_roots: HashSet<B256> = attestation_data_by_root_provider
             .iter()?
             .into_iter()
-            .filter(|(_, data)| data.target.slot <= finalized_slot)
+            .filter(|(root, data)| {
+                (data.target.slot <= finalized_slot || data.slot < cutoff_slot)
+                    && !protected_roots.contains(root)
+            })
             .map(|(root, _)| root)
             .collect();
 
