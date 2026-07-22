@@ -28,7 +28,10 @@ devnet5 = [
     "ream-validator-lean/devnet5",
 ]
 jemalloc = ["dep:tikv-jemallocator"]
-shadow-integration = ["ream-executor/shadow-integration"]
+shadow-integration = [
+    "ream-executor/shadow-integration",
+    "ream-post-quantum-crypto/shadow-integration",
+]
 
 [dependencies]
 alloy-primitives.workspace = true

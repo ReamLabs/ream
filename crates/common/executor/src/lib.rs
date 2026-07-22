@@ -19,10 +19,6 @@ impl ReamExecutor {
         #[cfg(feature = "shadow-integration")]
         let runtime = Arc::new(
             runtime::Builder::new_current_thread()
-                // Match `Runtime::new()` (multi-thread) — enable the I/O, time,
-                // and signal drivers. Without this the single-threaded Shadow
-                // runtime has no signal driver and `tokio::signal::ctrl_c()`
-                // panics ("there is no signal driver running").
                 .enable_all()
                 .build()?,
         );
