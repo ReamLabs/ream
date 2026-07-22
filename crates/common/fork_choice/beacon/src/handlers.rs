@@ -17,7 +17,6 @@ use ream_storage::{
         table::REDBTable,
     },
 };
-use tracing::warn;
 use tree_hash::TreeHash;
 
 use crate::store::Store;
@@ -64,12 +63,14 @@ pub async fn on_block(
     )?;
     ensure!(store.db.finalized_checkpoint_provider().get()?.root == finalized_checkpoint_block);
 
-    // TODO(#1483): queue as pending and re-check once sidecars arrive, instead of importing now.
-    if verify_blob_availability
-        && !block.body.blob_kzg_commitments.is_empty()
-        && !store.is_data_available(block_root)?
-    {
-        warn!("Data not available yet for block root: {block_root:x}, importing anyway");
+    // Blocks routinely arrive before their column sidecars, so this rejects on the first gossip
+    // attempt and relies on the block-range syncer to retry once sidecars have landed.
+    // TODO(#1483): queue as pending and re-check once sidecars arrive, instead of rejecting now.
+    if verify_blob_availability && !block.body.blob_kzg_commitments.is_empty() {
+        ensure!(
+            store.is_data_available(block_root)?,
+            "Data not available for block root: {block_root:x}",
+        );
     }
 
     // Check the block is valid and compute the post-state
