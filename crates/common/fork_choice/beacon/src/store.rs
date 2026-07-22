@@ -745,7 +745,9 @@ impl Store {
         // The p2p network does not guarantee sidecar retrieval outside of
         // `MIN_EPOCHS_FOR_DATA_COLUMN_SIDECARS_REQUESTS` epochs.
         let column_sidecars = self.retrieve_column_sidecars(beacon_block_root)?;
-        ensure!(!column_sidecars.is_empty(), "No column sidecars available");
+        if column_sidecars.is_empty() {
+            return Ok(false);
+        }
 
         // Fulu column sidecars validation
         for column_sidecar in column_sidecars {

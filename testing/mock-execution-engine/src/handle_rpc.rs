@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use actix_web::{HttpResponse, Responder, web};
-use alloy_primitives::B64;
+use alloy_primitives::{B64, B256};
 use ream_execution_rpc_types::{
     execution_payload::ExecutionPayloadV3,
     forkchoice_update::{ForkchoiceStateV1, PayloadAttributesV3},
@@ -85,7 +85,21 @@ fn handle_rpc_request(
                 "validationError": response.validation_error,
             }))
         }
-        "engine_getBlobsV1" => Ok(json!(Vec::<Value>::new())),
+        "engine_getBlobsV1" => {
+            let versioned_hashes: Vec<B256> = parse_param(&request.params, 0)?;
+            let generator = lock_generator(generator)?;
+            let results: Vec<Value> = versioned_hashes
+                .into_iter()
+                .map(|hash| match generator.get_blob_and_proof(hash) {
+                    Some(blob_and_proof) => json!({
+                        "blob": blob_and_proof.blob,
+                        "proof": blob_and_proof.proof,
+                    }),
+                    None => Value::Null,
+                })
+                .collect();
+            Ok(json!(results))
+        }
         "engine_exchangeCapabilities" => Ok(json!([
             "engine_forkchoiceUpdatedV3",
             "engine_getBlobsV1",

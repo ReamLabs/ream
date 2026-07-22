@@ -1,15 +1,64 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::OnceLock};
 
-use alloy_primitives::{Address, B64, B256, U256};
-use anyhow::{anyhow, bail};
+use alloy_primitives::{Address, B64, B256, Bytes, U64, U256};
+use alloy_rlp::Encodable;
+use anyhow::{anyhow, bail, ensure};
+use ream_consensus_misc::polynomial_commitments::{
+    kzg_commitment::KZGCommitment, kzg_proof::KZGProof,
+};
 use ream_execution_rpc_types::{
     electra::execution_payload::ExecutionPayload,
     execution_payload::ExecutionPayloadV3,
     forkchoice_update::{ForkchoiceStateV1, PayloadAttributesV3},
+    get_blobs::{Blob, BlobAndProofV1},
     get_payload::{BlobsBundleV1, PayloadV4},
     payload_status::{PayloadStatus, PayloadStatusV1},
+    transaction::{AccessList, BlobTransaction, ToAddress},
 };
-use ssz_types::VariableList;
+use rust_eth_kzg::{DASContext, TrustedSetup, UsePrecomp};
+use ssz_types::{FixedVector, VariableList};
+
+const BYTES_PER_BLOB: usize = 131_072;
+const BLOB_TRANSACTION_TYPE: u8 = 3;
+
+fn encode_blob_transaction(blob_versioned_hashes: Vec<B256>) -> Vec<u8> {
+    let transaction = BlobTransaction {
+        chain_id: U256::ZERO,
+        nonce: U256::ZERO,
+        max_priority_fee_per_gas: U256::ZERO,
+        max_fee_per_gas: U256::ZERO,
+        gas_limit: U256::ZERO,
+        to: ToAddress::Empty,
+        value: U256::ZERO,
+        data: Bytes::new(),
+        access_list: AccessList::default(),
+        max_fee_per_blob_gas: U256::ZERO,
+        blob_versioned_hashes,
+        y_parity: U64::ZERO,
+        r: U256::ZERO,
+        s: U256::ZERO,
+    };
+    let mut bytes = vec![BLOB_TRANSACTION_TYPE];
+    transaction.encode(&mut bytes);
+    bytes
+}
+
+/// Shared `DASContext`, built once (loading the trusted setup is expensive).
+fn das_context() -> &'static DASContext {
+    static DAS_CONTEXT: OnceLock<DASContext> = OnceLock::new();
+    DAS_CONTEXT.get_or_init(|| DASContext::new(&TrustedSetup::default(), UsePrecomp::No))
+}
+
+fn sample_blob(seed: u8) -> anyhow::Result<Blob> {
+    let mut bytes = vec![0u8; BYTES_PER_BLOB];
+    for (chunk_index, chunk) in bytes.chunks_mut(32).enumerate() {
+        chunk[31] = seed.wrapping_add(chunk_index as u8);
+    }
+    Ok(Blob {
+        inner: FixedVector::new(bytes)
+            .map_err(|err| anyhow!("failed to build sample blob: {err:?}"))?,
+    })
+}
 
 #[derive(Debug)]
 pub struct ForkchoiceUpdated {
@@ -23,6 +72,10 @@ pub struct ExecutionBlockGenerator {
     pending_payloads: HashMap<B64, ExecutionPayload>,
     next_payload_id: u64,
     head_block_hash: B256,
+    blobs_per_payload: usize,
+    pending_blobs: HashMap<B256, Vec<(Blob, KZGCommitment)>>,
+    blobs_by_versioned_hash: HashMap<B256, Blob>,
+    next_blob_seed: u8,
 }
 
 impl ExecutionBlockGenerator {
@@ -45,7 +98,54 @@ impl ExecutionBlockGenerator {
             pending_payloads: HashMap::new(),
             next_payload_id: 1,
             head_block_hash: genesis_block_hash,
+            blobs_per_payload: 0,
+            pending_blobs: HashMap::new(),
+            blobs_by_versioned_hash: HashMap::new(),
+            next_blob_seed: 0,
         }
+    }
+
+    pub fn set_blobs_per_payload(&mut self, count: usize) {
+        self.blobs_per_payload = count;
+    }
+
+    pub fn get_blob_and_proof(&self, versioned_hash: B256) -> Option<BlobAndProofV1> {
+        self.blobs_by_versioned_hash
+            .get(&versioned_hash)
+            .map(|blob| BlobAndProofV1 {
+                blob: blob.clone(),
+                proof: KZGProof::default(),
+            })
+    }
+
+    fn generate_blobs(&mut self) -> anyhow::Result<Vec<(Blob, KZGCommitment)>> {
+        if self.blobs_per_payload == 0 {
+            return Ok(Vec::new());
+        }
+
+        let context = das_context();
+        let mut blobs_and_commitments = Vec::with_capacity(self.blobs_per_payload);
+        for _ in 0..self.blobs_per_payload {
+            let blob = sample_blob(self.next_blob_seed)?;
+            self.next_blob_seed = self.next_blob_seed.wrapping_add(1);
+
+            let blob_data = blob.inner.to_vec();
+            ensure!(
+                blob_data.len() == BYTES_PER_BLOB,
+                "sample blob has unexpected length: {}",
+                blob_data.len()
+            );
+            let blob_bytes: [u8; BYTES_PER_BLOB] =
+                blob_data.try_into().expect("length already checked above");
+            let commitment = KZGCommitment(
+                context
+                    .blob_to_kzg_commitment(&blob_bytes)
+                    .map_err(|err| anyhow!("failed to compute sample blob commitment: {err:?}"))?,
+            );
+
+            blobs_and_commitments.push((blob, commitment));
+        }
+        Ok(blobs_and_commitments)
     }
 
     pub fn forkchoice_updated(
@@ -91,10 +191,28 @@ impl ExecutionBlockGenerator {
             base_fee_per_gas: U256::from(1),
             ..Default::default()
         };
+
+        let blobs_and_commitments = self.generate_blobs()?;
+        if !blobs_and_commitments.is_empty() {
+            let versioned_hashes = blobs_and_commitments
+                .iter()
+                .map(|(_, commitment)| commitment.calculate_versioned_hash())
+                .collect();
+            let transaction = VariableList::new(encode_blob_transaction(versioned_hashes))
+                .map_err(|err| anyhow!("blob transaction too large: {err:?}"))?;
+            payload.transactions = VariableList::new(vec![transaction])
+                .map_err(|err| anyhow!("too many transactions: {err:?}"))?;
+        }
+
+        // Must run after `transactions` is set - the header hash commits to their root.
         payload.block_hash = payload
             .to_execution_header(attrs.parent_beacon_block_root, &[])
             .hash_slow();
         self.blocks.insert(payload.block_hash, payload.clone());
+        if !blobs_and_commitments.is_empty() {
+            self.pending_blobs
+                .insert(payload.block_hash, blobs_and_commitments);
+        }
         Ok(payload)
     }
 
@@ -104,14 +222,29 @@ impl ExecutionBlockGenerator {
             .remove(id)
             .ok_or_else(|| anyhow!("unknown payload id {id}"))?;
 
+        let blobs_and_commitments = self
+            .pending_blobs
+            .remove(&payload.block_hash)
+            .unwrap_or_default();
+        for (blob, commitment) in &blobs_and_commitments {
+            self.blobs_by_versioned_hash
+                .insert(commitment.calculate_versioned_hash(), blob.clone());
+        }
+        let (blobs, commitments): (Vec<_>, Vec<_>) = blobs_and_commitments.into_iter().unzip();
+        let proofs = vec![KZGProof::default(); blobs.len()];
+        let blobs_bundle = BlobsBundleV1 {
+            blobs: VariableList::new(blobs)
+                .map_err(|err| anyhow!("too many sample blobs: {err:?}"))?,
+            commitments: VariableList::new(commitments)
+                .map_err(|err| anyhow!("too many sample commitments: {err:?}"))?,
+            proofs: VariableList::new(proofs)
+                .map_err(|err| anyhow!("too many sample proofs: {err:?}"))?,
+        };
+
         Ok(PayloadV4 {
             execution_payload: ExecutionPayloadV3::from(payload),
             block_value: B256::with_last_byte(1),
-            blobs_bundle: BlobsBundleV1 {
-                blobs: VariableList::empty(),
-                commitments: VariableList::empty(),
-                proofs: VariableList::empty(),
-            },
+            blobs_bundle,
             should_override_builder: false,
             execution_requests: Vec::new(),
         })
@@ -304,5 +437,112 @@ mod tests {
         let mut generator = ExecutionBlockGenerator::new(B256::with_last_byte(1));
 
         assert!(generator.get_payload(&B64::with_last_byte(99)).is_err());
+    }
+
+    #[test]
+    fn get_payload_defaults_to_no_blobs() {
+        let genesis_hash = B256::with_last_byte(1);
+        let mut generator = ExecutionBlockGenerator::new(genesis_hash);
+
+        let response = generator
+            .forkchoice_updated(
+                forkchoice_state(genesis_hash),
+                Some(test_payload_attributes(B256::with_last_byte(2))),
+            )
+            .expect("forkchoice update succeeds");
+        let payload = generator
+            .get_payload(&response.payload_id.expect("payload id"))
+            .expect("payload exists");
+
+        assert!(payload.blobs_bundle.blobs.is_empty());
+        assert!(payload.blobs_bundle.commitments.is_empty());
+        assert!(payload.blobs_bundle.proofs.is_empty());
+    }
+
+    #[test]
+    fn get_payload_with_blobs_produces_verifiable_commitments_and_retrievable_blobs() {
+        let genesis_hash = B256::with_last_byte(1);
+        let mut generator = ExecutionBlockGenerator::new(genesis_hash);
+        generator.set_blobs_per_payload(2);
+
+        let response = generator
+            .forkchoice_updated(
+                forkchoice_state(genesis_hash),
+                Some(test_payload_attributes(B256::with_last_byte(2))),
+            )
+            .expect("forkchoice update succeeds");
+        let payload = generator
+            .get_payload(&response.payload_id.expect("payload id"))
+            .expect("payload exists");
+
+        assert_eq!(payload.blobs_bundle.blobs.len(), 2);
+        assert_eq!(payload.blobs_bundle.commitments.len(), 2);
+        assert_eq!(payload.blobs_bundle.proofs.len(), 2);
+
+        let context = das_context();
+        for (blob, commitment) in payload
+            .blobs_bundle
+            .blobs
+            .iter()
+            .zip(payload.blobs_bundle.commitments.iter())
+        {
+            let blob_bytes: [u8; BYTES_PER_BLOB] = blob.inner.to_vec().try_into().unwrap();
+            let recomputed = context.blob_to_kzg_commitment(&blob_bytes).unwrap();
+            assert_eq!(recomputed, commitment.0, "commitment must match the blob");
+
+            let versioned_hash = commitment.calculate_versioned_hash();
+            let blob_and_proof = generator
+                .get_blob_and_proof(versioned_hash)
+                .expect("blob should be retrievable by its versioned hash");
+            assert_eq!(&blob_and_proof.blob, blob);
+        }
+
+        assert!(
+            generator
+                .get_blob_and_proof(B256::with_last_byte(0xff))
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn payload_with_blobs_passes_is_valid_versioned_hashes() {
+        use ream_consensus_misc::execution_requests::ExecutionRequests;
+        use ream_execution_engine::{
+            is_valid_versioned_hashes, new_payload_request::NewPayloadRequest,
+        };
+
+        let genesis_hash = B256::with_last_byte(1);
+        let parent_beacon_block_root = B256::with_last_byte(2);
+        let mut generator = ExecutionBlockGenerator::new(genesis_hash);
+        generator.set_blobs_per_payload(2);
+
+        let response = generator
+            .forkchoice_updated(
+                forkchoice_state(genesis_hash),
+                Some(test_payload_attributes(parent_beacon_block_root)),
+            )
+            .expect("forkchoice update succeeds");
+        let payload = generator
+            .get_payload(&response.payload_id.expect("payload id"))
+            .expect("payload exists");
+
+        let versioned_hashes: Vec<B256> = payload
+            .blobs_bundle
+            .commitments
+            .iter()
+            .map(|commitment| commitment.calculate_versioned_hash())
+            .collect();
+
+        // Same check `verify_and_notify_new_payload` runs before importing a block.
+        let request = NewPayloadRequest {
+            execution_payload: payload_v3_to_execution_payload(payload.execution_payload),
+            versioned_hashes,
+            parent_beacon_block_root,
+            execution_requests: ExecutionRequests::default(),
+        };
+        assert!(
+            is_valid_versioned_hashes(&request).expect("should not error"),
+            "generated payload's transactions must reference the same versioned hashes as its blob_kzg_commitments"
+        );
     }
 }
