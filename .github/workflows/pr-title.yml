@@ -2,7 +2,7 @@ name: Pull Request Title
 
 on:
   pull_request:
-    branches: [ "master" ]
+    branches: [ "master", "develop" ]
     types: 
       - opened
       - edited
