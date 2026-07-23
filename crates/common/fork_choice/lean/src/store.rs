@@ -319,7 +319,10 @@ impl Store {
             if min_score > 0 && *weights.get(&block_root).unwrap_or(&0) < min_score {
                 continue;
             }
-            children_map.entry(parent_root).or_default().push(block_root);
+            children_map
+                .entry(parent_root)
+                .or_default()
+                .push(block_root);
         }
 
         // Start at the root (latest justified hash or genesis) and repeatedly
@@ -631,16 +634,15 @@ impl Store {
             finalized_root = parent_root;
         }
 
-        let final_finalized_checkpoint = if lookup_slot(finalized_root)?.map(|(_, slot)| slot)
-            == Some(target_finalized_slot)
-        {
-            Checkpoint {
-                root: finalized_root,
-                slot: target_finalized_slot,
-            }
-        } else {
-            latest_finalized_checkpoint
-        };
+        let final_finalized_checkpoint =
+            if lookup_slot(finalized_root)?.map(|(_, slot)| slot) == Some(target_finalized_slot) {
+                Checkpoint {
+                    root: finalized_root,
+                    slot: target_finalized_slot,
+                }
+            } else {
+                latest_finalized_checkpoint
+            };
 
         set_int_gauge_vec(&HEAD_SLOT, new_head_slot as i64, &[]);
         set_int_gauge_vec(&FINALIZED_SLOT, final_finalized_checkpoint.slot as i64, &[]);
