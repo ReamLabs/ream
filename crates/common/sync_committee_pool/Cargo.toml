@@ -9,6 +9,11 @@ repository.workspace = true
 rust-version.workspace = true
 version.workspace = true
 
+[features]
+optimized-leanvm = [
+    "ream-validator-beacon/optimized-leanvm",
+]
+
 [dependencies]
 alloy-primitives.workspace = true
 parking_lot.workspace = true

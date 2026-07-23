@@ -53,13 +53,20 @@ fn default_seconds_per_slot() -> u64 {
     4
 }
 
+/// Serialized XMSS public key size: 52 bytes for the leansig scheme, 32 bytes for the
+/// leanVM sub-MTU scheme.
+#[cfg(not(feature = "optimized-leanvm"))]
+pub const PUBLIC_KEY_SIZE: usize = 52;
+#[cfg(feature = "optimized-leanvm")]
+pub const PUBLIC_KEY_SIZE: usize = 32;
+
 /// A single validator's public keys in the genesis configuration.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Default)]
 pub struct GenesisValidatorEntry {
     #[serde(alias = "attestation_pubkey")]
-    pub attestation_public_key: FixedBytes<52>,
+    pub attestation_public_key: FixedBytes<PUBLIC_KEY_SIZE>,
     #[serde(alias = "proposal_pubkey")]
-    pub proposal_public_key: FixedBytes<52>,
+    pub proposal_public_key: FixedBytes<PUBLIC_KEY_SIZE>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Default)]

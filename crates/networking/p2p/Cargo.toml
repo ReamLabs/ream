@@ -17,6 +17,16 @@ devnet5 = [
     "ream-network-state-lean/devnet5",
     "ream-storage/devnet5",
 ]
+optimized-leanvm = [
+    "ream-network-spec/optimized-leanvm",
+    "devnet5",
+    "ream-chain-lean/optimized-leanvm",
+    "ream-consensus-lean/optimized-leanvm",
+    "ream-network-state-lean/optimized-leanvm",
+    "ream-req-resp/optimized-leanvm",
+    "ream-storage/optimized-leanvm",
+    "ream-validator-beacon/optimized-leanvm",
+]
 
 [dependencies]
 alloy-primitives.workspace = true

@@ -12,6 +12,7 @@ version.workspace = true
 [features]
 default = ["devnet5"]
 devnet5 = []
+optimized-leanvm = ["devnet5"]
 
 [dependencies]
 alloy-primitives.workspace = true
