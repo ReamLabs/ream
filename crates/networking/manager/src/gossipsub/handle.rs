@@ -551,7 +551,7 @@ pub async fn handle_gossipsub_message(
                     Ok(duration) => u64::try_from(duration.as_millis()).unwrap_or(u64::MAX),
                     Err(err) => {
                         error!("Failed to get current time for data column validation: {err}");
-                        return;
+                        return MessageAcceptance::Ignore;
                     }
                 };
 
