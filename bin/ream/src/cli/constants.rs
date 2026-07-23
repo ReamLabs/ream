@@ -7,6 +7,7 @@ pub const DEFAULT_DISCOVERY_PORT: u16 = 9000;
 pub const DEFAULT_HTTP_ADDRESS: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
 pub const DEFAULT_HTTP_ALLOW_ORIGIN: bool = false;
 pub const DEFAULT_HTTP_PORT: u16 = 5052;
+pub const DEFAULT_DA_HTTP_PORT: u16 = 5062;
 pub const DEFAULT_KEY_MANAGER_HTTP_PORT: u16 = 8008;
 pub const DEFAULT_METRICS_ENABLED: bool = false;
 pub const DEFAULT_METRICS_ADDRESS: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));

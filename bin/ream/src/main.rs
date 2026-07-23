@@ -2,6 +2,7 @@ use std::{
     collections::BTreeSet,
     env, fs,
     net::SocketAddr,
+    num::NonZeroUsize,
     path::{Path, PathBuf},
     process,
     sync::Arc,
@@ -16,6 +17,7 @@ use ream::{
         Cli, Commands,
         account_manager::AccountManagerConfig,
         beacon_node::BeaconNodeConfig,
+        da_node::DaNodeConfig,
         generate_private_key::GeneratePrivateKeyConfig,
         generate_validator_registry::run_generate_validator_registry,
         import_keystores::{load_keystore_directory, load_password_from_config, process_password},
@@ -47,6 +49,8 @@ use ream_consensus_misc::{
     },
     misc::compute_epoch_at_slot,
 };
+use ream_da_node::{ingest::ingest_channel, service::DaVerificationService, store::DaFileStore};
+use ream_da_verifier_kzg::KzgVerifier;
 use ream_events_beacon::BeaconEvent;
 use ream_execution_engine::ExecutionEngine;
 use ream_executor::ReamExecutor;
@@ -108,6 +112,7 @@ use tracing_subscriber::EnvFilter;
 static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 pub const APP_NAME: &str = "ream";
+const DA_VERIFICATION_QUEUE_CAPACITY: usize = 256;
 const DEFAULT_QUIET_LOG_TARGETS: &str = "libp2p_gossipsub::behaviour=error";
 
 struct AbortOnDrop<T>(tokio::task::JoinHandle<T>);
@@ -164,6 +169,8 @@ fn main() {
                 ReamDB::new(ream_directory.clone()).expect("unable to init Ream Database");
             executor_clone.spawn(async move { run_beacon_node(*config, executor, ream_db).await })
         }
+        Commands::DaNode(config) => executor_clone
+            .spawn(async move { run_da_node(*config, executor, ream_directory).await }),
         Commands::ValidatorNode(config) => {
             executor_clone.spawn(async move { run_validator_node(*config, executor).await })
         }
@@ -643,6 +650,66 @@ async fn run_beacon_node_for_test(
     ream_db: ReamDB,
 ) {
     run_beacon_node_inner(config, executor, ream_db, false).await;
+}
+
+/// Runs the da node.
+pub async fn run_da_node(config: DaNodeConfig, executor: ReamExecutor, ream_directory: PathBuf) {
+    info!(
+        "starting up da node on {}:{}",
+        config.http_address, config.http_port
+    );
+    let data_dir = ream_directory.join("da");
+
+    set_beacon_network_spec(config.network.clone());
+
+    // The DA RPC is a private, same-host channel to the local beacon, not a public
+    // service. Refuse to start if bound anywhere reachable beyond this
+    // machine, which would expose unauthenticated write/prune/read to the network.
+    if !config.http_address.is_loopback() {
+        error!(
+            "refusing to start DA node: http address {} is not loopback; \
+             the DA RPC must not be reachable beyond localhost",
+            config.http_address
+        );
+        return;
+    }
+
+    let server_config = RpcServerConfig::new(
+        config.http_address,
+        config.http_port,
+        config.http_allow_origin,
+    );
+
+    // Filesystem-backed store, rooted at the node's data directory.
+    let store = Arc::new(DaFileStore::new(data_dir).expect("failed to open DA store"));
+    let max_blobs_per_block =
+        NonZeroUsize::new(beacon_network_spec().max_blobs_per_block_electra as usize)
+            .expect("network spec max_blobs_per_block must be nonzero");
+    let verifier = Arc::new(KzgVerifier::new(max_blobs_per_block));
+
+    let (ingest_handle, rx) = ingest_channel(DA_VERIFICATION_QUEUE_CAPACITY);
+    let service = DaVerificationService::new(rx, verifier.clone(), store.clone(), executor.clone());
+    let mut service_task = AbortOnDrop(executor.spawn(service.run()));
+
+    let mut http_task = AbortOnDrop(executor.spawn(async move {
+        ream_rpc_da::server::start(server_config, ingest_handle, store).await
+    }));
+
+    // The KZG trusted setup is lazily loaded and expensive (seconds). Warm it up
+    // now, off the async workers, so the first column to arrive doesn't pay that
+    // cost mid-verification.
+    if let Err(err) = executor
+        .spawn_blocking(KzgVerifier::warm_up_trusted_setup)
+        .await
+    {
+        error!("failed to warm up KZG trusted setup: {err}");
+        return;
+    }
+
+    tokio::select! {
+        _ = &mut http_task.0 => info!("DA HTTP server stopped"),
+        _ = &mut service_task.0 => info!("DA verification service stopped"),
+    }
 }
 
 /// Runs the validator node.
