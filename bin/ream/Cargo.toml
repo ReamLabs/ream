@@ -27,6 +27,28 @@ devnet5 = [
     "ream-storage/devnet5",
     "ream-validator-lean/devnet5",
 ]
+optimized-leanvm = [
+    "ream-network-spec/optimized-leanvm",
+    "devnet5",
+    "ream-chain-beacon/optimized-leanvm",
+    "ream-chain-lean/optimized-leanvm",
+    "ream-checkpoint-sync-beacon/optimized-leanvm",
+    "ream-checkpoint-sync-lean/optimized-leanvm",
+    "ream-consensus-lean/optimized-leanvm",
+    "ream-fork-choice-beacon/optimized-leanvm",
+    "ream-fork-choice-lean/optimized-leanvm",
+    "ream-keystore/optimized-leanvm",
+    "ream-network-manager/optimized-leanvm",
+    "ream-network-state-lean/optimized-leanvm",
+    "ream-p2p/optimized-leanvm",
+    "ream-post-quantum-crypto/optimized-leanvm",
+    "ream-rpc-beacon/optimized-leanvm",
+    "ream-rpc-lean/optimized-leanvm",
+    "ream-storage/optimized-leanvm",
+    "ream-sync-committee-pool/optimized-leanvm",
+    "ream-validator-beacon/optimized-leanvm",
+    "ream-validator-lean/optimized-leanvm",
+]
 
 [dependencies]
 alloy-primitives.workspace = true

@@ -12,6 +12,10 @@ version.workspace = true
 [features]
 default = ["devnet5"]
 devnet5 = ["ream-consensus-lean/devnet5"]
+optimized-leanvm = [
+    "devnet5",
+    "ream-consensus-lean/optimized-leanvm",
+]
 
 [dependencies]
 libp2p.workspace = true

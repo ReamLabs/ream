@@ -16,6 +16,14 @@ devnet5 = [
     "ream-fork-choice-lean/devnet5",
     "ream-storage/devnet5",
 ]
+optimized-leanvm = [
+    "ream-network-spec/optimized-leanvm",
+    "devnet5",
+    "ream-consensus-lean/optimized-leanvm",
+    "ream-fork-choice-lean/optimized-leanvm",
+    "ream-post-quantum-crypto/optimized-leanvm",
+    "ream-storage/optimized-leanvm",
+]
 
 [dependencies]
 ssz_types.workspace = true
