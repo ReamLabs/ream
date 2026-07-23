@@ -25,38 +25,13 @@ pub async fn validate_beacon_attestation(
     let store = beacon_chain.store.lock().await;
 
     let head_root = store.get_head()?;
-    let state: BeaconState = store
+    let mut state: BeaconState = store
         .db
         .state_provider()
         .get(head_root)?
         .ok_or_else(|| anyhow!("No beacon state found for head root: {head_root}"))?;
 
-    let index = attestation.committee_index;
-    let committees_per_slot = state.get_committee_count_per_slot(attestation.data.target.epoch);
-
-    // [REJECT] The committee index is within the expected range
-    if index >= committees_per_slot {
-        return Ok(ValidationResult::Reject(
-            "The committee index is not within the expected range".to_string(),
-        ));
-    }
-
-    // [REJECT] The attestation is for the correct subnet
-    if compute_subnet_for_attestation(committees_per_slot, attestation.data.slot, index)
-        != attestation_subnet_id
-    {
-        return Ok(ValidationResult::Reject(
-            "The attestation is not for the correct subnet".to_string(),
-        ));
-    }
-
-    let block = store
-        .db
-        .block_provider()
-        .get(head_root)?
-        .ok_or_else(|| anyhow!("Could not get block for head root: {head_root}"))?;
-
-    let current_slot = block.message.slot;
+    let current_slot = store.get_current_slot()?;
 
     // [IGNORE] attestation.data.slot is equal to or earlier than the current_slot (with a
     // MAXIMUM_GOSSIP_CLOCK_DISPARITY allowance)
@@ -66,11 +41,42 @@ pub async fn validate_beacon_attestation(
         ));
     }
 
+    if state.slot < attestation.data.slot {
+        state.process_slots(attestation.data.slot)?;
+    }
+
+    let committee_index = attestation.committee_index;
+    let committees_per_slot = state.get_committee_count_per_slot(attestation.data.target.epoch);
+
+    // [REJECT] In Electra, SingleAttestation carries the committee index separately and
+    // attestation.data.index must be zero.
+    if attestation.data.index != 0 {
+        return Ok(ValidationResult::Reject(
+            "Electra attestation data index must be 0".to_string(),
+        ));
+    }
+
+    // [REJECT] The committee index is within the expected range
+    if committee_index >= committees_per_slot {
+        return Ok(ValidationResult::Reject(
+            "The committee index is not within the expected range".to_string(),
+        ));
+    }
+
+    // [REJECT] The attestation is for the correct subnet
+    if compute_subnet_for_attestation(committees_per_slot, attestation.data.slot, committee_index)
+        != attestation_subnet_id
+    {
+        return Ok(ValidationResult::Reject(
+            "The attestation is not for the correct subnet".to_string(),
+        ));
+    }
+
     // [IGNORE] the epoch of attestation.data.slot is either the current or previous epoch (with a
     // MAXIMUM_GOSSIP_CLOCK_DISPARITY allowance)
     let attestation_epoch = compute_epoch_at_slot(attestation.data.slot);
-    let current_epoch = state.get_current_epoch();
-    let previous_epoch = state.get_previous_epoch();
+    let current_epoch = compute_epoch_at_slot(current_slot);
+    let previous_epoch = current_epoch.saturating_sub(1);
 
     if attestation_epoch != current_epoch && attestation_epoch != previous_epoch {
         return Ok(ValidationResult::Ignore(
@@ -85,16 +91,9 @@ pub async fn validate_beacon_attestation(
         ));
     }
 
-    // [REJECT] attestation.data.index == 0
-    if index == 0 {
-        return Ok(ValidationResult::Reject(
-            "Committee index must not be 0".to_string(),
-        ));
-    }
-
     // [REJECT] The attester is a member of the committee
     if !state
-        .get_beacon_committee(attestation.data.slot, index)?
+        .get_beacon_committee(attestation.data.slot, committee_index)?
         .contains(&(attestation.attester_index))
     {
         return Ok(ValidationResult::Reject(

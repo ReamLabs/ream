@@ -5,7 +5,7 @@ use ream_consensus_beacon::electra::{
     blinded_beacon_block::{BlindedBeaconBlock, SignedBlindedBeaconBlock},
 };
 use ream_consensus_misc::{
-    constants::beacon::DOMAIN_BEACON_PROPOSER,
+    constants::beacon::{DOMAIN_BEACON_PROPOSER, genesis_validators_root},
     misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
 };
 use ream_network_spec::networks::beacon_network_spec;
@@ -24,17 +24,15 @@ pub fn get_block_signature(
 }
 
 pub fn sign_beacon_block(
-    slot: u64,
     beacon_block: BeaconBlock,
     private_key: &PrivateKey,
 ) -> anyhow::Result<SignedBeaconBlock> {
-    let epoch = compute_epoch_at_slot(slot);
     let domain = compute_domain(
         DOMAIN_BEACON_PROPOSER,
         Some(beacon_network_spec().electra_fork_version),
-        None,
+        Some(genesis_validators_root()),
     );
-    let signing_root = compute_signing_root(epoch, domain);
+    let signing_root = compute_signing_root(&beacon_block, domain);
     let signature = private_key.sign(signing_root.as_ref())?;
 
     Ok(SignedBeaconBlock {
@@ -44,18 +42,15 @@ pub fn sign_beacon_block(
 }
 
 pub fn sign_blinded_beacon_block(
-    slot: u64,
     blinded_beacon_block: BlindedBeaconBlock,
     private_key: &PrivateKey,
 ) -> anyhow::Result<SignedBlindedBeaconBlock> {
-    let epoch = compute_epoch_at_slot(slot);
-
     let domain = compute_domain(
         DOMAIN_BEACON_PROPOSER,
         Some(beacon_network_spec().electra_fork_version),
-        None,
+        Some(genesis_validators_root()),
     );
-    let signing_root = compute_signing_root(epoch, domain);
+    let signing_root = compute_signing_root(&blinded_beacon_block, domain);
     let signature = private_key.sign(signing_root.as_ref())?;
 
     Ok(SignedBlindedBeaconBlock {

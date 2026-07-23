@@ -5984,6 +5984,7 @@ dependencies = [
  "ream-account-manager",
  "ream-api-types-beacon",
  "ream-api-types-common",
+ "ream-bls",
  "ream-chain-beacon",
  "ream-chain-lean",
  "ream-checkpoint-sync-beacon",
@@ -5999,6 +6000,7 @@ dependencies = [
  "ream-fork-choice-lean",
  "ream-keystore",
  "ream-metrics",
+ "ream-mock-execution-engine",
  "ream-network-manager",
  "ream-network-spec",
  "ream-network-state-lean",
@@ -6019,7 +6021,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "serial_test",
- "snap",
+ "sha2",
  "ssz_types",
  "tikv-jemallocator",
  "tokio",
@@ -6503,6 +6505,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "ream-mock-execution-engine"
+version = "0.1.0"
+dependencies = [
+ "actix-web",
+ "alloy-primitives",
+ "anyhow",
+ "ream-execution-engine",
+ "ream-execution-rpc-types",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "ssz_types",
+ "tempfile",
+ "tokio",
+ "tree_hash",
+ "url",
+]
+
+[[package]]
 name = "ream-network-manager"
 version = "0.1.0"
 dependencies = [
@@ -6577,6 +6598,7 @@ version = "0.1.0"
 dependencies = [
  "alloy-primitives",
  "parking_lot",
+ "ream-bls",
  "ream-consensus-beacon",
  "ream-consensus-misc",
  "tree_hash",

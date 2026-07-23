@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, hash_map::Entry},
+    collections::{HashMap, HashSet, hash_map::Entry},
     mem::take,
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -7,7 +7,7 @@ use std::{
 };
 
 use alloy_primitives::Address;
-use anyhow::{anyhow, bail};
+use anyhow::anyhow;
 use futures::future::try_join_all;
 use ream_api_types_beacon::{
     block::{BroadcastValidation, ProduceBlockData},
@@ -24,6 +24,7 @@ use ream_consensus_misc::{
     attestation_data::AttestationData,
     constants::beacon::{
         DOMAIN_SYNC_COMMITTEE, INTERVALS_PER_SLOT, SLOTS_PER_EPOCH, SYNC_COMMITTEE_SIZE,
+        genesis_validators_root,
     },
     misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
 };
@@ -66,7 +67,7 @@ pub fn is_proposer(state: &BeaconState, validator_index: u64) -> anyhow::Result<
 }
 pub struct SyncTaskInfo {
     pub validator_index: u64,
-    pub committee_index: u64,
+    pub subcommittee_index: u64,
     pub selection_proof: BLSSignature,
     pub keystore: Arc<Keystore>,
 }
@@ -83,7 +84,7 @@ pub struct ValidatorService {
     pub attester_duties: Vec<AttesterDuty>,
     pub sync_committee_duties: Vec<SyncCommitteeDuty>,
     pub sync_aggregator_infos: Vec<SyncTaskInfo>,
-    pub sync_normal_infos: Vec<SyncTaskInfo>,
+    pub sync_normal_infos: Vec<u64>,
 }
 
 impl ValidatorService {
@@ -129,32 +130,34 @@ impl ValidatorService {
         let mut slot = intervals / INTERVALS_PER_SLOT;
         let mut epoch = compute_epoch_at_slot(slot);
 
-        let mut interval = {
-            let interval_start =
-                Instant::now() - (elapsed - Duration::from_secs(intervals * seconds_per_interval));
-            interval_at(interval_start, Duration::from_secs(seconds_per_interval))
-        };
+        self.on_epoch(epoch).await;
+        self.on_epoch_end(epoch.saturating_sub(1)).await;
+
+        let interval_duration = Duration::from_secs(seconds_per_interval);
+        let elapsed_since_interval =
+            elapsed - Duration::from_secs(intervals * seconds_per_interval);
+        let delay_to_next_interval = interval_duration
+            .checked_sub(elapsed_since_interval)
+            .unwrap_or(interval_duration);
+        let mut interval = interval_at(Instant::now() + delay_to_next_interval, interval_duration);
         interval.set_missed_tick_behavior(MissedTickBehavior::Burst);
 
         loop {
-            tokio::select! {
-                _ = interval.tick() => {
-                    intervals += 1;
-                    if intervals.is_multiple_of(INTERVALS_PER_SLOT * SLOTS_PER_EPOCH) {
-                        epoch += 1;
-                        self.on_epoch(epoch).await;
-                    }
-                    if intervals.is_multiple_of(INTERVALS_PER_SLOT) {
-                        slot += 1;
-                        self.on_slot(slot).await;
-                    }
-                    if intervals % INTERVALS_PER_SLOT == 2 {
-                        self.on_slot_aggregator(slot).await;
-                    }
-                    if (intervals + 1).is_multiple_of(INTERVALS_PER_SLOT * SLOTS_PER_EPOCH) {
-                        self.on_epoch_end(epoch).await;
-                    }
-                }
+            interval.tick().await;
+            intervals += 1;
+            if intervals.is_multiple_of(INTERVALS_PER_SLOT * SLOTS_PER_EPOCH) {
+                epoch += 1;
+                self.on_epoch(epoch).await;
+            }
+            if intervals.is_multiple_of(INTERVALS_PER_SLOT) {
+                slot += 1;
+                self.on_slot(slot).await;
+            }
+            if intervals % INTERVALS_PER_SLOT == 2 {
+                self.on_slot_aggregator(slot).await;
+            }
+            if (intervals + 1).is_multiple_of(INTERVALS_PER_SLOT * SLOTS_PER_EPOCH) {
+                self.on_epoch_end(epoch).await;
             }
         }
     }
@@ -170,11 +173,12 @@ impl ValidatorService {
             .map(|aggregator_info| {
                 let client = client.clone();
                 tokio::spawn(async move {
-                    let subcommittee_index = aggregator_info.committee_index
-                        / (SYNC_COMMITTEE_SIZE / SYNC_COMMITTEE_SUBNET_COUNT);
-
                     let contribution = client
-                        .get_sync_committee_contribution(slot, subcommittee_index, block_root)
+                        .get_sync_committee_contribution(
+                            slot,
+                            aggregator_info.subcommittee_index,
+                            block_root,
+                        )
                         .await?
                         .data;
 
@@ -212,8 +216,9 @@ impl ValidatorService {
     pub async fn process_normal_sync_infos(&mut self, slot: u64) -> anyhow::Result<()> {
         let normal_infos = take(&mut self.sync_normal_infos)
             .into_iter()
-            .map(|sync_info| sync_info.validator_index)
-            .collect::<Vec<u64>>();
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
         self.submit_sync_committee(slot, normal_infos.as_ref())
             .await
     }
@@ -233,7 +238,7 @@ impl ValidatorService {
         }
 
         if let Some(proposer_duties) = self.fetch_proposer_duties(epoch, &validator_indices).await {
-            self.proposer_duties = proposer_duties;
+            self.update_proposer_duties(epoch, proposer_duties);
         }
     }
 
@@ -268,16 +273,71 @@ impl ValidatorService {
             .fetch_proposer_duties(epoch + 1, &validator_indices)
             .await
         {
-            self.proposer_duties = proposer_duties;
+            self.update_proposer_duties(epoch + 1, proposer_duties);
         }
+    }
+
+    fn update_proposer_duties(&mut self, epoch: u64, proposer_duties: Vec<ProposerDuty>) {
+        self.proposer_duties
+            .retain(|duty| compute_epoch_at_slot(duty.slot) != epoch);
+        self.proposer_duties.extend(proposer_duties);
     }
 
     // Runs at the start of every slot
     pub async fn on_slot(&mut self, slot: u64) {
         info!("Current Slot: {slot}");
-        if let Err(err) = self.prepare_sync_infos(slot - 1).await {
+
+        let proposer_duties: Vec<_> = self
+            .proposer_duties
+            .iter()
+            .filter(|duty| duty.slot == slot)
+            .map(|duty| duty.validator_index)
+            .collect();
+
+        for validator_index in proposer_duties {
+            if let Err(err) = self.propose_block(slot, validator_index).await {
+                warn!(validator_index, "Could not propose beacon block: {err:?}");
+            }
+        }
+
+        let attester_duties: Vec<_> = self
+            .attester_duties
+            .iter()
+            .filter(|duty| duty.slot == slot)
+            .map(|duty| (duty.validator_index, duty.committee_index))
+            .collect();
+
+        for (validator_index, committee_index) in attester_duties {
+            let Some(keystore) = self
+                .validator_index_to_keystore
+                .get(&validator_index)
+                .cloned()
+            else {
+                warn!(validator_index, "Keystore not found for attestation duty");
+                continue;
+            };
+            let beacon_api_client = Arc::clone(&self.beacon_api_client);
+            self.executor.spawn(async move {
+                if let Err(err) = make_attestation_for_duty(
+                    beacon_api_client,
+                    keystore,
+                    slot,
+                    validator_index,
+                    committee_index,
+                )
+                .await
+                {
+                    warn!(
+                        validator_index,
+                        committee_index, "Could not make attestation: {err:?}"
+                    );
+                }
+            });
+        }
+
+        if let Err(err) = self.prepare_sync_infos(slot).await {
             warn!("Could not prepare the sync infos: {err:?}");
-        } else if let Err(err) = self.process_normal_sync_infos(slot - 1).await {
+        } else if let Err(err) = self.process_normal_sync_infos(slot).await {
             warn!("Could not process the normal sync infos: {err:?}");
         }
     }
@@ -285,7 +345,7 @@ impl ValidatorService {
     // Runs at 2 intervals into every slot: meant for aggregators
     pub async fn on_slot_aggregator(&mut self, slot: u64) {
         info!("Current Slot: {slot}");
-        if let Err(err) = self.process_aggregator_sync_infos(slot - 1).await {
+        if let Err(err) = self.process_aggregator_sync_infos(slot).await {
             warn!("Could not process the aggregator sync infos: {err:?}");
         }
     }
@@ -406,7 +466,7 @@ impl ValidatorService {
         match block_response.data {
             ProduceBlockData::Full(full_block) => {
                 let signed_beacon_block =
-                    sign_beacon_block(slot, full_block.block, &keystore.private_key)?;
+                    sign_beacon_block(full_block.block, &keystore.private_key)?;
 
                 self.beacon_api_client
                     .publish_block(BroadcastValidation::Gossip, signed_beacon_block)
@@ -414,7 +474,7 @@ impl ValidatorService {
             }
             ProduceBlockData::Blinded(blinded_block) => {
                 let signed_blinded_block =
-                    sign_blinded_beacon_block(slot, blinded_block, &keystore.private_key)?;
+                    sign_blinded_beacon_block(blinded_block, &keystore.private_key)?;
 
                 self.beacon_api_client
                     .publish_blinded_block(BroadcastValidation::Gossip, signed_blinded_block)
@@ -433,25 +493,33 @@ impl ValidatorService {
             let Some(keystore) = self.validator_index_to_keystore.get(&duty.validator_index) else {
                 continue;
             };
-            for &committee_index in &duty.validator_sync_committee_indices {
+            self.sync_normal_infos.push(duty.validator_index);
+
+            let subcommittee_indices = duty
+                .validator_sync_committee_indices
+                .iter()
+                .map(|committee_index| {
+                    committee_index / (SYNC_COMMITTEE_SIZE / SYNC_COMMITTEE_SUBNET_COUNT)
+                })
+                .collect::<HashSet<_>>();
+
+            for subcommittee_index in subcommittee_indices {
                 let selection_proof = get_sync_committee_selection_proof(
                     slot,
-                    committee_index,
+                    subcommittee_index,
                     &keystore.private_key,
                 )
                 .map_err(|err| anyhow!("Could not get selection proof: {err:?}"))?;
 
                 let task_info = SyncTaskInfo {
                     validator_index: duty.validator_index,
-                    committee_index,
+                    subcommittee_index,
                     selection_proof,
                     keystore: Arc::clone(keystore),
                 };
 
                 if is_sync_committee_aggregator(&task_info.selection_proof) {
                     self.sync_aggregator_infos.push(task_info);
-                } else {
-                    self.sync_normal_infos.push(task_info);
                 }
             }
         }
@@ -467,7 +535,7 @@ impl ValidatorService {
         let domain = compute_domain(
             DOMAIN_SYNC_COMMITTEE,
             Some(beacon_network_spec().electra_fork_version),
-            None,
+            Some(genesis_validators_root()),
         );
         let beacon_block_root = self
             .beacon_api_client
@@ -500,37 +568,6 @@ impl ValidatorService {
         Ok(self
             .beacon_api_client
             .publish_sync_committee_signature(payload)
-            .await?)
-    }
-
-    pub async fn make_attestation(
-        &self,
-        slot: u64,
-        validator_index: u64,
-        committee_index: u64,
-    ) -> anyhow::Result<()> {
-        sleep(Duration::from_secs(
-            beacon_network_spec().seconds_per_slot() / 3,
-        ))
-        .await;
-
-        let Some(keystore) = self.validator_index_to_keystore.get(&validator_index) else {
-            bail!("Keystore not found for validator: {validator_index}");
-        };
-
-        let attestation_data = self
-            .beacon_api_client
-            .get_attestation_data(slot, committee_index)
-            .await?
-            .data;
-        Ok(self
-            .beacon_api_client
-            .submit_attestation(vec![SingleAttestation {
-                attester_index: validator_index,
-                committee_index,
-                signature: sign_attestation_data(&attestation_data, &keystore.private_key)?,
-                data: attestation_data,
-            }])
             .await?)
     }
 
@@ -589,4 +626,31 @@ impl ValidatorService {
 
         Ok(())
     }
+}
+
+async fn make_attestation_for_duty(
+    beacon_api_client: Arc<BeaconApiClient>,
+    keystore: Arc<Keystore>,
+    slot: u64,
+    validator_index: u64,
+    committee_index: u64,
+) -> anyhow::Result<()> {
+    sleep(Duration::from_secs(
+        beacon_network_spec().seconds_per_slot() / 3,
+    ))
+    .await;
+
+    let attestation_data = beacon_api_client
+        .get_attestation_data(slot, committee_index)
+        .await?
+        .data;
+
+    Ok(beacon_api_client
+        .submit_attestation(vec![SingleAttestation {
+            attester_index: validator_index,
+            committee_index,
+            signature: sign_attestation_data(&attestation_data, &keystore.private_key)?,
+            data: attestation_data,
+        }])
+        .await?)
 }
