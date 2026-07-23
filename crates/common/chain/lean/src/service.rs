@@ -720,6 +720,15 @@ impl LeanChainService {
                 if let Err(err) = self.prune_old_state(tick_count).await {
                     warn!("Pruning cycle failed (non-fatal): {err:?}");
                 }
+                if let Err(err) = self
+                    .store
+                    .write()
+                    .await
+                    .prune_stale_attestation_data()
+                    .await
+                {
+                    warn!("Attestation pruning failed (non-fatal): {err:?}");
+                }
             }
             3 => {
                 // Fourth tick: Compute the safe target.
