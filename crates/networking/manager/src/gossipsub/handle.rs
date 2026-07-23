@@ -1,5 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use anyhow::anyhow;
 use libp2p::gossipsub::{Message, MessageAcceptance};
 use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_consensus_beacon::{
@@ -134,10 +135,11 @@ async fn import_gossip_attestation(
     let (attestation, should_process_attestation) = {
         let store = beacon_chain.store.lock().await;
         let head_root = store.get_head()?;
-        let mut state =
-            store.db.state_provider().get(head_root)?.ok_or_else(|| {
-                anyhow::anyhow!("No beacon state found for head root: {head_root}")
-            })?;
+        let mut state = store
+            .db
+            .state_provider()
+            .get(head_root)?
+            .ok_or_else(|| anyhow!("No beacon state found for head root: {head_root}"))?;
         if state.slot < single_attestation.data.slot {
             state.process_slots(single_attestation.data.slot)?;
         }

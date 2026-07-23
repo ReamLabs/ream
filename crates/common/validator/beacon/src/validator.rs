@@ -466,7 +466,7 @@ impl ValidatorService {
         match block_response.data {
             ProduceBlockData::Full(full_block) => {
                 let signed_beacon_block =
-                    sign_beacon_block(slot, full_block.block, &keystore.private_key)?;
+                    sign_beacon_block(full_block.block, &keystore.private_key)?;
 
                 self.beacon_api_client
                     .publish_block(BroadcastValidation::Gossip, signed_beacon_block)
@@ -474,7 +474,7 @@ impl ValidatorService {
             }
             ProduceBlockData::Blinded(blinded_block) => {
                 let signed_blinded_block =
-                    sign_blinded_beacon_block(slot, blinded_block, &keystore.private_key)?;
+                    sign_blinded_beacon_block(blinded_block, &keystore.private_key)?;
 
                 self.beacon_api_client
                     .publish_blinded_block(BroadcastValidation::Gossip, signed_blinded_block)

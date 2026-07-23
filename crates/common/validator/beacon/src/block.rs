@@ -24,7 +24,6 @@ pub fn get_block_signature(
 }
 
 pub fn sign_beacon_block(
-    _slot: u64,
     beacon_block: BeaconBlock,
     private_key: &PrivateKey,
 ) -> anyhow::Result<SignedBeaconBlock> {
@@ -43,7 +42,6 @@ pub fn sign_beacon_block(
 }
 
 pub fn sign_blinded_beacon_block(
-    _slot: u64,
     blinded_beacon_block: BlindedBeaconBlock,
     private_key: &PrivateKey,
 ) -> anyhow::Result<SignedBlindedBeaconBlock> {

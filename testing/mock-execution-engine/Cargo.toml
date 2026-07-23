@@ -14,7 +14,6 @@ version.workspace = true
 actix-web.workspace = true
 alloy-primitives.workspace = true
 anyhow.workspace = true
-ream-execution-rpc-types.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 ssz_types.workspace = true
@@ -22,10 +21,15 @@ tokio.workspace = true
 tree_hash.workspace = true
 url.workspace = true
 
+# ream dependencies
+ream-execution-rpc-types.workspace = true
+
 [dev-dependencies]
-ream-execution-engine.workspace = true
 reqwest.workspace = true
 tempfile.workspace = true
+
+# ream dependencies
+ream-execution-engine.workspace = true
 
 [lints]
 workspace = true
