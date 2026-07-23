@@ -2,7 +2,7 @@ name: Nightly Lean Client Matrix
 
 on:
   pull_request:
-    branches: ["master"]
+    branches: ["master", "develop"]
   push:
     branches: ["master"]
   schedule:
