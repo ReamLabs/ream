@@ -104,6 +104,10 @@ use tokio::{
 use tracing::{Instrument, error, info};
 use tracing_subscriber::EnvFilter;
 
+#[cfg(all(feature = "jemalloc", feature = "shadow-integration"))]
+compile_error!("the `jemalloc` feature is incompatible with `shadow-integration`;");
+
+#[cfg(feature = "jemalloc")]
 #[global_allocator]
 static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
@@ -211,6 +215,26 @@ fn main() {
 /// Besides the shared state, each service holds the channels to communicate with each other.
 pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_db: ReamDB) {
     info!("starting up lean node...");
+
+    // Shadow sim only: install the fake-XMSS / sim-cost backend before any
+    // signing or aggregation path runs. No-op unless `--shadow-xmss-fake` (or a
+    // rate) is set.
+    #[cfg(feature = "shadow-integration")]
+    {
+        info!(
+            fake = config.shadow_xmss_fake,
+            aggregate_rate = ?config.shadow_xmss_aggregate_signatures_rate,
+            verify_rate = ?config.shadow_xmss_verify_aggregated_signatures_rate,
+            merge_rate = ?config.shadow_xmss_merge_rate,
+            "Applying Shadow XMSS sim-cost / fake-XMSS config"
+        );
+        ream_post_quantum_crypto::shadow::shadow_cost::init(
+            config.shadow_xmss_fake,
+            config.shadow_xmss_aggregate_signatures_rate,
+            config.shadow_xmss_verify_aggregated_signatures_rate,
+            config.shadow_xmss_merge_rate,
+        );
+    }
 
     // Initialize prometheus metrics
     if config.enable_metrics {

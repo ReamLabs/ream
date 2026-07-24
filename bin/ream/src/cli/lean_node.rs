@@ -101,6 +101,32 @@ pub struct LeanNodeConfig {
         help = "Attestation selection strategy for block production: round-based or tiered."
     )]
     pub block_production: BlockProductionStrategy,
+
+    /// Shadow sim only: replace the XMSS aggregation prover/verifier with a
+    /// deterministic stub (no leanVM proving/verifying). Off by default.
+    #[cfg(feature = "shadow-integration")]
+    #[arg(long, default_value_t = false)]
+    pub shadow_xmss_fake: bool,
+
+    /// Shadow sim only: signatures aggregated per second. Injects a sleep of
+    /// n/rate seconds into aggregation so its CPU cost shows up on Shadow's
+    /// virtual clock. Unset or <= 0 disables.
+    #[cfg(feature = "shadow-integration")]
+    #[arg(long)]
+    pub shadow_xmss_aggregate_signatures_rate: Option<f64>,
+
+    /// Shadow sim only: signatures verified per aggregate per second; injects a
+    /// sleep of n/rate seconds into verification. Unset or <= 0 disables.
+    #[cfg(feature = "shadow-integration")]
+    #[arg(long)]
+    pub shadow_xmss_verify_aggregated_signatures_rate: Option<f64>,
+
+    /// Shadow sim only: Type-1 components merged into a Type-2 per second;
+    /// injects a sleep of n/rate seconds into the proposal Type-2 merge.
+    /// Unset or <= 0 disables.
+    #[cfg(feature = "shadow-integration")]
+    #[arg(long)]
+    pub shadow_xmss_merge_rate: Option<f64>,
 }
 
 impl LeanNodeConfig {
