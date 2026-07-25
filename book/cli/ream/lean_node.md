@@ -43,6 +43,20 @@ Options:
           Additional attestation subnet ids to subscribe to and aggregate from (comma-separated, e.g. '0,3,7'). Requires --is-aggregator.
       --attestation-committee-count <ATTESTATION_COMMITTEE_COUNT>
           Number of attestation committees (subnets). Each validator's subnet is `validator_id % count`. [default: 1]
+      --reth-datadir <RETH_DATADIR>
+          Set reth data directory (needs `--features reth`) [default: ./reth-data]
+      --reth-rpc-address <RETH_RPC_ADDRESS>
+          Set reth eth_* JSON-RPC address [default: 127.0.0.1]
+      --reth-rpc-port <RETH_RPC_PORT>
+          Set reth eth_* JSON-RPC port [default: 8545]
+      --reth-p2p-address <RETH_P2P_ADDRESS>
+          Set reth RLPx (devp2p) address [default: 127.0.0.1]
+      --reth-p2p-port <RETH_P2P_PORT>
+          Set reth RLPx (devp2p) port, to gossip transactions with other execution layers. Unset means an isolated EL with no peers
+      --reth-p2p-secret <RETH_P2P_SECRET>
+          Set 32-byte hex secp256k1 key pinning reth's enode identity, so peers can address it deterministically
+      --reth-trusted-peers <RETH_TRUSTED_PEERS>
+          Comma-separated enode URLs of other execution layers to dial directly as a static trusted mesh (enode://<pubkey>@<ip>:<port>). Discovery stays off.
   -h, --help
           Print help
 ```

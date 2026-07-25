@@ -84,7 +84,7 @@ use ream_post_quantum_crypto::leansig::{
     private_key::PrivateKey as LeanSigPrivateKey, public_key::PublicKey,
 };
 #[cfg(feature = "reth")]
-use ream_reth_engine::handle::RethHandle;
+use ream_reth_engine::handle::{RethNodeConfig, RethP2pConfig};
 use ream_rpc_common::config::RpcServerConfig;
 use ream_rpc_lean::{handlers::test_driver::test_driver_enabled, server::start_test_driver};
 use ream_storage::{
@@ -450,10 +450,25 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     // `RethHandle` (given to the lean chain service) and also the owned node.
     #[cfg(feature = "reth")]
     let (reth_handle, mut reth_node) = {
-        let (handle, node) = RethHandle::start(
-            Some(executor.runtime().handle().clone()),
-            config.reth_datadir.clone(),
-        )
+        let p2p = config
+            .reth_p2p_port
+            .zip(config.reth_p2p_secret)
+            .map(|(port, secret_key)| RethP2pConfig {
+                address: config.reth_p2p_address,
+                port,
+                secret_key,
+                trusted_peers: config.reth_trusted_peers.clone(),
+            });
+
+        let (handle, node) = RethHandle::start(RethNodeConfig {
+            runtime: Some(executor.runtime().handle().clone()),
+            datadir: config.reth_datadir.clone(),
+            http_rpc: Some(SocketAddr::new(
+                config.reth_rpc_address,
+                config.reth_rpc_port,
+            )),
+            p2p,
+        })
         .await
         .expect("failed to boot embedded reth execution layer");
 

@@ -62,10 +62,10 @@ ream-consensus-lean.workspace = true
 ream-consensus-misc.workspace = true
 ream-execution-rpc-types = { workspace = true, optional = true }
 ream-metrics.workspace = true
-ream-reth-engine = { workspace = true, optional = true }
 ream-network-spec.workspace = true
 ream-network-state-lean.workspace = true
 ream-post-quantum-crypto.workspace = true
+ream-reth-engine = { workspace = true, optional = true }
 ream-storage.workspace = true
 ream-sync.workspace = true
 

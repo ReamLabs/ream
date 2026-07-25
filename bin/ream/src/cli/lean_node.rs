@@ -1,5 +1,6 @@
 use std::{net::IpAddr, path::PathBuf};
 
+use alloy_primitives::B256;
 use clap::{Parser, error::ErrorKind};
 use ream_network_spec::{cli::lean_network_parser, networks::LeanNetworkSpec};
 use ream_p2p::bootnodes::Bootnodes;
@@ -7,7 +8,8 @@ use url::Url;
 
 use crate::cli::constants::{
     DEFAULT_HTTP_ADDRESS, DEFAULT_HTTP_ALLOW_ORIGIN, DEFAULT_HTTP_PORT, DEFAULT_METRICS_ADDRESS,
-    DEFAULT_METRICS_ENABLED, DEFAULT_METRICS_PORT, DEFAULT_SOCKET_ADDRESS, DEFAULT_SOCKET_PORT,
+    DEFAULT_METRICS_ENABLED, DEFAULT_METRICS_PORT, DEFAULT_RETH_P2P_ADDRESS, DEFAULT_RETH_RPC_PORT,
+    DEFAULT_SOCKET_ADDRESS, DEFAULT_SOCKET_PORT,
 };
 
 #[derive(Debug, Parser, Clone)]
@@ -96,9 +98,45 @@ pub struct LeanNodeConfig {
     #[arg(
         long,
         default_value = "./reth-data",
-        help = "Data directory for the embedded reth execution layer (MDBX database). Only used when built with `--features reth`."
+        help = "Set reth data directory (needs `--features reth`)"
     )]
     pub reth_datadir: PathBuf,
+
+    #[arg(long, help = "Set reth eth_* JSON-RPC address", default_value_t = DEFAULT_HTTP_ADDRESS)]
+    pub reth_rpc_address: IpAddr,
+
+    #[arg(long, help = "Set reth eth_* JSON-RPC port", default_value_t = DEFAULT_RETH_RPC_PORT)]
+    pub reth_rpc_port: u16,
+
+    #[arg(
+        long,
+        help = "Set reth RLPx (devp2p) address",
+        default_value_t = DEFAULT_RETH_P2P_ADDRESS,
+        requires = "reth_p2p_port"
+    )]
+    pub reth_p2p_address: IpAddr,
+
+    #[arg(
+        long,
+        help = "Set reth RLPx (devp2p) port, to gossip transactions with other execution layers. Unset means an isolated EL with no peers",
+        requires = "reth_p2p_secret"
+    )]
+    pub reth_p2p_port: Option<u16>,
+
+    #[arg(
+        long,
+        help = "Set 32-byte hex secp256k1 key pinning reth's enode identity, so peers can address it deterministically",
+        requires = "reth_p2p_port"
+    )]
+    pub reth_p2p_secret: Option<B256>,
+
+    #[arg(
+        long,
+        value_delimiter = ',',
+        help = "Comma-separated enode URLs of other execution layers to dial directly as a static trusted mesh (enode://<pubkey>@<ip>:<port>). Discovery stays off.",
+        requires = "reth_p2p_port"
+    )]
+    pub reth_trusted_peers: Vec<String>,
 }
 
 impl LeanNodeConfig {

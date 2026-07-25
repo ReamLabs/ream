@@ -23,14 +23,18 @@ reth-ethereum = { git = "https://github.com/paradigmxyz/reth.git", rev = "5d027e
   "node",
   "test-utils",
 ] }
+reth-network-peers = { git = "https://github.com/paradigmxyz/reth.git", rev = "5d027e5ff72f31270b862f8e000d1cc79621be2e" }
 reth-payload-builder = { git = "https://github.com/paradigmxyz/reth.git", rev = "5d027e5ff72f31270b862f8e000d1cc79621be2e" }
 serde_json.workspace = true
 sha2.workspace = true
 ssz_types.workspace = true
 tokio.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 serial_test = "3.4.0"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tracing-subscriber.workspace = true
 
 [lints]
 workspace = true
