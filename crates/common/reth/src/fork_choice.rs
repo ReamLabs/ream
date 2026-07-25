@@ -89,7 +89,7 @@ pub fn create_ream_payload_attributes(
         prev_randao,
         Address::ZERO,
         Some(parent_lean_block_root),
-        Some(slot),
+        None,
         None,
     )
 }
