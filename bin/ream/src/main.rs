@@ -84,7 +84,7 @@ use ream_post_quantum_crypto::leansig::{
     private_key::PrivateKey as LeanSigPrivateKey, public_key::PublicKey,
 };
 #[cfg(feature = "reth")]
-use ream_reth_engine::handle::{RethNodeConfig, RethP2pConfig};
+use ream_reth_engine::handle::{RethHandle, RethNodeConfig, RethP2pConfig};
 use ream_rpc_common::config::RpcServerConfig;
 use ream_rpc_lean::{handlers::test_driver::test_driver_enabled, server::start_test_driver};
 use ream_storage::{
