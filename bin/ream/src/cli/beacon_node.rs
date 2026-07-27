@@ -118,6 +118,7 @@ impl From<BeaconNodeConfig> for ManagerConfig {
             enable_builder: config.enable_builder,
             mev_relay_url: config.mev_relay_url,
             blob_retention_epochs: config.blob_retention_epochs,
+            gossipsub_history_length: None,
         }
     }
 }

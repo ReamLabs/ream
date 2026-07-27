@@ -21,8 +21,6 @@ ethereum_ssz.workspace = true
 ethereum_ssz_derive.workspace = true
 hashbrown.workspace = true
 itertools.workspace = true
-kzg.workspace = true
-rust-kzg-blst.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true
@@ -38,13 +36,16 @@ ream-bls.workspace = true
 ream-consensus-beacon.workspace = true
 ream-consensus-lean.workspace = true
 ream-consensus-misc.workspace = true
+ream-data-availability.workspace = true
 ream-execution-engine.workspace = true
 ream-execution-rpc-types.workspace = true
 ream-network-spec.workspace = true
 ream-operation-pool.workspace = true
-ream-polynomial-commitments.workspace = true
 ream-storage.workspace = true
 ream-sync-committee-pool.workspace = true
+
+[dev-dependencies]
+tempdir.workspace = true
 
 [lints]
 workspace = true

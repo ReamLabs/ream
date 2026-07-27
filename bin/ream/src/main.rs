@@ -58,7 +58,7 @@ use ream_keystore::keystore::EncryptedKeystore;
 use ream_metrics::{
     ATTESTATION_COMMITTEE_SUBNET, NODE_INFO, NODE_START_TIME_SECONDS, set_int_gauge_vec,
 };
-use ream_network_manager::service::NetworkManagerService;
+use ream_network_manager::{config::ManagerConfig, service::NetworkManagerService};
 use ream_network_spec::networks::{
     beacon_network_spec, lean_network_spec, set_beacon_network_spec, set_lean_network_spec,
 };
@@ -509,7 +509,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
 /// 1. The HTTP server that serves Beacon API, Engine API.
 /// 2. The P2P network that handles peer discovery (discv5), gossiping (gossipsub) and Req/Resp API.
 pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, ream_db: ReamDB) {
-    run_beacon_node_inner(config, executor, ream_db, true).await;
+    run_beacon_node_inner(config, executor, ream_db, true, false, None).await;
 }
 
 // `initialize_globals` is `false` only in tests, which set the globals themselves beforehand.
@@ -518,6 +518,8 @@ async fn run_beacon_node_inner(
     executor: ReamExecutor,
     ream_db: ReamDB,
     initialize_globals: bool,
+    force_data_availability_checks: bool,
+    gossipsub_history_length: Option<usize>,
 ) {
     info!("starting up beacon node...");
 
@@ -607,18 +609,26 @@ async fn run_beacon_node_inner(
     };
 
     // Create beacon chain
-    let beacon_chain = Arc::new(BeaconChain::new(
+    let beacon_chain = BeaconChain::new(
         beacon_db.clone(),
         operation_pool.clone(),
         sync_committee_pool.clone(),
         execution_engine.clone(),
         Some(event_sender.clone()),
-    ));
+    );
+    let beacon_chain = if force_data_availability_checks {
+        beacon_chain.force_data_availability_checks()
+    } else {
+        beacon_chain
+    };
+    let beacon_chain = Arc::new(beacon_chain);
 
     // Create network manager
+    let mut manager_config = ManagerConfig::from(config);
+    manager_config.gossipsub_history_length = gossipsub_history_length;
     let network_manager = NetworkManagerService::new(
         executor.clone(),
-        config.into(),
+        manager_config,
         beacon_db.clone(),
         beacon_db.data_dir.clone(),
         beacon_chain.clone(),
@@ -667,8 +677,18 @@ async fn run_beacon_node_for_test(
     config: BeaconNodeConfig,
     executor: ReamExecutor,
     ream_db: ReamDB,
+    force_data_availability_checks: bool,
+    gossipsub_history_length: Option<usize>,
 ) {
-    run_beacon_node_inner(config, executor, ream_db, false).await;
+    run_beacon_node_inner(
+        config,
+        executor,
+        ream_db,
+        false,
+        force_data_availability_checks,
+        gossipsub_history_length,
+    )
+    .await;
 }
 
 /// Runs the validator node.
@@ -996,6 +1016,7 @@ mod tests {
         },
         eth_1_data::Eth1Data,
         fork::Fork,
+        misc::compute_epoch_at_slot,
         validator::Validator,
     };
     use ream_executor::ReamExecutor;
@@ -1058,6 +1079,9 @@ mod tests {
     const BEACON_E2E_VALIDATOR_COUNT: usize = 8;
     const BEACON_E2E_VALIDATOR_NODE_COUNT: usize = 2;
     const BEACON_E2E_SLOT_DURATION_MS: u64 = 3_000;
+    // CI debug builds can spend longer than the default 8.4-second cache window validating KZG
+    // proofs before the relay reports the gossip message as accepted.
+    const BEACON_E2E_GOSSIPSUB_HISTORY_LENGTH: usize = 64;
     const BEACON_E2E_KEYSTORE_PASSWORD: &str = "password";
 
     // Production's `BEACON_NETWORK_SPEC`/`GENESIS_VALIDATORS_ROOT` OnceLocks only allow one set
@@ -1151,6 +1175,33 @@ mod tests {
         db: ReamDB,
         executor: ReamExecutor,
     ) -> tokio::task::JoinHandle<()> {
+        spawn_beacon_test_node_inner(config, db, executor, false, None)
+    }
+
+    fn spawn_beacon_test_node_with_data_availability(
+        config: BeaconNodeConfig,
+        db: ReamDB,
+        executor: ReamExecutor,
+    ) -> tokio::task::JoinHandle<()> {
+        spawn_beacon_test_node_inner(config, db, executor, true, None)
+    }
+
+    fn spawn_beacon_test_node_with_gossipsub_history(
+        config: BeaconNodeConfig,
+        db: ReamDB,
+        executor: ReamExecutor,
+        gossipsub_history_length: usize,
+    ) -> tokio::task::JoinHandle<()> {
+        spawn_beacon_test_node_inner(config, db, executor, false, Some(gossipsub_history_length))
+    }
+
+    fn spawn_beacon_test_node_inner(
+        config: BeaconNodeConfig,
+        db: ReamDB,
+        executor: ReamExecutor,
+        force_data_availability_checks: bool,
+        gossipsub_history_length: Option<usize>,
+    ) -> tokio::task::JoinHandle<()> {
         use tracing::{Instrument, info_span};
 
         let span = info_span!(
@@ -1161,7 +1212,14 @@ mod tests {
         );
         tokio::spawn(
             async move {
-                run_beacon_node_for_test(config, executor, db).await;
+                run_beacon_node_for_test(
+                    config,
+                    executor,
+                    db,
+                    force_data_availability_checks,
+                    gossipsub_history_length,
+                )
+                .await;
             }
             .instrument(span),
         )
@@ -1836,6 +1894,7 @@ mod tests {
 
     async fn wait_for_finality_checkpoints_advanced_all(
         http_ports: &[u16],
+        finalized_after_epoch: u64,
     ) -> Vec<BeaconNodeStatus> {
         assert!(
             !http_ports.is_empty(),
@@ -1859,10 +1918,9 @@ mod tests {
                 .collect::<Vec<_>>();
             info!(?checkpoint_epochs, "beacon finality poll");
 
-            if statuses
-                .iter()
-                .all(|status| status.justified_epoch > 0 && status.finalized_epoch > 0)
-            {
+            if statuses.iter().all(|status| {
+                status.justified_epoch > 0 && status.finalized_epoch > finalized_after_epoch
+            }) {
                 return statuses;
             }
 
@@ -2486,8 +2544,11 @@ mod tests {
                 wait_for_head_slot_at_least(node_1_http_port, finality_target_slot).await;
 
             let finality_statuses =
-                wait_for_finality_checkpoints_advanced_all(&[node_1_http_port, node_2_http_port])
-                    .await;
+                wait_for_finality_checkpoints_advanced_all(
+                    &[node_1_http_port, node_2_http_port],
+                    0,
+                )
+                .await;
             let node_1_finality = (
                 finality_statuses[0].justified_epoch,
                 finality_statuses[0].finalized_epoch,
@@ -2586,9 +2647,7 @@ mod tests {
         );
     }
 
-    #[test]
-    #[serial]
-    fn test_beacon_nodes_propagate_data_column_sidecars() {
+    fn run_beacon_nodes_propagate_data_column_sidecars(wait_for_finality: bool) {
         init_test_tracing();
 
         let port_offset = beacon_port_offset();
@@ -2652,8 +2711,11 @@ mod tests {
             node_1_config.execution_endpoint = Some(execution_endpoint.clone());
             node_1_config.execution_jwt_secret = Some(jwt_secret_path.clone());
 
-            let node_1_handle =
-                spawn_beacon_test_node(node_1_config, node_1_db, node_1_executor_handle.clone());
+            let node_1_handle = spawn_beacon_test_node_with_data_availability(
+                node_1_config,
+                node_1_db,
+                node_1_executor_handle.clone(),
+            );
             let node_1_identity = wait_for_beacon_identity(node_1_http_port).await;
             let node_1_enr = node_1_identity["data"]["enr"]
                 .as_str()
@@ -2665,13 +2727,22 @@ mod tests {
             node_2_config.execution_endpoint = Some(execution_endpoint);
             node_2_config.execution_jwt_secret = Some(jwt_secret_path);
             let node_2_http_port = node_2_config.http_port;
-            let node_2_handle =
-                spawn_beacon_test_node(node_2_config, node_2_db, node_2_executor_handle.clone());
+            let node_2_handle = spawn_beacon_test_node_with_data_availability(
+                node_2_config,
+                node_2_db,
+                node_2_executor_handle.clone(),
+            );
             let peer_counts =
                 wait_for_connected_beacon_peer(&[node_1_http_port, node_2_http_port]).await;
 
+            let validator_http_ports = if wait_for_finality {
+                // Keep one canonical validator view while node 2 verifies sidecar propagation.
+                vec![node_1_http_port]
+            } else {
+                vec![node_1_http_port, node_2_http_port]
+            };
             let validator_handles = spawn_validator_test_nodes(
-                &[node_1_http_port, node_2_http_port],
+                &validator_http_ports,
                 &test_dir,
                 &validator_executor_handles,
             );
@@ -2698,6 +2769,7 @@ mod tests {
                     warmup_head.0
                 )
             });
+
             let commitment_count = target_block["data"]["message"]["body"]["blob_kzg_commitments"]
                 .as_array()
                 .map(Vec::len)
@@ -2714,13 +2786,48 @@ mod tests {
                 .parse()
                 .expect("root should be a valid B256");
 
-            // Make sure node_2 has imported the same block before checking its column storage.
+            // Importing the target block proves that node_2 received enough validated columns to
+            // complete the pending availability check.
             wait_for_head_slot_at_least(node_2_http_port, target_slot).await;
 
-            // `on_block` no longer waits on availability, so head can advance before all 128
-            // columns have propagated - wait for them explicitly on both nodes.
+            // Verify that all columns were persisted on both nodes as well.
             wait_for_all_data_column_sidecars(&node_1_db_for_check, block_root).await;
             wait_for_all_data_column_sidecars(&node_2_db_for_check, block_root).await;
+
+            if wait_for_finality {
+                // Start the finality timeout only once the chain has reached the same minimum
+                // progress used by the block-production finality test. Starting it at the first
+                // blob block (typically slot 1-3) can expire before this fixture finalizes epoch 1.
+                wait_for_head_slot_at_least(node_1_http_port, SLOTS_PER_EPOCH * 2 + 4).await;
+                let target_epoch = compute_epoch_at_slot(target_slot);
+                let finality_statuses =
+                    wait_for_finality_checkpoints_advanced_all(&[node_1_http_port], target_epoch)
+                        .await;
+                for status in finality_statuses {
+                    assert!(
+                        status.finalized_epoch > target_epoch,
+                        "node {} finalized epoch {} before blob block epoch {target_epoch}",
+                        status.http_port,
+                        status.finalized_epoch,
+                    );
+
+                    let root_response = wait_for_beacon_json(
+                        status.http_port,
+                        &format!("/eth/v1/beacon/blocks/{target_slot}/root"),
+                    )
+                    .await;
+                    let finalized_chain_root: B256 = root_response["data"]["root"]
+                        .as_str()
+                        .expect("root response should include a root")
+                        .parse()
+                        .expect("root should be a valid B256");
+                    assert_eq!(
+                        finalized_chain_root, block_root,
+                        "node {} finalized a chain that does not contain the blob block",
+                        status.http_port,
+                    );
+                }
+            }
 
             let node_1_finished = node_1_handle.is_finished();
             let node_2_finished = node_2_handle.is_finished();
@@ -2789,7 +2896,19 @@ mod tests {
 
     #[test]
     #[serial]
-    fn test_beacon_nodes_propagate_data_column_sidecars_multi_hop() {
+    fn test_beacon_nodes_propagate_data_column_sidecars() {
+        run_beacon_nodes_propagate_data_column_sidecars(false);
+    }
+
+    #[test]
+    #[serial]
+    fn test_beacon_nodes_finalize_blob_block_with_data_availability() {
+        run_beacon_nodes_propagate_data_column_sidecars(true);
+    }
+
+    #[test]
+    #[serial]
+    fn test_multi_hop_beacon_nodes_propagate_data_column_sidecars() {
         init_test_tracing();
 
         let port_offset = beacon_port_offset();
@@ -2880,8 +2999,12 @@ mod tests {
             node_2_config.execution_endpoint = Some(execution_endpoint.clone());
             node_2_config.execution_jwt_secret = Some(jwt_secret_path.clone());
             let node_2_http_port = node_2_config.http_port;
-            let node_2_handle =
-                spawn_beacon_test_node(node_2_config, node_2_db, node_2_executor_handle.clone());
+            let node_2_handle = spawn_beacon_test_node_with_gossipsub_history(
+                node_2_config,
+                node_2_db,
+                node_2_executor_handle.clone(),
+                BEACON_E2E_GOSSIPSUB_HISTORY_LENGTH,
+            );
             let node_2_identity = wait_for_beacon_identity(node_2_http_port).await;
             let node_2_enr = node_2_identity["data"]["enr"]
                 .as_str()

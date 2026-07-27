@@ -49,8 +49,15 @@ impl CustomTable for ColumnSidecarsTable {
         let file_path = self.column_file_path(&key);
         let mut encoder = Encoder::new();
         let snappy_encoding = encoder.compress_vec(&value.as_ssz_bytes())?;
-        let mut file = File::create(file_path)?;
-        file.write_all(&snappy_encoding)?;
+        let parent = file_path.parent().ok_or_else(|| {
+            std::io::Error::other(format!(
+                "Column sidecar path has no parent: {}",
+                file_path.display()
+            ))
+        })?;
+        let mut temp_file = tempfile::NamedTempFile::new_in(parent)?;
+        temp_file.write_all(&snappy_encoding)?;
+        temp_file.persist(file_path).map_err(|err| err.error)?;
 
         Ok(())
     }

@@ -6,7 +6,7 @@ use hashbrown::HashMap;
 use ream_bls::BLSSignature;
 use ream_consensus_beacon::{
     attestation::Attestation,
-    data_column_sidecar::{ColumnIdentifier, DataColumnSidecar, NUMBER_OF_COLUMNS},
+    data_column_sidecar::ColumnIdentifier,
     electra::{
         beacon_block::{BeaconBlock, SignedBeaconBlock},
         beacon_state::BeaconState,
@@ -19,9 +19,9 @@ use ream_consensus_misc::{
     constants::beacon::{GENESIS_EPOCH, GENESIS_SLOT, INTERVALS_PER_SLOT, SLOTS_PER_EPOCH},
     misc::{compute_epoch_at_slot, compute_start_slot_at_epoch, is_shuffling_stable},
 };
+use ream_data_availability::{DataAvailabilityChecker, PendingBlock};
 use ream_network_spec::networks::beacon_network_spec;
 use ream_operation_pool::OperationPool;
-use ream_polynomial_commitments::handlers::verify_data_column_sidecar_kzg_proofs;
 use ream_storage::{
     db::beacon::BeaconDB,
     tables::{
@@ -31,6 +31,7 @@ use ream_storage::{
     },
 };
 use ream_sync_committee_pool::SyncCommitteePool;
+use tracing::debug;
 use tree_hash::TreeHash;
 
 use crate::constants::{
@@ -50,6 +51,7 @@ pub struct BlockWithEpochInfo {
 #[derive(Debug)]
 pub struct Store {
     pub db: BeaconDB,
+    pub data_availability_checker: DataAvailabilityChecker,
     pub operation_pool: Arc<OperationPool>,
     pub sync_committee_pool: Arc<SyncCommitteePool>,
 }
@@ -64,9 +66,21 @@ impl Store {
             sync_committee_pool.unwrap_or_else(|| Arc::new(SyncCommitteePool::default()));
         Self {
             db,
+            data_availability_checker: DataAvailabilityChecker::supernode(),
             operation_pool,
             sync_committee_pool,
         }
+    }
+
+    pub fn backfill_data_availability_columns(
+        &mut self,
+        block_root: B256,
+    ) -> anyhow::Result<Option<PendingBlock>> {
+        backfill_data_availability_columns_from_db(
+            &self.db,
+            &mut self.data_availability_checker,
+            block_root,
+        )
     }
 
     pub fn is_previous_epoch_justified(&self) -> anyhow::Result<bool> {
@@ -623,6 +637,19 @@ impl Store {
             self.sync_committee_pool
                 .clean_sync_committee_contributions(current_slot);
 
+            // A finalized checkpoint only finalizes the checkpoint slot, not every block in its
+            // epoch. Keep pending blocks from later slots in that epoch while pruning entries at
+            // or before the finalized slot and entries outside the sidecar retention window.
+            let cutoff_slot = pending_availability_cutoff_slot(
+                self.db.finalized_checkpoint_provider().get()?.epoch,
+                self.get_current_store_epoch()?,
+                beacon_network_spec().min_epochs_for_data_column_sidecars_requests,
+            );
+            let pruned_availability = self.data_availability_checker.prune(cutoff_slot);
+            if pruned_availability > 0 {
+                debug!("Pruned {pruned_availability} stale pending availability entries");
+            }
+
             // Drop attestations that have aged out of the inclusion window (nothing else prunes
             // them, and they can never be included again).
             self.operation_pool
@@ -733,52 +760,6 @@ impl Store {
             .insert(target, base_state)?;
 
         Ok(())
-    }
-
-    /// Check if data is available for a block.
-    ///
-    /// For Fulu: https://ethereum.github.io/consensus-specs/specs/fulu/fork-choice/#modified-is_data_available
-    pub fn is_data_available(&self, beacon_block_root: B256) -> anyhow::Result<bool> {
-        // `retrieve_column_sidecars` is implementation and context dependent, replacing
-        // `retrieve_blobs_and_proofs`. For the given block root, it returns all column
-        // sidecars to sample, or raises an exception if they are not available.
-        // The p2p network does not guarantee sidecar retrieval outside of
-        // `MIN_EPOCHS_FOR_DATA_COLUMN_SIDECARS_REQUESTS` epochs.
-        let column_sidecars = self.retrieve_column_sidecars(beacon_block_root)?;
-        if column_sidecars.is_empty() {
-            return Ok(false);
-        }
-
-        // Fulu column sidecars validation
-        for column_sidecar in column_sidecars {
-            if !column_sidecar.verify() {
-                return Ok(false);
-            }
-            if !verify_data_column_sidecar_kzg_proofs(&column_sidecar)? {
-                return Ok(false);
-            }
-        }
-        Ok(true)
-    }
-
-    /// Retrieve column sidecars for a block.
-    ///
-    /// We retrieve all columns that we have stored and returns an empty vector
-    /// if no sidecars are found (valid for blocks with no blobs).
-    fn retrieve_column_sidecars(
-        &self,
-        beacon_block_root: B256,
-    ) -> anyhow::Result<Vec<DataColumnSidecar>> {
-        let mut column_sidecars = Vec::new();
-
-        for index in 0..NUMBER_OF_COLUMNS {
-            let column_identifier = ColumnIdentifier::new(beacon_block_root, index);
-            if let Some(sidecar) = self.db.column_sidecars_provider().get(column_identifier)? {
-                column_sidecars.push(sidecar);
-            }
-        }
-
-        Ok(column_sidecars)
     }
 
     pub fn compute_pulled_up_tip(&mut self, block_root: B256) -> anyhow::Result<()> {
@@ -899,4 +880,168 @@ pub fn get_forkchoice_store(
 
 pub fn compute_slots_since_epoch_start(slot: u64) -> u64 {
     slot - compute_start_slot_at_epoch(compute_epoch_at_slot(slot))
+}
+
+fn pending_availability_cutoff_slot(
+    finalized_epoch: u64,
+    current_epoch: u64,
+    retention_epochs: u64,
+) -> u64 {
+    let finalized_slot = compute_start_slot_at_epoch(finalized_epoch);
+    let retention_cutoff_slot =
+        compute_start_slot_at_epoch(current_epoch.saturating_sub(retention_epochs));
+    std::cmp::max(finalized_slot.saturating_add(1), retention_cutoff_slot)
+}
+
+fn backfill_data_availability_columns_from_db<State>(
+    db: &BeaconDB,
+    data_availability_checker: &mut DataAvailabilityChecker<State>,
+    block_root: B256,
+) -> anyhow::Result<Option<PendingBlock<State>>> {
+    let required_columns = data_availability_checker
+        .required_columns()
+        .iter()
+        .copied()
+        .collect::<Vec<_>>();
+
+    for column_index in required_columns {
+        let column_identifier = ColumnIdentifier::new(block_root, column_index);
+        if let Some(sidecar) = db.column_sidecars_provider().get(column_identifier)?
+            && let Some(available) = data_availability_checker.add_column(
+                block_root,
+                column_index,
+                sidecar.signed_block_header.message.slot,
+            )
+        {
+            return Ok(Some(available));
+        }
+    }
+
+    Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use ream_consensus_beacon::{
+        data_column_sidecar::DataColumnSidecar,
+        electra::{
+            beacon_block::{BeaconBlock, SignedBeaconBlock},
+            beacon_block_body::BeaconBlockBody,
+        },
+    };
+    use ream_consensus_misc::{
+        beacon_block_header::SignedBeaconBlockHeader, constants::beacon::BYTES_PER_COMMITMENT,
+        polynomial_commitments::kzg_commitment::KZGCommitment,
+    };
+    use ream_storage::db::ReamDB;
+    use ssz_types::{FixedVector, VariableList};
+    use tempdir::TempDir;
+
+    use super::*;
+
+    fn test_db() -> (BeaconDB, TempDir) {
+        let temp_dir = TempDir::new("ream_fork_choice_beacon_store").unwrap();
+        let db = ReamDB::new(temp_dir.path().to_path_buf())
+            .unwrap()
+            .init_beacon_db()
+            .unwrap();
+        (db, temp_dir)
+    }
+
+    fn signed_block(slot: u64) -> SignedBeaconBlock {
+        SignedBeaconBlock {
+            message: BeaconBlock {
+                slot,
+                body: BeaconBlockBody {
+                    blob_kzg_commitments: VariableList::new(vec![KZGCommitment(
+                        [0; BYTES_PER_COMMITMENT],
+                    )])
+                    .unwrap(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            signature: Default::default(),
+        }
+    }
+
+    fn data_column_sidecar(index: u64, block: &SignedBeaconBlock) -> DataColumnSidecar {
+        let mut signed_block_header = SignedBeaconBlockHeader::default();
+        signed_block_header.message.slot = block.message.slot;
+        signed_block_header.message.proposer_index = block.message.proposer_index;
+        signed_block_header.message.parent_root = block.message.parent_root;
+        signed_block_header.message.state_root = block.message.state_root;
+        signed_block_header.message.body_root = block.message.body.tree_hash_root();
+        signed_block_header.signature = block.signature.clone();
+
+        DataColumnSidecar {
+            index,
+            column: VariableList::empty(),
+            kzg_commitments: VariableList::empty(),
+            kzg_proofs: VariableList::empty(),
+            signed_block_header,
+            kzg_commitments_inclusion_proof: FixedVector::default(),
+        }
+    }
+
+    #[test]
+    fn backfill_data_availability_columns_completes_pending_block_from_db() {
+        let (db, _temp_dir) = test_db();
+        let block = signed_block(11);
+        let block_root = block.message.tree_hash_root();
+        let sidecar = data_column_sidecar(0, &block);
+        let mut checker: DataAvailabilityChecker<()> =
+            DataAvailabilityChecker::new(std::collections::HashSet::from([0]));
+
+        db.column_sidecars_provider()
+            .insert(ColumnIdentifier::new(block_root, 0), sidecar)
+            .unwrap();
+        assert!(checker.insert_pending(block_root, block, ()).is_none());
+
+        let pending =
+            backfill_data_availability_columns_from_db(&db, &mut checker, block_root).unwrap();
+
+        assert!(pending.is_some());
+        assert!(!checker.contains(&block_root));
+    }
+
+    #[test]
+    fn pending_availability_cutoff_preserves_slots_after_finalized_checkpoint() {
+        let finalized_epoch = 10;
+        let finalized_slot = compute_start_slot_at_epoch(finalized_epoch);
+        let cutoff_slot = pending_availability_cutoff_slot(finalized_epoch, finalized_epoch, 4096);
+        let finalized_root = B256::repeat_byte(1);
+        let later_root = B256::repeat_byte(2);
+        let mut checker: DataAvailabilityChecker<()> =
+            DataAvailabilityChecker::new(std::collections::HashSet::from([0]));
+
+        checker.add_column(finalized_root, 0, finalized_slot);
+        checker.add_column(later_root, 0, finalized_slot + 1);
+
+        assert_eq!(cutoff_slot, finalized_slot + 1);
+        assert_eq!(checker.prune(cutoff_slot), 1);
+        assert!(!checker.contains(&finalized_root));
+        assert!(checker.contains(&later_root));
+    }
+
+    #[test]
+    fn pending_availability_cutoff_keeps_retention_boundary() {
+        let retention_epochs = 4;
+        let current_epoch = 10;
+        let retention_cutoff_slot = compute_start_slot_at_epoch(current_epoch - retention_epochs);
+        let cutoff_slot =
+            pending_availability_cutoff_slot(GENESIS_EPOCH, current_epoch, retention_epochs);
+        let before_root = B256::repeat_byte(3);
+        let boundary_root = B256::repeat_byte(4);
+        let mut checker: DataAvailabilityChecker<()> =
+            DataAvailabilityChecker::new(std::collections::HashSet::from([0]));
+
+        checker.add_column(before_root, 0, retention_cutoff_slot - 1);
+        checker.add_column(boundary_root, 0, retention_cutoff_slot);
+
+        assert_eq!(cutoff_slot, retention_cutoff_slot);
+        assert_eq!(checker.prune(cutoff_slot), 1);
+        assert!(!checker.contains(&before_root));
+        assert!(checker.contains(&boundary_root));
+    }
 }

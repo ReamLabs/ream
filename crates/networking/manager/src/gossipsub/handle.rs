@@ -51,8 +51,11 @@ use crate::{
     p2p_sender::P2PSender,
 };
 
-pub fn init_gossipsub_config_with_topics() -> GossipsubConfig {
-    let mut gossipsub_config = GossipsubConfig::default();
+pub fn init_gossipsub_config_with_topics(history_length: Option<usize>) -> GossipsubConfig {
+    let mut gossipsub_config = history_length.map_or_else(
+        GossipsubConfig::default,
+        GossipsubConfig::with_history_length,
+    );
     let fork_digest = beacon_network_spec().fork_digest(FULU_FORK_EPOCH, genesis_validators_root());
 
     let mut topics = vec![
@@ -574,24 +577,35 @@ pub async fn handle_gossipsub_message(
                 let acceptance = message_acceptance(&validation_result);
                 match validation_result {
                     ValidationResult::Accept => {
-                        if let Err(err) = beacon_chain
+                        let block_root = data_column_sidecar
+                            .signed_block_header
+                            .message
+                            .tree_hash_root();
+                        let column_index = data_column_sidecar.index;
+                        let slot = data_column_sidecar.signed_block_header.message.slot;
+                        let insert_result = beacon_chain
                             .store
                             .lock()
                             .await
                             .db
                             .column_sidecars_provider()
                             .insert(
-                                ColumnIdentifier::new(
-                                    data_column_sidecar
-                                        .signed_block_header
-                                        .message
-                                        .tree_hash_root(),
-                                    data_column_sidecar.index,
-                                ),
+                                ColumnIdentifier::new(block_root, column_index),
                                 *data_column_sidecar,
-                            )
-                        {
-                            error!("Failed to insert data_column_sidecar: {err}");
+                            );
+
+                        match insert_result {
+                            Ok(()) => {
+                                if let Err(err) = beacon_chain
+                                    .process_data_column_sidecar(block_root, column_index, slot)
+                                    .await
+                                {
+                                    error!("Failed to process data_column_sidecar: {err}");
+                                }
+                            }
+                            Err(err) => {
+                                error!("Failed to insert data_column_sidecar: {err}");
+                            }
                         }
                     }
                     ValidationResult::Reject(reason) => {
@@ -782,7 +796,6 @@ mod tests {
             sequence_number: None,
             topic,
         };
-
         let acceptance =
             handle_gossipsub_message(message, &beacon_chain, &cached_db, &p2p_sender).await;
 
