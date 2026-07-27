@@ -18,6 +18,12 @@ pub struct GossipsubConfig {
 impl Default for GossipsubConfig {
     // https://ethereum.github.io/consensus-specs/specs/phase0/p2p-interface/#the-gossip-domain-gossipsub
     fn default() -> Self {
+        Self::with_history_length(12)
+    }
+}
+
+impl GossipsubConfig {
+    pub fn with_history_length(history_length: usize) -> Self {
         let config = ConfigBuilder::default()
             .max_transmit_size(max_message_size() as usize)
             .heartbeat_interval(Duration::from_millis(700))
@@ -26,7 +32,7 @@ impl Default for GossipsubConfig {
             .mesh_n_low(6)
             .mesh_n_high(12)
             .gossip_lazy(6)
-            .history_length(12)
+            .history_length(history_length)
             .history_gossip(3)
             .max_messages_per_rpc(Some(500))
             .duplicate_cache_time(Duration::from_secs(
@@ -58,9 +64,7 @@ impl Default for GossipsubConfig {
             topics: vec![],
         }
     }
-}
 
-impl GossipsubConfig {
     pub fn set_topics(&mut self, topics: Vec<GossipTopic>) {
         self.topics = topics;
     }

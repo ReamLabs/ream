@@ -158,6 +158,9 @@ async fn validate_data_column_sidecar_full_inner(
         ));
     }
 
+    // KZG verification and state advancement do not require exclusive access to the store.
+    drop(store);
+
     if !data_column_sidecar.verify_inclusion_proof() {
         return Ok(ValidationResult::Reject(
             "Invalid data column sidecar inclusion proof".to_string(),
