@@ -237,11 +237,10 @@ pub fn set_peer_count(count: i64) {
     set_int_gauge(&LIBP2P_PEERS, count);
 }
 
-pub fn init_node_metrics() {
+pub fn init_node_metrics(node_version: &str) {
     init_beacon_metrics();
-
     BEACON_NODE_INFO
-        .with_label_values(&["ream", env!("CARGO_PKG_VERSION")])
+        .with_label_values(&["ream", node_version])
         .set(1);
 
     let start_time = SystemTime::now()

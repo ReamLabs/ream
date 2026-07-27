@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::{anyhow, bail};
+use anyhow::bail;
 use ream_consensus_beacon::{
     attestation::Attestation, attester_slashing::AttesterSlashing,
     electra::beacon_block::SignedBeaconBlock,
@@ -67,31 +67,61 @@ impl BeaconChain {
             }
         }
 
-        let new_head = store.get_head()?;
-        let new_head_block = store
-            .db
-            .block_provider()
-            .get(new_head)?
-            .ok_or_else(|| anyhow!("head block not found in store"))?;
-        let new_head_slot = new_head_block.message.slot;
+        for attestation in signed_block.message.body.attestations.iter() {
+            if let Err(err) = on_attestation(&mut store, attestation.clone(), true) {
+                warn!("Failed to process block attestation through fork choice: {err:?}");
+            }
+        }
 
-        BEACON_HEAD_SLOT.set(new_head_slot as i64);
-        BEACON_HEAD_EPOCH.set(compute_epoch_at_slot(new_head_slot) as i64);
+        match store.get_head() {
+            Ok(new_head) => {
+                match store.db.block_provider().get(new_head) {
+                    Ok(Some(new_head_block)) => {
+                        let new_head_slot = new_head_block.message.slot;
+                        BEACON_HEAD_SLOT.set(new_head_slot as i64);
+                        BEACON_HEAD_EPOCH.set(compute_epoch_at_slot(new_head_slot) as i64);
+                    }
+                    Ok(None) => {
+                        warn!(
+                            "head block {new_head:?} not found in store; skipping head metrics update"
+                        );
+                    }
+                    Err(err) => {
+                        warn!("Failed to fetch head block for metrics: {err:?}");
+                    }
+                }
 
-        // Detect canonical chain reorgs for beacon_reorgs_total.
-        // A head change alone is insufficient because normal chain extensions
-        // also change the head. We only count a reorg when the previous head
-        // is no longer an ancestor of the new head.
-        if let Some(previous_head) = previous_head
-            && previous_head != new_head
-            && let Some(previous_head_block) = store.db.block_provider().get(previous_head)?
-        {
-            let previous_head_slot = previous_head_block.message.slot;
-            let still_ancestor =
-                store.get_ancestor(new_head, previous_head_slot).ok() == Some(previous_head);
-
-            if !still_ancestor {
-                BEACON_REORGS_TOTAL.inc();
+                // Detect canonical chain reorgs for beacon_reorgs_total.
+                if let Some(previous_head) = previous_head
+                    && previous_head != new_head
+                {
+                    match store.db.block_provider().get(previous_head) {
+                        Ok(Some(previous_head_block)) => {
+                            let previous_head_slot = previous_head_block.message.slot;
+                            match store.get_ancestor(new_head, previous_head_slot) {
+                                Ok(ancestor) => {
+                                    if ancestor != previous_head {
+                                        BEACON_REORGS_TOTAL.inc();
+                                    }
+                                }
+                                Err(err) => {
+                                    warn!("Failed to check ancestor for reorg detection: {err:?}");
+                                }
+                            }
+                        }
+                        Ok(None) => {
+                            warn!(
+                                "previous head block {previous_head:?} not found in store; skipping reorg check"
+                            );
+                        }
+                        Err(err) => {
+                            warn!("Failed to fetch previous head block for reorg check: {err:?}");
+                        }
+                    }
+                }
+            }
+            Err(err) => {
+                warn!("Failed to get head for metrics/reorg detection: {err:?}");
             }
         }
 

@@ -29,6 +29,7 @@ use ream_metrics::{
     BEACON_ENGINE_GET_BLOBS_V3_COMPLETE_RESPONSES_TOTAL,
     BEACON_ENGINE_GET_BLOBS_V3_PARTIAL_RESPONSES_TOTAL,
     BEACON_ENGINE_GET_BLOBS_V3_REQUEST_DURATION_SECONDS, BEACON_ENGINE_GET_BLOBS_V3_REQUESTS_TOTAL,
+    timer::DiscardOnDropHistogramTimer,
 };
 use reqwest::{Client, Request, Url};
 use serde_json::json;
@@ -524,7 +525,9 @@ impl ExecutionApi for ExecutionEngine {
         blob_version_hashes: Vec<B256>,
     ) -> anyhow::Result<Option<Vec<BlobAndProofV2>>> {
         BEACON_ENGINE_GET_BLOBS_V2_REQUESTS_TOTAL.inc();
-        let timer = BEACON_ENGINE_GET_BLOBS_V2_REQUEST_DURATION_SECONDS.start_timer();
+        let timer = DiscardOnDropHistogramTimer::new(
+            BEACON_ENGINE_GET_BLOBS_V2_REQUEST_DURATION_SECONDS.clone(),
+        );
         let request = JsonRpcRequest {
             id: 1,
             jsonrpc: "2.0".into(),
@@ -553,7 +556,9 @@ impl ExecutionApi for ExecutionEngine {
         blob_version_hashes: Vec<B256>,
     ) -> anyhow::Result<Option<Vec<Option<BlobAndProofV2>>>> {
         BEACON_ENGINE_GET_BLOBS_V3_REQUESTS_TOTAL.inc();
-        let timer = BEACON_ENGINE_GET_BLOBS_V3_REQUEST_DURATION_SECONDS.start_timer();
+        let timer = DiscardOnDropHistogramTimer::new(
+            BEACON_ENGINE_GET_BLOBS_V3_REQUEST_DURATION_SECONDS.clone(),
+        );
         let request = JsonRpcRequest {
             id: 1,
             jsonrpc: "2.0".into(),

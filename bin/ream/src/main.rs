@@ -540,7 +540,7 @@ async fn run_beacon_node_inner(
             config.metrics_address, config.metrics_port
         );
 
-        init_node_metrics();
+        init_node_metrics(env!("CARGO_PKG_VERSION"));
     }
 
     if initialize_globals {
