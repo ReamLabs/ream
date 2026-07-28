@@ -352,13 +352,7 @@ impl LeanChainService {
                         self.sync_status = self.update_sync_status().await?;
                     }
                     if self.sync_status == SyncStatus::Synced {
-                        let is_slot_start = tick_count.is_multiple_of(INTERVALS_PER_SLOT);
-                        let wall_slot = tick_count / INTERVALS_PER_SLOT;
-                        if is_slot_start && self.clock_prebuilt_for == Some(wall_slot) {
-                            self.clock_prebuilt_for = None;
-                        } else {
-                            self.store.write().await.tick_interval(is_slot_start, self.is_aggregator()).await?;
-                        }
+                        self.tick_store_from_clock(tick_count).await?;
                         self.step_head_sync(tick_count).await?;
 
                         #[cfg(feature = "devnet5")]
@@ -670,6 +664,21 @@ impl LeanChainService {
         let is_aggregator = self.aggregator_state.is_enabled();
         set_int_gauge_vec(&IS_AGGREGATOR, is_aggregator as i64, &[]);
         is_aggregator
+    }
+
+    async fn tick_store_from_clock(&mut self, tick_count: u64) -> anyhow::Result<()> {
+        let is_slot_start = tick_count.is_multiple_of(INTERVALS_PER_SLOT);
+        let wall_slot = tick_count / INTERVALS_PER_SLOT;
+        if is_slot_start && self.clock_prebuilt_for == Some(wall_slot) {
+            self.clock_prebuilt_for = None;
+        } else {
+            self.store
+                .write()
+                .await
+                .tick_interval(false, self.is_aggregator())
+                .await?;
+        }
+        Ok(())
     }
 
     async fn step_head_sync(&mut self, tick_count: u64) -> anyhow::Result<()> {
@@ -3133,4 +3142,105 @@ fn pending_block_slot(block: &SignedBlock) -> u64 {
 
 fn pending_block_parent_root(block: &SignedBlock) -> B256 {
     block.block.parent_root
+}
+
+#[cfg(test)]
+mod tests {
+    use ream_consensus_lean::{
+        attestation::{AttestationData, SignatureKey, SingleMessageAggregate},
+        checkpoint::Checkpoint,
+    };
+    use ream_storage::tables::{field::REDBField, table::REDBTable};
+    use ream_sync::rwlock::Writer;
+    use ream_test_utils::store::sample_store;
+    use ssz_types::{BitList, VariableList, typenum::U4096};
+    use tree_hash::TreeHash;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_non_proposer_clock_tick_does_not_accept_new_attestations_at_slot_start() {
+        let store = sample_store(1).await;
+        let genesis_root = store.store.lock().await.head_provider().get().unwrap();
+        let data = AttestationData {
+            slot: 1,
+            head: Checkpoint {
+                root: genesis_root,
+                slot: 0,
+            },
+            target: Checkpoint {
+                root: genesis_root,
+                slot: 0,
+            },
+            source: Checkpoint {
+                root: genesis_root,
+                slot: 0,
+            },
+        };
+        let data_root = data.tree_hash_root();
+        let key = SignatureKey::from_parts(0, data_root);
+        let mut participants = BitList::<U4096>::with_capacity(1).unwrap();
+        participants.set(0, true).unwrap();
+
+        {
+            let db = store.store.lock().await;
+            db.time_provider().insert(INTERVALS_PER_SLOT - 1).unwrap();
+            db.attestation_data_by_root_provider()
+                .insert(data_root, data)
+                .unwrap();
+            db.latest_new_aggregated_payloads_provider()
+                .insert(
+                    key.clone(),
+                    vec![SingleMessageAggregate::new(
+                        participants,
+                        VariableList::default(),
+                    )],
+                )
+                .unwrap();
+        }
+
+        let (writer, _) = Writer::new(store);
+        let (_chain_tx, chain_rx) = mpsc::unbounded_channel();
+        let (p2p_tx, _p2p_rx) = mpsc::unbounded_channel();
+        let mut service = LeanChainService::new(
+            writer,
+            chain_rx,
+            p2p_tx,
+            Arc::new(AggregatorState::new(false)),
+        )
+        .await;
+
+        service
+            .tick_store_from_clock(INTERVALS_PER_SLOT)
+            .await
+            .unwrap();
+
+        {
+            let store = service.store.read().await;
+            let db = store.store.lock().await;
+            assert!(
+                db.latest_new_aggregated_payloads_provider()
+                    .contains_key(&key),
+                "ordinary slot-start ticks must not drain the new pool"
+            );
+        }
+
+        service
+            .store
+            .write()
+            .await
+            .get_proposal_head(1)
+            .await
+            .unwrap();
+        let store = service.store.read().await;
+        let db = store.store.lock().await;
+        assert!(
+            !db.latest_new_aggregated_payloads_provider()
+                .contains_key(&key)
+        );
+        assert!(
+            db.latest_known_aggregated_payloads_provider()
+                .contains_key(&key)
+        );
+    }
 }
