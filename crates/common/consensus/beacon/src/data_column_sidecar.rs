@@ -207,7 +207,7 @@ pub fn get_data_column_sidecars_from_block(
 
 #[cfg(test)]
 mod tests {
-    use rand::{Rng, SeedableRng, rngs::StdRng};
+    use rand::{RngExt, SeedableRng, rngs::StdRng};
     use ream_consensus_misc::constants::beacon::BYTES_PER_COMMITMENT;
     use ream_execution_rpc_types::get_blobs::Blob;
     use rust_eth_kzg::{DASContext, TrustedSetup, UsePrecomp};

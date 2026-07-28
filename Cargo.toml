@@ -75,14 +75,14 @@ wildcard_imports = "warn"
 [workspace.dependencies]
 actix-web = "4.14.0"
 actix-web-lab = "0.26.0"
-aes = "0.8.4"
-alloy-consensus = { version = "1.0.41", default-features = false }
+aes = "0.9.2"
+alloy-consensus = { version = "2.2.0", default-features = false }
 alloy-primitives = { version = "1.6.1", features = ['serde', 'rlp'] }
 alloy-rlp = { version = "0.3.16", default-features = false, features = [
     "derive",
 ] }
-alloy-rpc-types-beacon = "2.20"
-alloy-rpc-types-eth = "1.0.41"
+alloy-rpc-types-beacon = "2.2.0"
+alloy-rpc-types-eth = "2.2.0"
 anyhow = "1.0.104"
 async-trait = "0.1.91"
 bincode = "3.0.0"
@@ -97,7 +97,7 @@ ethereum_hashing = "0.7.0"
 ethereum_serde_utils = "0.8.1"
 ethereum_ssz = "0.10.4"
 ethereum_ssz_derive = "0.10.4"
-eventsource-client = "0.15.1"
+eventsource-client = "0.16.2"
 futures = "0.3.33"
 hashbrown = "0.17.1"
 itertools = "0.15.0"
@@ -131,12 +131,13 @@ libp2p-swarm = "0.47.1"
 lru = "0.18.1"
 parking_lot = "0.12.5"
 prometheus_exporter = { git = "https://github.com/AlexanderThaller/prometheus_exporter", rev = "c49efe614486f998b20eb410ae0caf3e904cf540" }
-rand = "0.9"
-rand_chacha = "0.9"
+rand = "0.10.2"
+rand_chacha = "0.10.0"
 redb = "4.1.0"
-reqwest = { version = "0.12.24", default-features = false, features = [
-    "rustls-tls",
+reqwest = { version = "0.13.4", default-features = false, features = [
+    "rustls",
     "json",
+    "query",
 ] }
 rstest = "0.26.1"
 rust-kzg-blst = { git = 'https://github.com/grandinetech/rust-kzg.git' }

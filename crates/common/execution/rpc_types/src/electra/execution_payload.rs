@@ -96,6 +96,8 @@ impl ExecutionPayload {
             excess_blob_gas: Some(self.excess_blob_gas),
             parent_beacon_block_root: Some(parent_beacon_block_root),
             requests_hash: Some(compute_requests_hash(execution_requests_list)),
+            block_access_list_hash: None,
+            slot_number: None,
         }
     }
 
