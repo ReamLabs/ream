@@ -1894,35 +1894,44 @@ mod tests {
         let executor = ReamExecutor::new().unwrap();
         let executor_handle = executor.clone();
 
+        let justification_lag = 2;
+        let finalization_lag = 2;
         let cloned_db = db.clone();
-        executor.runtime().block_on(async move {
+        let monitor_db = db.clone();
+        let head_state = executor.runtime().block_on(async move {
             let mut handle = tokio::spawn(async move {
                 run_lean_node(*config, executor_handle, cloned_db).await;
             });
 
-            tokio::select! {
-                result = &mut handle => panic!("lean_node exited early: {result:?}"),
-                _ = sleep(Duration::from_secs(120)) => {}
-            }
+            let head_state = timeout(Duration::from_secs(120), async {
+                loop {
+                    if let Some(head_state) = read_head_state(&monitor_db)
+                        && head_state.slot > finalization_lag
+                        && head_state.latest_finalized.slot > 0
+                        && head_state.latest_justified.slot + justification_lag <= head_state.slot
+                        && head_state.latest_finalized.slot + finalization_lag <= head_state.slot
+                    {
+                        break head_state;
+                    }
+
+                    tokio::select! {
+                        result = &mut handle => panic!("lean_node exited early: {result:?}"),
+                        _ = sleep(Duration::from_millis(250)) => {}
+                    }
+                }
+            })
+            .await
+            .expect("lean node did not reach a finalized head within 120 seconds");
 
             handle.abort();
 
             sleep(Duration::from_secs(2)).await;
+            head_state
         });
 
-        let lean_db = db.init_lean_db().unwrap();
-        let head = lean_db.head_provider().get().unwrap();
-        let head_state = lean_db.state_provider().get(head).unwrap().unwrap();
-
-        let justfication_lag = 2;
-        let finalization_lag = 2;
-
         info!(
-            "Test results: head_slot={}, justified_slot={}, finalized_slot={}, head_root={:?}",
-            head_state.slot,
-            head_state.latest_justified.slot,
-            head_state.latest_finalized.slot,
-            head
+            "Test results: head_slot={}, justified_slot={}, finalized_slot={}",
+            head_state.slot, head_state.latest_justified.slot, head_state.latest_finalized.slot,
         );
 
         assert!(
@@ -1936,8 +1945,8 @@ mod tests {
             head_state.latest_finalized.slot
         );
         assert!(
-            head_state.latest_justified.slot + justfication_lag <= head_state.slot,
-            "Expected the head to be at least {justfication_lag} slots ahead of the justified checkpoint {:?} + {justfication_lag} vs {:?}",
+            head_state.latest_justified.slot + justification_lag <= head_state.slot,
+            "Expected the head to be at least {justification_lag} slots ahead of the justified checkpoint {:?} + {justification_lag} vs {:?}",
             head_state.latest_justified.slot,
             head_state.slot
         );
