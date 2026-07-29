@@ -954,6 +954,7 @@ mod tests {
         Cli, Commands, beacon_node::BeaconNodeConfig, lean_node::LeanNodeConfig,
         verbosity::Verbosity,
     };
+    use ream_checkpoint_sync_lean::LeanCheckpointClient;
     use ream_consensus_beacon::electra::{
         beacon_block::SignedBeaconBlock, beacon_state::BeaconState,
     };
@@ -972,6 +973,7 @@ mod tests {
     use ssz::Decode;
     use tokio::time::{sleep, timeout};
     use tracing::{info, warn};
+    use url::Url;
 
     use crate::{APP_NAME, run_beacon_node_for_test, run_lean_node};
 
@@ -1282,6 +1284,23 @@ mod tests {
         lean_db.state_provider().get(head).ok().flatten()
     }
 
+    async fn wait_for_checkpoint_source(url: &Url) {
+        let client = LeanCheckpointClient::new();
+        timeout(Duration::from_secs(30), async {
+            loop {
+                match client.fetch_finalized_anchor(url).await {
+                    Ok(_) => break,
+                    Err(err) => {
+                        warn!("Checkpoint source is not ready: {err}");
+                        sleep(Duration::from_millis(250)).await;
+                    }
+                }
+            }
+        })
+        .await
+        .expect("Checkpoint source did not become ready within 30 seconds");
+    }
+
     fn run_checkpoint_sync_scenario(scenario: CheckpointSyncScenario) {
         init_test_tracing();
 
@@ -1469,6 +1488,11 @@ mod tests {
 
                     let node_3_p2p_port = base_p2p_port + port_offset + 2;
                     let node_3_http_port = base_http_port + port_offset + 2;
+                    let checkpoint_sync_url =
+                        Url::parse(&format!("http://127.0.0.1:{node_1_http_port}"))
+                            .expect("Failed to parse checkpoint sync URL");
+
+                    wait_for_checkpoint_source(&checkpoint_sync_url).await;
 
                     let node_3_args = vec![
                         "ream".to_string(),
@@ -1488,7 +1512,7 @@ mod tests {
                         "--private-key-path".to_string(),
                         key_paths[2].to_string_lossy().to_string(),
                         "--checkpoint-sync-url".to_string(),
-                        format!("http://127.0.0.1:{node_1_http_port}"),
+                        checkpoint_sync_url.to_string(),
                         "--bootnodes".to_string(),
                         format!("{},{}", node_addresses[0], node_addresses[1]),
                     ];
@@ -1872,20 +1896,13 @@ mod tests {
 
         let cloned_db = db.clone();
         executor.runtime().block_on(async move {
-            let handle = tokio::spawn(async move {
+            let mut handle = tokio::spawn(async move {
                 run_lean_node(*config, executor_handle, cloned_db).await;
             });
 
-            let result = timeout(Duration::from_secs(120), async {
-                sleep(Duration::from_secs(120)).await;
-                Ok::<_, ()>(())
-            })
-            .await;
-
-            match result {
-                Ok(Ok(())) => {}
-                Err(err) => panic!("lean_node panicked or exited early {err:?}"),
-                Ok(Err(err)) => panic!("internal error {err:?}"),
+            tokio::select! {
+                result = &mut handle => panic!("lean_node exited early: {result:?}"),
+                _ = sleep(Duration::from_secs(120)) => {}
             }
 
             handle.abort();
