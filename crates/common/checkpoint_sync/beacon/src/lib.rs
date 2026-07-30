@@ -13,7 +13,7 @@ use ream_consensus_beacon::{
         beacon_state::BeaconState,
     },
 };
-use ream_consensus_misc::checkpoint::Checkpoint;
+use ream_consensus_misc::{checkpoint::Checkpoint, misc::compute_epoch_at_slot};
 use ream_execution_rpc_types::get_blobs::BlobAndProofV1;
 use ream_fork_choice_beacon::{handlers::on_tick, store::get_forkchoice_store};
 use ream_network_spec::networks::beacon_network_spec;
@@ -83,12 +83,18 @@ pub async fn initialize_db_from_checkpoint(
     );
     let slot = block.message.slot;
 
-    info!("Fetching blobs...");
-    initialize_blobs_in_db(&checkpoint_sync_url, db.clone(), block.message.block_root()).await?;
-    info!(
-        "Downloaded blobs for block: {}",
-        block.message.body.execution_payload.block_number
-    );
+    // blob_sidecars only serves pre-Fulu blobs; post-Fulu data comes as data column sidecars.
+    if compute_epoch_at_slot(slot) < beacon_network_spec().fulu_fork_epoch {
+        info!("Fetching blobs...");
+        initialize_blobs_in_db(&checkpoint_sync_url, db.clone(), block.message.block_root())
+            .await?;
+        info!(
+            "Downloaded blobs for block: {}",
+            block.message.body.execution_payload.block_number
+        );
+    } else {
+        info!("Skipping legacy blob_sidecars fetch for post-Fulu checkpoint block");
+    }
 
     info!("Fetching initial state...");
     let state = get_state(&checkpoint_sync_url, slot).await?;

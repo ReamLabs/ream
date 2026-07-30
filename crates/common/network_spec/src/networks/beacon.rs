@@ -10,7 +10,7 @@ use ream_consensus_misc::{
     constants::beacon::GENESIS_VALIDATORS_ROOT,
     fork::Fork,
     fork_data::{ForkData, compute_fork_digest},
-    misc::checksummed_address,
+    misc::{checksummed_address, compute_epoch_at_slot},
 };
 use serde::Deserialize;
 
@@ -211,7 +211,7 @@ impl BeaconNetworkSpec {
             current_version: self.current_fork_version(epoch),
             genesis_validators_root,
         };
-        compute_fork_digest(fork_data, epoch)
+        compute_fork_digest(fork_data, &self.blob_schedule, self.fulu_fork_epoch, epoch)
     }
 
     pub fn current_fork_version(&self, epoch: u64) -> B32 {
@@ -274,6 +274,11 @@ impl BeaconNetworkSpec {
             .expect("System Time is before the genesis time");
         let current_slot = elapsed.as_millis() as u64 / self.slot_duration_ms;
         current_slot.saturating_sub(n_days_ago * 24 * 60 * 60 * 1000 / self.slot_duration_ms)
+    }
+
+    /// Returns the current wall-clock epoch.
+    pub fn current_epoch(&self) -> u64 {
+        compute_epoch_at_slot(self.slot_n_days_ago(0))
     }
 
     pub fn seconds_per_slot(&self) -> u64 {

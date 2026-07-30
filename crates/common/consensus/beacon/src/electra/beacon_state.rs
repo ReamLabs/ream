@@ -2705,7 +2705,11 @@ impl BeaconState {
         // Verify commitments are under limit
         ensure!(
             body.blob_kzg_commitments.len()
-                <= get_blob_parameters(self.get_current_epoch()).max_blobs_per_block as usize
+                <= get_blob_parameters(
+                    &beacon_network_spec().blob_schedule,
+                    self.get_current_epoch()
+                )
+                .max_blobs_per_block as usize
         );
 
         // Verify the execution payload is valid

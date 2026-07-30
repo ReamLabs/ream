@@ -9,7 +9,7 @@ use ream_consensus_beacon::{
     single_attestation::SingleAttestation,
 };
 use ream_consensus_misc::constants::beacon::{
-    FULU_FORK_EPOCH, MIN_ATTESTATION_INCLUSION_DELAY, genesis_validators_root,
+    MIN_ATTESTATION_INCLUSION_DELAY, genesis_validators_root,
 };
 use ream_execution_rpc_types::get_blobs::BlobAndProofV1;
 use ream_network_spec::networks::beacon_network_spec;
@@ -53,7 +53,10 @@ use crate::{
 
 pub fn init_gossipsub_config_with_topics() -> GossipsubConfig {
     let mut gossipsub_config = GossipsubConfig::default();
-    let fork_digest = beacon_network_spec().fork_digest(FULU_FORK_EPOCH, genesis_validators_root());
+    let fork_digest = beacon_network_spec().fork_digest(
+        beacon_network_spec().current_epoch(),
+        genesis_validators_root(),
+    );
 
     let mut topics = vec![
         GossipTopic {

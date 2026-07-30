@@ -6,6 +6,7 @@ use ream_consensus_beacon::{
     blob_sidecar::{BlobIdentifier, BlobSidecar},
     electra::beacon_block::SignedBeaconBlock,
 };
+use ream_consensus_misc::misc::compute_epoch_at_slot;
 use ream_network_spec::networks::beacon_network_spec;
 use ssz::Encode;
 use tree_hash::TreeHash;
@@ -223,6 +224,14 @@ impl BlockCache {
         let mut missing_roots = Vec::new();
         for block in self.blocks_and_blobs.values() {
             if block.block.message.slot < slot_17_days_ago {
+                continue;
+            }
+
+            // blob_sidecars_by_root only serves pre-Fulu blobs; post-Fulu data is distributed
+            // as data column sidecars instead, fetched separately via the DA checker.
+            if compute_epoch_at_slot(block.block.message.slot)
+                >= beacon_network_spec().fulu_fork_epoch
+            {
                 continue;
             }
 
