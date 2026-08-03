@@ -1,16 +1,13 @@
-use alloy_primitives::B256;
-use ream_api_types_common::{error::ApiError, id::ID};
-
 pub mod availability;
 pub mod column;
 pub mod health;
 pub mod ingest;
 pub mod retention;
 
+use alloy_primitives::B256;
+use ream_api_types_common::{error::ApiError, id::ID};
+
 /// Resolve a request-path [`ID`] to a concrete block root.
-///
-/// The DA node stores by root and keeps no chain of its own, so it can only
-/// accept [`ID::Root`].
 pub(crate) fn block_root_from_id(id: ID) -> Result<B256, ApiError> {
     match id {
         ID::Root(root) => Ok(root),
@@ -21,8 +18,6 @@ pub(crate) fn block_root_from_id(id: ID) -> Result<B256, ApiError> {
 }
 
 /// Resolve a request-path [`ID`] to a concrete slot.
-///
-/// Retention boundaries are expressed as a slot, so this accept only
 /// [`ID::Slot`].
 pub(crate) fn slot_from_id(id: ID) -> Result<u64, ApiError> {
     match id {
