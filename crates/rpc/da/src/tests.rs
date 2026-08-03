@@ -12,7 +12,7 @@ use std::{
 use actix_web::{App, http::StatusCode, test, web::Data};
 use alloy_primitives::B256;
 use ream_da::{
-    column::{DaContext, DaPayload, VerifiedColumn},
+    column::{DaContext, VerifiedColumn},
     id::DaColumnId,
     store::{DaReadStore, DaWriteStore},
 };
@@ -47,7 +47,7 @@ impl TempStore {
             .put(VerifiedColumn::new_unchecked(
                 id,
                 DaContext { slot },
-                DaPayload::new(payload.to_vec()),
+                payload.to_vec(),
             ))
             .expect("put");
     }
@@ -72,9 +72,7 @@ async fn health_reports_ok() {
     // No app_data needed: the probe touches neither store nor ingest handle.
     let app = test::init_service(App::new().configure(register_routers)).await;
 
-    let req = test::TestRequest::get()
-        .uri("/da/v0/health")
-        .to_request();
+    let req = test::TestRequest::get().uri("/da/v0/health").to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 
@@ -116,7 +114,7 @@ async fn ingest_accepts_valid_candidate() {
             assert_eq!(candidate.id.block_root(), root);
             assert_eq!(candidate.id.index(), 3);
             assert_eq!(candidate.context.slot, 42);
-            assert_eq!(candidate.payload.as_bytes(), &[0xde, 0xad, 0xbe, 0xef]);
+            assert_eq!(candidate.payload, [0xde, 0xad, 0xbe, 0xef]);
         }
         other => panic!("expected a candidate, got {other:?}"),
     }

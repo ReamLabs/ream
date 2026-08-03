@@ -10,7 +10,7 @@ use std::{
 use alloy_primitives::B256;
 use ream_da::{
     availability::DaAvailability,
-    column::{DaContext, DaPayload, VerifiedColumn},
+    column::{DaContext, VerifiedColumn},
     error::DaStoreError,
     id::{ALL_COLUMNS_MASK, DaColumnId, NUMBER_OF_COLUMNS, column_indices},
     store::{DaReadStore, DaWriteStore, InsertOutcome},
@@ -248,7 +248,7 @@ impl DaReadStore for DaFileStore {
         Ok(Some(VerifiedColumn::new_unchecked(
             *id,
             DaContext { slot: entry.slot },
-            DaPayload::new(bytes),
+            bytes,
         )))
     }
 
@@ -294,7 +294,7 @@ impl DaWriteStore for DaFileStore {
         let path = self.column_path(&id, slot);
         let tmp_path = path.with_extension("tmp");
         let mut file = fs::File::create(&tmp_path)?;
-        file.write_all(column.payload().as_bytes())?;
+        file.write_all(column.payload())?;
         file.sync_all()?;
         fs::rename(&tmp_path, &path)?;
 
@@ -328,7 +328,7 @@ mod tests {
 
     use alloy_primitives::B256;
     use ream_da::{
-        column::{DaContext, DaPayload, VerifiedColumn},
+        column::{DaContext, VerifiedColumn},
         id::DaColumnId,
         store::{DaReadStore, DaWriteStore, InsertOutcome},
     };
@@ -347,7 +347,7 @@ mod tests {
 
     fn sample_column(block_root: B256, index: u64, slot: u64, payload: &[u8]) -> VerifiedColumn {
         let id = DaColumnId::new(block_root, index).expect("index within range");
-        VerifiedColumn::new_unchecked(id, DaContext { slot }, DaPayload::new(payload.to_vec()))
+        VerifiedColumn::new_unchecked(id, DaContext { slot }, payload.to_vec())
     }
 
     #[test]
@@ -424,7 +424,7 @@ mod tests {
 
         // The originally stored column is untouched...
         let fetched = store.get(&id).expect("get succeeds").expect("present");
-        assert_eq!(fetched.payload().as_bytes(), b"original");
+        assert_eq!(fetched.payload(), b"original");
         assert_eq!(fetched.context().slot, 10);
         // ...and the ignored slot left no orphan file behind.
         assert!(!store.column_path(&id, 11).exists());

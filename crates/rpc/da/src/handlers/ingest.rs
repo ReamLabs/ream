@@ -5,7 +5,7 @@ use actix_web::{
 use alloy_primitives::B256;
 use ream_api_types_common::error::ApiError;
 use ream_da::{
-    column::{CandidateColumn, DaContext, DaPayload},
+    column::{CandidateColumn, DaContext},
     id::DaColumnId,
 };
 use ream_da_node::{error::IngestionError, ingest::DaIngestHandle};
@@ -33,7 +33,7 @@ impl IngestRequest {
         Ok(CandidateColumn {
             id,
             context: DaContext { slot: self.slot },
-            payload: DaPayload::new(payload),
+            payload,
         })
     }
 }

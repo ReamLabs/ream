@@ -14,7 +14,7 @@ use crate::handlers::block_root_from_id;
 /// JSON view of a stored column.
 ///
 /// The payload travels as a `0x`-hex string, symmetric with the
-/// ingest envelope, instead of `DaPayload`'s raw byte array.
+/// ingest envelope, instead of the raw payload bytes.
 ///
 /// TODO: this hex-JSON form is the dev/debug interface, not the final wire
 /// format. The serving path's real consumer is the local beacon, which wants the
@@ -36,7 +36,7 @@ impl From<VerifiedColumn> for ColumnResponse {
             block_root: id.block_root(),
             index: id.index(),
             slot: column.context().slot,
-            payload: alloy_primitives::hex::encode_prefixed(column.payload().as_bytes()),
+            payload: alloy_primitives::hex::encode_prefixed(column.payload()),
         }
     }
 }

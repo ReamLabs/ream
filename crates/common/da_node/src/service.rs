@@ -169,7 +169,7 @@ mod tests {
 
     use alloy_primitives::B256;
     use ream_da::{
-        column::{CandidateColumn, DaContext, DaPayload, VerifiedColumn},
+        column::{CandidateColumn, DaContext, VerifiedColumn},
         error::ValidationError,
         id::DaColumnId,
         store::DaReadStore,
@@ -217,7 +217,7 @@ mod tests {
         CandidateColumn {
             id: DaColumnId::new(block_root, index).expect("index within range"),
             context: DaContext { slot },
-            payload: DaPayload::new(payload.to_vec()),
+            payload: payload.to_vec(),
         }
     }
 
@@ -255,7 +255,7 @@ mod tests {
                     .get(&candidate.id)
                     .expect("get succeeds")
                     .expect("column is present");
-                assert_eq!(stored.payload().as_bytes(), candidate.payload.as_bytes());
+                assert_eq!(stored.payload(), candidate.payload);
             }
         });
 

@@ -2,27 +2,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::id::DaColumnId;
 
-/// Opaque, scheme-specific encoding of a DA column payload together with its
-/// availability evidence.
-///
-/// The DA core never interprets these bytes. For the PeerDAS backend they are
-/// an SSZ-encoded `DataColumnSidecar` (cells, KZG commitments, KZG proofs,
-/// signed block header, and commitments inclusion proof). A future non-KZG
-/// backend can encode different evidence without changing storage, API, or
-/// serving logic.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DaPayload(Vec<u8>);
-
-impl DaPayload {
-    pub fn new(bytes: Vec<u8>) -> Self {
-        Self(bytes)
-    }
-
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.0
-    }
-}
-
 /// Consensus-derived context attached to a candidate column.
 ///
 /// Only plain data crosses this boundary; no beacon runtime handles.
@@ -42,7 +21,13 @@ pub struct DaContext {
 pub struct CandidateColumn {
     pub id: DaColumnId,
     pub context: DaContext,
-    pub payload: DaPayload,
+    /// Opaque, scheme-specific payload bytes carrying the column and its
+    /// availability evidence. The DA core never interprets them: for the
+    /// PeerDAS backend they are an SSZ-encoded `DataColumnSidecar` (cells, KZG
+    /// commitments, KZG proofs, signed block header, and commitments inclusion
+    /// proof); a future non-KZG backend can encode different evidence without
+    /// changing storage, API, or serving logic.
+    pub payload: Vec<u8>,
 }
 
 /// A column that passed verification.
@@ -54,12 +39,12 @@ pub struct CandidateColumn {
 pub struct VerifiedColumn {
     id: DaColumnId,
     context: DaContext,
-    payload: DaPayload,
+    payload: Vec<u8>,
 }
 
 impl VerifiedColumn {
     /// Construct a verified column without running verification.
-    pub fn new_unchecked(id: DaColumnId, context: DaContext, payload: DaPayload) -> Self {
+    pub fn new_unchecked(id: DaColumnId, context: DaContext, payload: Vec<u8>) -> Self {
         Self {
             id,
             context,
@@ -75,11 +60,11 @@ impl VerifiedColumn {
         self.context
     }
 
-    pub fn payload(&self) -> &DaPayload {
+    pub fn payload(&self) -> &[u8] {
         &self.payload
     }
 
-    pub fn into_payload(self) -> DaPayload {
+    pub fn into_payload(self) -> Vec<u8> {
         self.payload
     }
 }

@@ -70,7 +70,7 @@ impl KzgVerifier {
 
 impl DaVerifier for KzgVerifier {
     fn verify(&self, candidate: CandidateColumn) -> Result<VerifiedColumn, ValidationError> {
-        let sidecar = self.decode(candidate.payload.as_bytes())?;
+        let sidecar = self.decode(&candidate.payload)?;
 
         // Identifier consistency: the id is derived from the sidecar's own signed
         // header, so a candidate cannot claim a (block root, column) its payload
@@ -136,7 +136,7 @@ mod tests {
         polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
     };
     use ream_da::{
-        column::{CandidateColumn, DaContext, DaPayload},
+        column::{CandidateColumn, DaContext},
         error::ValidationError,
         id::DaColumnId,
         verifier::DaVerifier,
@@ -172,8 +172,8 @@ mod tests {
         }
     }
 
-    fn payload_of(sidecar: &DataColumnSidecar) -> DaPayload {
-        DaPayload::new(sidecar.as_ssz_bytes())
+    fn payload_of(sidecar: &DataColumnSidecar) -> Vec<u8> {
+        sidecar.as_ssz_bytes()
     }
 
     /// An honest candidate whose id is derived from the sidecar's own header.
@@ -247,7 +247,7 @@ mod tests {
             .expect("a KZG-valid sidecar is accepted");
 
         assert_eq!(verified.id().index(), sidecar.index);
-        assert_eq!(verified.payload().as_bytes(), sidecar.as_ssz_bytes());
+        assert_eq!(verified.payload(), sidecar.as_ssz_bytes());
     }
 
     #[test]
@@ -255,7 +255,7 @@ mod tests {
         let candidate = CandidateColumn {
             id: DaColumnId::new(B256::ZERO, 0).expect("valid index"),
             context: DaContext::default(),
-            payload: DaPayload::new(vec![0xde, 0xad, 0xbe, 0xef]),
+            payload: vec![0xde, 0xad, 0xbe, 0xef],
         };
         assert!(matches!(
             verifier().verify(candidate),
