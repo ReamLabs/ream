@@ -18,7 +18,6 @@ pub(crate) fn block_root_from_id(id: ID) -> Result<B256, ApiError> {
 }
 
 /// Resolve a request-path [`ID`] to a concrete slot.
-/// [`ID::Slot`].
 pub(crate) fn slot_from_id(id: ID) -> Result<u64, ApiError> {
     match id {
         ID::Slot(slot) => Ok(slot),

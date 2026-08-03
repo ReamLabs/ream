@@ -17,59 +17,36 @@ use ream_da::{
 };
 use tracing::{debug, info, trace, warn};
 
-/// Extension of a committed column file. Temp files use `.tmp` instead, so the
-/// two are easy to tell apart while scanning the directory.
+/// Committed column files; in-progress writes use `.tmp` instead.
 const COLUMN_FILE_EXTENSION: &str = "ssz";
 
-/// Per-block index entry: the block's slot, plus a 128-bit bitmap marking which
-/// column indices are stored for it (bit `i` set ⇔ column `i` present).
+/// A block's slot plus a 128-bit bitmap of its stored column indices.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct BlockEntry {
     slot: u64,
     columns: u128,
 }
 
-/// Bit mask selecting `column_index` within a block's 128-column presence
-/// bitmap. `column_index` is always `< NUMBER_OF_COLUMNS` for a valid id, so the
-/// shift never exceeds the width of `u128`.
+/// `column_index < NUMBER_OF_COLUMNS` for any valid id, so the shift never
+/// exceeds the width of `u128`.
 fn column_bit(column_index: u64) -> u128 {
     debug_assert!(column_index < NUMBER_OF_COLUMNS);
     1u128 << column_index
 }
 
-/// File-backed DA store.
-///
-/// Each verified column is persisted as its own file under `root`, so the
-/// filesystem is the source of truth for the column bytes — there is no
-/// in-memory copy of the payloads. A small in-memory index maps each block root
-/// to its slot and the set of columns stored for it, so reads can locate the
-/// backing file and check presence from an id alone; it holds only metadata and
-/// is rebuilt from the directory by [`DaFileStore::new`].
+/// File-backed DA store: one file per verified column under `root`, plus an
+/// in-memory metadata index (block root → [`BlockEntry`]) rebuilt from the
+/// directory on startup.
 pub struct DaFileStore {
-    /// Root directory holding one file per stored column, typically derived
-    /// from the CLI `--data-dir`. Created lazily on first write.
     root: PathBuf,
-
-    /// In-memory index from block root to its [`BlockEntry`] (slot + column
-    /// bitmap). Lets `get` recover the slot — and therefore the file name — and
-    /// check column presence from an id alone, without touching the filesystem.
-    /// Rebuilt by scanning the directory in [`DaFileStore::new`].
-    ///
-    /// Sized per block: over the ~18-day retention window
-    /// (4096 epochs × 32 slots) that is at most ~131k entries
     index: RwLock<HashMap<B256, BlockEntry>>,
-    // TODO add a payload cache, to avoid reading from files everytime.
-    //      problem: it'll occupy a lot of memory size, we should keep cache short and up-to-date
+    // TODO: add a payload cache to avoid reading from files every time.
 }
 
 impl DaFileStore {
-    /// Open a store rooted at `root`, rebuilding the in-memory index from the
-    /// column files already on disk.
-    ///
-    /// This is the constructor to use on node startup: columns written by an
-    /// earlier run become available again. A missing `root` is not an error —
-    /// it yields an empty store that creates the directory on its first write.
-    /// Leftover `*.tmp` files from an interrupted write are removed.
+    /// Open a store rooted at `root`, rebuilding the index from files already
+    /// on disk. A missing directory yields an empty store; leftover `*.tmp`
+    /// files from an interrupted write are removed.
     pub fn new(da_root: PathBuf) -> Result<Self, DaStoreError> {
         let store = Self {
             root: da_root,
@@ -79,10 +56,7 @@ impl DaFileStore {
         Ok(store)
     }
 
-    /// Path of the file backing `(id, slot)`.
-    ///
-    /// The name is `{slot:08}_{index:03}_{block_root:x}.ssz`
-    /// rebuild the index from a directory scan.
+    /// `{slot:08}_{index:03}_{block_root:x}.ssz` under `root`.
     fn column_path(&self, id: &DaColumnId, slot: u64) -> PathBuf {
         let block_root = id.block_root();
         let index = id.index();
@@ -91,13 +65,11 @@ impl DaFileStore {
         ))
     }
 
-    /// Scan `root` and populate the index from the column files present,
-    /// deleting any stray temp files left behind by an interrupted write.
     fn rebuild_index(&self) -> Result<(), DaStoreError> {
         let root = self.root.display();
         let entries = match fs::read_dir(&self.root) {
             Ok(entries) => entries,
-            // No directory yet means nothing has been stored, which is normal.
+            // No directory yet: nothing has been stored, which is normal.
             Err(err) if err.kind() == io::ErrorKind::NotFound => {
                 debug!("no DA store directory at {root} yet; starting with an empty index");
                 return Ok(());
@@ -113,7 +85,7 @@ impl DaFileStore {
                 continue;
             };
 
-            // A half-written file from a crashed `put` is never trustworthy, remove it.
+            // A half-written file from a crashed `put` is never trustworthy.
             if path.extension().and_then(|ext| ext.to_str()) == Some("tmp") {
                 debug!(
                     "removing leftover temp file from an interrupted write: {}",
@@ -123,8 +95,7 @@ impl DaFileStore {
                 continue;
             }
 
-            // Skip anything we did not write (unexpected names, stray files):
-            // startup must not fail on directory clutter.
+            // Skip anything we did not write: startup must not fail on clutter.
             if let Some((id, slot)) = Self::parse_column_file_name(name) {
                 index
                     .entry(id.block_root())
@@ -141,17 +112,14 @@ impl DaFileStore {
         Ok(())
     }
 
-    /// Parse a `{slot:08}_{index:03}_{block_root:x}.ssz` file name back into its
-    /// id and slot, the inverse of [`DaFileStore::column_path`]. Returns `None`
-    /// for any name that does not match exactly, so unrelated files are simply
-    /// skipped.
+    /// Inverse of [`DaFileStore::column_path`]; `None` for any file name we
+    /// never emit.
     fn parse_column_file_name(name: &str) -> Option<(DaColumnId, u64)> {
         let stem = name.strip_suffix(&format!(".{COLUMN_FILE_EXTENSION}"))?;
         let mut parts = stem.split('_');
         let slot = parts.next()?.parse::<u64>().ok()?;
         let index = parts.next()?.parse::<u64>().ok()?;
         let block_root = B256::from_str(parts.next()?).ok()?;
-        // Reject names carrying extra `_`-separated fields we never emit.
         if parts.next().is_some() {
             return None;
         }
@@ -177,8 +145,8 @@ impl DaFileStore {
         Ok(removed)
     }
 
-    /// Clear `column_index`'s bit for `block_root`; once no columns remain, drop the
-    /// whole entry. Keeps the in-memory bitmap in step with the files on disk.
+    /// Clear `column_index`'s bit for `block_root`; once no columns remain,
+    /// drop the whole entry.
     fn clear_column(&self, block_root: &B256, column_index: u64) {
         let mut index = self.index_write();
         let now_empty = match index.get_mut(block_root) {
@@ -193,15 +161,14 @@ impl DaFileStore {
         }
     }
 
-    /// Read guard over the index, recovering from a poisoned lock instead of
-    /// panicking (a poisoned in-memory index is still readable).
+    /// Recovers from a poisoned lock instead of panicking; the metadata-only
+    /// index stays usable.
     fn index_read(&self) -> RwLockReadGuard<'_, HashMap<B256, BlockEntry>> {
         self.index
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    /// Write guard over the index, recovering from a poisoned lock.
     fn index_write(&self) -> RwLockWriteGuard<'_, HashMap<B256, BlockEntry>> {
         self.index
             .write()
@@ -210,19 +177,14 @@ impl DaFileStore {
 }
 
 impl DaReadStore for DaFileStore {
-    /// Fetch a stored column by id.
-    ///
-    /// `Ok(None)` means "not present here" — a normal answer for a serving node
-    /// — and also covers an index entry whose backing file has since vanished.
-    /// `Err` is reserved for actual storage failures (I/O, corruption).
+    /// `Ok(None)` is "not present" (including an index entry whose backing
+    /// file has vanished); `Err` is an actual storage failure.
     fn get(&self, id: &DaColumnId) -> Result<Option<VerifiedColumn>, DaStoreError> {
-        // An out-of-range column index can never have been stored, and must not
-        // be shifted into the bitmap; treat it as absent.
+        // An out-of-range index must not be shifted into the bitmap.
         if id.index() >= NUMBER_OF_COLUMNS {
             return Ok(None);
         }
 
-        // Locate the block and confirm this column's bit is set, all in memory.
         let Some(entry) = self.index_read().get(&id.block_root()).copied() else {
             return Ok(None);
         };
@@ -243,8 +205,7 @@ impl DaReadStore for DaFileStore {
             Err(err) => return Err(err.into()),
         };
 
-        // Everything in the store was verified before it was written, so
-        // reconstructing it as a `VerifiedColumn` upholds the invariant.
+        // Everything in the store was verified before it was written.
         Ok(Some(VerifiedColumn::new_unchecked(
             *id,
             DaContext { slot: entry.slot },
@@ -258,19 +219,15 @@ impl DaReadStore for DaFileStore {
             .get(&block_root)
             .map(|e| e.columns)
             .unwrap_or(0);
-        // Full-custody MVP: every column is expected. When custody groups land,
-        // this is where the node's actual custody set would be passed instead.
+        // Full-custody MVP: every column is expected. Custody groups would
+        // pass the node's actual custody set here instead.
         Ok(DaAvailability::new(held, ALL_COLUMNS_MASK))
     }
 }
 
 impl DaWriteStore for DaFileStore {
-    /// Store a verified column.
-    ///
-    /// Storage is keyed by id. Once a column is stored for an id, any later put
-    /// for that id is an idempotent [`InsertOutcome::Duplicated`]: the incoming
-    /// column is ignored and the stored one is kept. A new column is written
-    /// with temp-file + `sync_all` + `rename`, so readers never trust a
+    /// Idempotent per id: a duplicate put keeps the stored column. New columns
+    /// are written temp-file + `sync_all` + `rename`, so readers never see a
     /// half-written file.
     fn put(&self, column: VerifiedColumn) -> Result<InsertOutcome, DaStoreError> {
         let id = column.id();
@@ -278,7 +235,6 @@ impl DaWriteStore for DaFileStore {
         let block_root = id.block_root();
         let column_index = id.index();
 
-        // Already stored (this column's bit is set for its block)? Idempotent.
         let already_stored = self
             .index_read()
             .get(&block_root)
@@ -288,8 +244,6 @@ impl DaWriteStore for DaFileStore {
             return Ok(InsertOutcome::Duplicated);
         }
 
-        // New column: write to a temp file, flush it to disk, then atomically
-        // rename it into place before recording it in the index.
         fs::create_dir_all(&self.root)?;
         let path = self.column_path(&id, slot);
         let tmp_path = path.with_extension("tmp");
@@ -335,9 +289,6 @@ mod tests {
 
     use super::{BlockEntry, DaFileStore};
 
-    /// A unique temp directory per call, so tests don't collide when run in
-    /// parallel. No `tempfile` dependency: the path is process- and
-    /// counter-scoped, and the store creates it lazily on first write.
     fn temp_root() -> PathBuf {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -360,7 +311,6 @@ mod tests {
         let outcome = store.put(column).expect("put succeeds");
 
         assert_eq!(outcome, InsertOutcome::Inserted);
-        // One per-block entry: slot 42, with only column 3 marked present.
         assert_eq!(
             store.index_read().get(&id.block_root()).copied(),
             Some(BlockEntry {
@@ -387,7 +337,6 @@ mod tests {
             .put(sample_column(block_root, 5, 30, b"col-5"))
             .expect("put column 5");
 
-        // Both columns share a single per-block entry, with both bits set.
         assert_eq!(
             store.index_read().get(&block_root).copied(),
             Some(BlockEntry {
@@ -409,11 +358,11 @@ mod tests {
         let first = store
             .put(sample_column(block_root, 0, 10, b"original"))
             .expect("first put");
-        // Same id, different bytes: ignored, treated as an idempotent duplicate.
+        // Same id with different bytes, then with a different slot: both are
+        // idempotent duplicates.
         let second = store
             .put(sample_column(block_root, 0, 10, b"tampered"))
             .expect("second put");
-        // Same id, different slot: also a duplicate; no second file is written.
         let third = store
             .put(sample_column(block_root, 0, 11, b"original"))
             .expect("third put");
@@ -422,11 +371,10 @@ mod tests {
         assert_eq!(second, InsertOutcome::Duplicated);
         assert_eq!(third, InsertOutcome::Duplicated);
 
-        // The originally stored column is untouched...
         let fetched = store.get(&id).expect("get succeeds").expect("present");
         assert_eq!(fetched.payload(), b"original");
         assert_eq!(fetched.context().slot, 10);
-        // ...and the ignored slot left no orphan file behind.
+        // The ignored slot left no orphan file behind.
         assert!(!store.column_path(&id, 11).exists());
 
         fs::remove_dir_all(&root).ok();
@@ -466,7 +414,7 @@ mod tests {
         let id = column.id();
 
         store.put(column).expect("put succeeds");
-        // Remove the file out-of-band while the index still references it.
+        // The index still references the removed file.
         fs::remove_file(store.column_path(&id, 20)).expect("remove backing file");
 
         assert_eq!(store.get(&id).expect("get succeeds"), None);
@@ -494,7 +442,6 @@ mod tests {
         let root = temp_root();
         let store = DaFileStore::new(root.clone()).expect("open store");
 
-        // Old block at slot 10 (two columns); recent block at slot 20 (one).
         let old = B256::repeat_byte(1);
         let recent = B256::repeat_byte(2);
         store.put(sample_column(old, 0, 10, b"old-0")).expect("put");
@@ -503,11 +450,9 @@ mod tests {
             .put(sample_column(recent, 1, 20, b"recent-1"))
             .expect("put");
 
-        // Cutoff 15: slot 10 < 15 is pruned, slot 20 is kept.
         let removed = store.prune_below_slot(15).expect("prune");
         assert_eq!(removed, 2, "both old column files are removed");
 
-        // Old block: index entry gone, files gone, get -> None.
         assert!(store.index_read().get(&old).is_none());
         let old_0 = DaColumnId::new(old, 0).expect("valid index");
         let old_4 = DaColumnId::new(old, 4).expect("valid index");
@@ -515,7 +460,6 @@ mod tests {
         assert!(!store.column_path(&old_4, 10).exists());
         assert_eq!(store.get(&old_0).expect("get"), None);
 
-        // Recent block: untouched (index + file + get).
         let recent_1 = DaColumnId::new(recent, 1).expect("valid index");
         assert!(store.index_read().get(&recent).is_some());
         assert!(store.column_path(&recent_1, 20).exists());
@@ -537,7 +481,6 @@ mod tests {
         assert_eq!(store.prune_below_slot(32).expect("prune"), 0);
         assert!(store.index_read().get(&block).is_some());
 
-        // Raising the cutoff one past the slot prunes it.
         assert_eq!(store.prune_below_slot(33).expect("prune"), 1);
         assert!(store.index_read().get(&block).is_none());
 
@@ -564,8 +507,7 @@ mod tests {
 
         store.prune_below_slot(100).expect("prune");
 
-        // The whole entry is gone (bitmap reached 0 -> entry removed), so the
-        // bitmap never lingers claiming columns whose files were deleted.
+        // The bitmap reached 0, so the whole entry is removed.
         assert!(store.index_read().get(&block).is_none());
         assert_eq!(
             store
@@ -590,12 +532,10 @@ mod tests {
         store.put(sample_column(block, 0, 5, b"a")).expect("put");
         store.put(sample_column(block, 2, 5, b"b")).expect("put");
 
-        // Delete one backing file out of band; the index still references it.
         let gone = DaColumnId::new(block, 0).expect("valid index");
         fs::remove_file(store.column_path(&gone, 5)).expect("remove file");
 
-        // Prune still succeeds (NotFound tolerated) and clears the whole block;
-        // only the file that was still present counts toward the total.
+        // NotFound is tolerated; only the file still present counts.
         assert_eq!(store.prune_below_slot(10).expect("prune"), 1);
         assert!(store.index_read().get(&block).is_none());
 

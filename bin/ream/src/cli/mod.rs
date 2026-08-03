@@ -211,7 +211,6 @@ mod tests {
 
     #[test]
     fn test_cli_da_node_command() {
-        // Explicit flags parse through to the config.
         let cli = Cli::parse_from([
             "program",
             "--verbosity",
@@ -234,7 +233,6 @@ mod tests {
             _ => unreachable!("This test should only validate the da node cli"),
         }
 
-        // Omitting --http-port falls back to DEFAULT_DATA_AVAILABILITY_HTTP_PORT.
         let cli = Cli::parse_from(["program", "da_node"]);
 
         match cli.command {

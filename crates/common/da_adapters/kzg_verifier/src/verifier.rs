@@ -11,13 +11,13 @@ use ream_polynomial_commitments::{handlers::verify_data_column_sidecar_kzg_proof
 use ssz::Decode;
 use tree_hash::TreeHash;
 
-/// PeerDAS verifier: reads a candidate's opaque payload as an SSZ
-/// `DataColumnSidecar` and admits it only if it is structurally sound and its
-/// cells verify against their KZG commitments.
+/// Decodes a candidate's payload as an SSZ `DataColumnSidecar` and admits it
+/// only if it is structurally sound and its cells verify against their KZG
+/// commitments.
 #[derive(Debug, Clone, Copy)]
 pub struct KzgVerifier {
-    /// Upper bound on commitments (blobs) per block. `NonZeroUsize` makes a limit
-    /// of zero — which would reject every column — unrepresentable.
+    /// Per-block blob limit; `NonZeroUsize` makes a zero limit — which would
+    /// reject every column — unrepresentable.
     max_blobs_per_block: NonZeroUsize,
 }
 
@@ -28,25 +28,20 @@ impl KzgVerifier {
         }
     }
 
-    /// Eagerly load the KZG trusted setup, which is otherwise lazily initialized
-    /// on first use at a one-time, multi-second cost. Call once at startup, off
-    /// the hot path, so the first column to arrive doesn't pay it mid-request.
+    /// Eagerly load the KZG trusted setup (a one-time, multi-second cost);
+    /// call at startup so the first column doesn't pay it mid-request.
     pub fn warm_up_trusted_setup() {
         let _ = trusted_setup::blst_settings();
     }
 
-    /// Decode the opaque payload into a PeerDAS column sidecar.
     fn decode(&self, bytes: &[u8]) -> Result<DataColumnSidecar, ValidationError> {
         DataColumnSidecar::from_ssz_bytes(bytes)
             .map_err(|err| ValidationError::MalformedPayload(format!("{err:?}")))
     }
 
-    /// Cheap structural checks, mirroring `DataColumnSidecar::verify()` but kept
-    /// separate on purpose: it returns typed `ValidationError`s (so rejections
-    /// can be counted and diagnosed) instead of a `bool`,
+    /// Mirrors `DataColumnSidecar::verify()`, kept separate to return typed
+    /// `ValidationError`s instead of a `bool`.
     fn check_shape(&self, sidecar: &DataColumnSidecar) -> Result<(), ValidationError> {
-        // Cells, commitments, and proofs are one-per-blob, so their counts must
-        // agree and stay within the per-block blob limit.
         let commitments = sidecar.kzg_commitments.len();
         if commitments == 0 {
             return Err(ValidationError::EmptyCommitments);
@@ -72,9 +67,8 @@ impl DaVerifier for KzgVerifier {
     fn verify(&self, candidate: CandidateColumn) -> Result<VerifiedColumn, ValidationError> {
         let sidecar = self.decode(&candidate.payload)?;
 
-        // Identifier consistency: the id is derived from the sidecar's own signed
-        // header, so a candidate cannot claim a (block root, column) its payload
-        // does not actually carry.
+        // The id is derived from the payload's own signed header, so a
+        // candidate cannot claim a column its payload does not carry.
         let block_root = sidecar.signed_block_header.message.tree_hash_root();
         let id = DaColumnId::new(block_root, sidecar.index)?;
         if id != candidate.id {
@@ -88,7 +82,6 @@ impl DaVerifier for KzgVerifier {
             });
         }
 
-        // Slot consistency
         if candidate.context.slot != sidecar.signed_block_header.message.slot {
             return Err(ValidationError::SlotMismatch {
                 expected: sidecar.signed_block_header.message.slot,
@@ -96,17 +89,15 @@ impl DaVerifier for KzgVerifier {
             });
         }
 
-        // Structural well-formedness (counts, blob limit) before the costly proofs.
+        // Cheap structural checks before the costly proofs.
         self.check_shape(&sidecar)?;
 
-        // The commitments really belong to this block: a Merkle inclusion proof
-        // against the signed header's body root. The sidecar checks this itself,
-        // so the adapter never reimplements the Merkle branch.
+        // The inclusion proof binds the commitments to the signed header's
+        // body root.
         if !sidecar.verify_inclusion_proof() {
             return Err(ValidationError::InvalidInclusionProof);
         }
 
-        // The scheme-specific cryptographic step.
         match verify_data_column_sidecar_kzg_proofs(&sidecar) {
             Ok(true) => {}
             Ok(false) => return Err(ValidationError::InvalidProof),
@@ -156,9 +147,8 @@ mod tests {
         KzgVerifier::new(NonZeroUsize::new(MAX_BLOBS).expect("nonzero"))
     }
 
-    /// A structurally well-formed sidecar with `blobs` cells/commitments/proofs.
-    /// Its inclusion proof is zeroed, so it never passes `verify_inclusion_proof`
-    /// — which is fine for exercising the cheaper reject paths that run before it.
+    /// A well-formed sidecar whose zeroed inclusion proof never verifies —
+    /// fine for exercising the cheaper reject paths that run before it.
     fn sidecar(index: u64, blobs: usize) -> DataColumnSidecar {
         DataColumnSidecar {
             index,
@@ -176,7 +166,6 @@ mod tests {
         sidecar.as_ssz_bytes()
     }
 
-    /// An honest candidate whose id is derived from the sidecar's own header.
     fn candidate_of(sidecar: &DataColumnSidecar) -> CandidateColumn {
         let block_root = sidecar.signed_block_header.message.tree_hash_root();
         CandidateColumn {
@@ -190,7 +179,6 @@ mod tests {
 
     #[test]
     fn accepts_a_valid_sidecar() {
-        // Real KZG: an all-zero blob → 128 cells + 128 cell proofs.
         let blob = Blob {
             inner: FixedVector::default(),
         };
@@ -204,10 +192,9 @@ mod tests {
         let kzg_commitments = VariableList::new(vec![KZGCommitment(commitment_bytes)])
             .expect("one commitment within bounds");
 
-        // Self-built inclusion proof: the DA node doesn't verify block
-        // authenticity, so `body_root` can be a synthetic 16-leaf tree whose
-        // `BLOB_KZG_COMMITMENTS_INDEX` leaf is the commitments root — the branch
-        // then verifies without needing a real block body.
+        // `body_root` is a synthetic tree whose `BLOB_KZG_COMMITMENTS_INDEX`
+        // leaf is the commitments root, so the branch verifies without a real
+        // block body.
         let mut leaves = vec![B256::ZERO; 1 << DATA_COLUMN_SIDECAR_KZG_PROOF_DEPTH];
         leaves[BLOB_KZG_COMMITMENTS_INDEX as usize] = kzg_commitments.tree_hash_root();
         let tree = merkle_tree(&leaves, DATA_COLUMN_SIDECAR_KZG_PROOF_DEPTH).expect("merkle tree");
@@ -240,7 +227,6 @@ mod tests {
         )
         .expect("assemble column sidecars");
 
-        // One real column, all the way through the verifier: it must be accepted.
         let sidecar = &sidecars[7];
         let verified = verifier()
             .verify(candidate_of(sidecar))
@@ -265,8 +251,7 @@ mod tests {
 
     #[test]
     fn rejects_out_of_range_index() {
-        // index 128 == NUMBER_OF_COLUMNS: the id derived from the decoded sidecar
-        // is itself invalid, rejected before any id comparison.
+        // index 128 == NUMBER_OF_COLUMNS, never valid.
         let candidate = CandidateColumn {
             id: DaColumnId::new(B256::ZERO, 0).expect("valid index"),
             context: DaContext::default(),
@@ -282,7 +267,6 @@ mod tests {
     fn rejects_id_mismatch() {
         let sidecar = sidecar(3, 1);
         let honest = candidate_of(&sidecar);
-        // Same payload, but the envelope claims a different column.
         let forged = CandidateColumn {
             id: DaColumnId::new(honest.id.block_root(), 4).expect("valid index"),
             ..honest
@@ -297,8 +281,6 @@ mod tests {
     fn rejects_slot_mismatch() {
         let sidecar = sidecar(3, 1);
         let honest = candidate_of(&sidecar);
-        // Same payload, but the envelope claims a different slot than the
-        // sidecar's own header — which would mis-bucket it for retention.
         let forged = CandidateColumn {
             context: DaContext {
                 slot: honest.context.slot + 1,
@@ -330,7 +312,6 @@ mod tests {
     #[test]
     fn rejects_length_mismatch() {
         let mut sidecar = sidecar(0, 2);
-        // Drop one proof so cells/commitments/proofs no longer agree.
         sidecar.kzg_proofs =
             VariableList::new(vec![KZGProof::default(); 1]).expect("proofs within bounds");
         assert!(matches!(
@@ -341,20 +322,14 @@ mod tests {
 
     #[test]
     fn rejects_invalid_inclusion_proof() {
-        // Well-formed shape, but the zeroed inclusion proof cannot match the
-        // header's body root, so it fails right before the KZG cell check.
         assert!(matches!(
             verifier().verify(candidate_of(&sidecar(0, 1))),
             Err(ValidationError::InvalidInclusionProof)
         ));
     }
 
-    /// `ream-da` copies `NUMBER_OF_COLUMNS` so the core stays free of the beacon
-    /// crate; beacon keeps its own copy for sidecar logic. Neither may depend on
-    /// the other, so the two definitions cannot be unified in a type. This
-    /// adapter is the one crate that sees both, making it the only place that can
-    /// pin them equal — turning `id.rs`'s "MUST stay equal" comment into a
-    /// CI-enforced invariant that trips the moment the two drift apart.
+    /// `ream-da` and beacon each define `NUMBER_OF_COLUMNS` and neither may
+    /// depend on the other; this adapter sees both, so it pins them equal.
     #[test]
     fn da_core_column_count_matches_beacon() {
         assert_eq!(

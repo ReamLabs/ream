@@ -13,11 +13,8 @@ use crate::handlers::block_root_from_id;
 /// JSON body of `GET /da/v0/availability/{block_root}`.
 #[derive(Serialize)]
 pub struct AvailabilityResponse {
-    /// Whether every column this node is responsible for is held.
     complete: bool,
-    /// How many columns are physically stored for this block.
     held_count: u64,
-    /// Column indices still expected but not held, ascending.
     missing: Vec<u64>,
 }
 

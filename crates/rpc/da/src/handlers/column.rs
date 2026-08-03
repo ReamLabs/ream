@@ -11,21 +11,15 @@ use serde::Serialize;
 
 use crate::handlers::block_root_from_id;
 
-/// JSON view of a stored column.
+/// JSON view of a stored column; the payload travels as a `0x`-hex string.
 ///
-/// The payload travels as a `0x`-hex string, symmetric with the
-/// ingest envelope, instead of the raw payload bytes.
-///
-/// TODO: this hex-JSON form is the dev/debug interface, not the final wire
-/// format. The serving path's real consumer is the local beacon, which wants the
-/// bytes verbatim.
-/// Keep a hex branch (e.g. `?encoding=hex`) purely for `curl`/debug.
+/// TODO: hex-JSON is the dev/debug interface, not the final wire format — the
+/// local beacon wants the bytes verbatim.
 #[derive(Serialize)]
 pub struct ColumnResponse {
     block_root: B256,
     index: u64,
     slot: u64,
-    /// `0x`-prefixed hex of the opaque column payload.
     payload: String,
 }
 
@@ -41,10 +35,8 @@ impl From<VerifiedColumn> for ColumnResponse {
     }
 }
 
-/// `GET /da/v0/columns/{block_root}/{index}` — serve a single stored column.
-///
-/// An out-of-range `index` is a client error (400). A column the node simply does
-/// not hold is a 404.
+/// `GET /da/v0/columns/{block_root}/{index}` — serve a single stored column;
+/// 400 for an out-of-range index, 404 when not held.
 #[get("/columns/{block_root}/{index}")]
 pub async fn get_column(
     store: Data<Arc<dyn DaReadStore>>,
@@ -63,12 +55,8 @@ pub async fn get_column(
     Ok(HttpResponse::Ok().json(ColumnResponse::from(column)))
 }
 
-/// `GET /da/v0/columns/{block_root}` — serve every column this node holds for a
-/// block (the sidecar data it can offer).
-///
-/// Walks the held set from the availability snapshot and reads each column.
-/// Returns whatever is present, so an unknown block yields an empty array rather
-/// than a 404 — the truthful "I hold nothing for this block".
+/// `GET /da/v0/columns/{block_root}` — serve every column this node holds for
+/// a block; an unknown block yields an empty array, not a 404.
 #[get("/columns/{block_root}")]
 pub async fn get_columns(
     store: Data<Arc<dyn DaReadStore>>,
@@ -83,8 +71,7 @@ pub async fn get_columns(
     for index in availability.held_indices() {
         let id = DaColumnId::new(block_root, index)
             .expect("held index comes from the store and is always in range");
-        // A column can be pruned between the snapshot and this read; skip a
-        // vanished one rather than failing the whole sidecar.
+        // A column can be pruned between the snapshot and this read; skip it.
         if let Some(column) = store
             .get(&id)
             .map_err(|err| ApiError::InternalError(format!("column lookup failed: {err}")))?

@@ -660,9 +660,8 @@ pub async fn run_data_availability_node(
 
     set_beacon_network_spec(config.network.clone());
 
-    // The DA RPC is a private, same-host channel to the local beacon, not a public
-    // service. Refuse to start if bound anywhere reachable beyond this
-    // machine, which would expose unauthenticated write/prune/read to the network.
+    // The DA RPC is unauthenticated; it must never be reachable beyond
+    // localhost.
     if !config.http_address.is_loopback() {
         error!(
             "refusing to start DA node: http address {} is not loopback; \
@@ -678,7 +677,6 @@ pub async fn run_data_availability_node(
         config.http_allow_origin,
     );
 
-    // Filesystem-backed store, rooted at the node's data directory.
     let store = Arc::new(DaFileStore::new(data_dir).expect("failed to open DA store"));
     let max_blobs_per_block =
         NonZeroUsize::new(beacon_network_spec().max_blobs_per_block_electra as usize)
@@ -693,9 +691,8 @@ pub async fn run_data_availability_node(
         ream_rpc_da::server::start(server_config, ingest_handle, store).await
     }));
 
-    // The KZG trusted setup is lazily loaded and expensive (seconds). Warm it up
-    // now, off the async workers, so the first column to arrive doesn't pay that
-    // cost mid-verification.
+    // Warm the trusted setup (multi-second) off the async workers before the
+    // first column arrives.
     if let Err(err) = executor
         .spawn_blocking(KzgVerifier::warm_up_trusted_setup)
         .await

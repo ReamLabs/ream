@@ -11,12 +11,8 @@ use tracing::{debug, error, info, warn};
 
 use crate::ingest::{DaWorkItem, RetentionHint};
 
-/// Runs the DA verification pipeline: drain candidate columns from the ingest
-/// channel, verify each one, and persist those that pass.
-///
-/// This is the only component that writes to the store, which keeps "unverified
-/// data is never stored". It is a single consumer, so writes reach the store serialized
-///  — matching the file store's single-writer assumption.
+/// Drains the ingest queue, verifying each candidate and persisting those
+/// that pass — the single consumer, and the store's only writer.
 pub struct DaVerificationService {
     receiver: mpsc::Receiver<DaWorkItem>,
     verifier: Arc<dyn DaVerifier>,
@@ -38,12 +34,9 @@ impl DaVerificationService {
             executor,
         }
     }
-    /// Consume candidate columns until the ingest channel closes.
+    /// Consume work items until the ingest channel closes.
     ///
-    /// A single sequential consumer: each candidate is verified and stored
-    /// before the next is taken. That caps throughput but keeps storage writes
-    /// ordered and serialized;
-    /// TODO: batching can come once a real (batchable) verifier exists.
+    /// TODO: batching can come once a batchable verifier exists.
     pub async fn run(mut self) {
         info!("DA verification service started");
         while let Some(item) = self.receiver.recv().await {
@@ -55,8 +48,6 @@ impl DaVerificationService {
         info!("DA verification service stopped: ingestion queue closed");
     }
 
-    /// Apply a beacon-issued retention boundary: prune every stored column whose
-    /// slot is below `hint.slot`.
     async fn process_retention(&self, hint: RetentionHint) {
         let store = self.store.clone();
         let boundary = hint.slot;
@@ -75,14 +66,12 @@ impl DaVerificationService {
         }
     }
 
-    /// Verify a single candidate and, if it passes, persist it.
     async fn process_candidate(&self, candidate: CandidateColumn) {
         let id = candidate.id;
         let verifier = self.verifier.clone();
 
-        // Skip columns we already hold, before paying for verification. The
-        // availability bitmap answers presence from memory — no payload read.
-        // A failed pre-check must not drop the candidate: fall through and let
+        // Skip already-held columns before paying for verification. A failed
+        // pre-check must not drop the candidate: fall through and let
         // verify + put decide.
         match self.store.availability(id.block_root()) {
             Ok(availability) if availability.holds(id.index()) => {
@@ -97,7 +86,6 @@ impl DaVerificationService {
             Err(err) => debug!("presence pre-check failed, verifying anyway: {err}"),
         }
 
-        // Verify
         let verified = match self
             .executor
             .spawn_blocking(move || verifier.verify(candidate))
@@ -110,7 +98,6 @@ impl DaVerificationService {
             }
         };
 
-        // On success persist the column; a rejected candidate is simply dropped.
         match verified {
             Ok(verified_column) => {
                 let store = self.store.clone();
@@ -183,10 +170,8 @@ mod tests {
         store::DaFileStore,
     };
 
-    /// A pass-through verifier that accepts every candidate unchanged. These
-    /// tests exercise the `handle -> queue -> verify -> store` plumbing, not the
-    /// cryptography, so they must not depend on producing valid KZG sidecars.
-    /// Real verification lives in `ream-da-verifier-kzg` and is tested there.
+    /// Pass-through verifier: these tests exercise the queue-to-store
+    /// plumbing, not the cryptography (tested in `ream-da-verifier-kzg`).
     struct AcceptAllVerifier;
 
     impl DaVerifier for AcceptAllVerifier {
@@ -199,8 +184,6 @@ mod tests {
         }
     }
 
-    /// Unique temp dir per call so parallel tests don't collide; no `tempfile`
-    /// dependency, and the store creates the directory lazily on first write.
     fn temp_root() -> PathBuf {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -221,9 +204,6 @@ mod tests {
         }
     }
 
-    /// Candidates submitted through the ingest handle are verified (by the
-    /// pass-through stub) and end up in the store — exercising the whole
-    /// `handle -> queue -> verify -> store` path end to end.
     #[test]
     fn submitted_candidates_are_verified_and_stored() {
         let executor = ReamExecutor::new().expect("create executor");
@@ -245,8 +225,8 @@ mod tests {
             for candidate in &candidates {
                 handle.submit(candidate.clone()).await.expect("submit");
             }
-            // Dropping the only handle closes the queue; the service drains the
-            // buffered items, then `recv` returns `None` and `run` returns.
+            // Dropping the only handle closes the queue, so `run` returns
+            // after draining.
             drop(handle);
             service_task.await.expect("service task joined");
 

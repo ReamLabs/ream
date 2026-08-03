@@ -24,8 +24,7 @@ use serde_json::{Value, json};
 
 use crate::routes::register_routers;
 
-/// A temp-dir-backed store that cleans up on drop, with a tiny `put` helper for
-/// seeding columns.
+/// A temp-dir-backed store that cleans up on drop.
 struct TempStore {
     inner: Arc<DaFileStore>,
     root: PathBuf,
@@ -108,7 +107,6 @@ async fn ingest_accepts_valid_candidate() {
     let resp = test::call_service(&app, req).await;
 
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
-    // The candidate landed on the queue with its envelope decoded correctly.
     match rx.try_recv().expect("a candidate was enqueued") {
         DaWorkItem::Candidate(candidate) => {
             assert_eq!(candidate.id.block_root(), root);
@@ -122,9 +120,8 @@ async fn ingest_accepts_valid_candidate() {
 
 #[actix_web::test]
 async fn ingest_full_queue_is_503() {
-    // Capacity 1 and the receiver is never drained (`_rx` just keeps the channel
-    // open), so the second submit finds the queue full — a retryable 503, not a
-    // 500.
+    // Capacity 1 and `_rx` is never drained, so the second submit finds the
+    // queue full.
     let (handle, _rx) = ingest_channel(1);
     let app = test::init_service(
         App::new()
@@ -146,11 +143,9 @@ async fn ingest_full_queue_is_503() {
             .to_request()
     };
 
-    // First submit fills the single slot.
     let first = test::call_service(&app, make_req()).await;
     assert_eq!(first.status(), StatusCode::ACCEPTED);
 
-    // Second finds the queue full.
     let second = test::call_service(&app, make_req()).await;
     assert_eq!(second.status(), StatusCode::SERVICE_UNAVAILABLE);
 }
@@ -371,7 +366,6 @@ async fn retention_enqueues_hint() {
     let resp = test::call_service(&app, req).await;
 
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
-    // The boundary rides the same queue as candidates, not the store directly.
     match rx.try_recv().expect("a retention hint was enqueued") {
         DaWorkItem::Retention(hint) => assert_eq!(hint.slot, 99),
         other => panic!("expected a retention hint, got {other:?}"),
