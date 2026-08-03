@@ -110,7 +110,7 @@ use tracing_subscriber::EnvFilter;
 static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 pub const APP_NAME: &str = "ream";
-const DA_VERIFICATION_QUEUE_CAPACITY: usize = 256;
+const DATA_AVAILABILITY_VERIFICATION_QUEUE_CAPACITY: usize = 256;
 const DEFAULT_QUIET_LOG_TARGETS: &str = "libp2p_gossipsub::behaviour=error";
 
 struct AbortOnDrop<T>(tokio::task::JoinHandle<T>);
@@ -167,8 +167,9 @@ fn main() {
                 ReamDB::new(ream_directory.clone()).expect("unable to init Ream Database");
             executor_clone.spawn(async move { run_beacon_node(*config, executor, ream_db).await })
         }
-        Commands::DaNode(config) => executor_clone
-            .spawn(async move { run_da_node(*config, executor, ream_directory).await }),
+        Commands::DaNode(config) => executor_clone.spawn(async move {
+            run_data_availability_node(*config, executor, ream_directory).await
+        }),
         Commands::ValidatorNode(config) => {
             executor_clone.spawn(async move { run_validator_node(*config, executor).await })
         }
@@ -646,7 +647,11 @@ async fn run_beacon_node_for_test(
 }
 
 /// Runs the da node.
-pub async fn run_da_node(config: DaNodeConfig, executor: ReamExecutor, ream_directory: PathBuf) {
+pub async fn run_data_availability_node(
+    config: DaNodeConfig,
+    executor: ReamExecutor,
+    ream_directory: PathBuf,
+) {
     info!(
         "starting up da node on {}:{}",
         config.http_address, config.http_port
@@ -680,7 +685,7 @@ pub async fn run_da_node(config: DaNodeConfig, executor: ReamExecutor, ream_dire
             .expect("network spec max_blobs_per_block must be nonzero");
     let verifier = Arc::new(KzgVerifier::new(max_blobs_per_block));
 
-    let (ingest_handle, rx) = ingest_channel(DA_VERIFICATION_QUEUE_CAPACITY);
+    let (ingest_handle, rx) = ingest_channel(DATA_AVAILABILITY_VERIFICATION_QUEUE_CAPACITY);
     let service = DaVerificationService::new(rx, verifier.clone(), store.clone(), executor.clone());
     let mut service_task = AbortOnDrop(executor.spawn(service.run()));
 

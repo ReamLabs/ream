@@ -4,7 +4,8 @@ use clap::Parser;
 use ream_network_spec::{cli::beacon_network_parser, networks::BeaconNetworkSpec};
 
 use crate::cli::constants::{
-    DEFAULT_DA_HTTP_PORT, DEFAULT_HTTP_ADDRESS, DEFAULT_HTTP_ALLOW_ORIGIN, DEFAULT_NETWORK,
+    DEFAULT_DATA_AVAILABILITY_HTTP_PORT, DEFAULT_HTTP_ADDRESS, DEFAULT_HTTP_ALLOW_ORIGIN,
+    DEFAULT_NETWORK,
 };
 
 #[derive(Debug, Parser)]
@@ -19,7 +20,7 @@ pub struct DaNodeConfig {
 
     #[arg(long, default_value_t = DEFAULT_HTTP_ADDRESS)]
     pub http_address: IpAddr,
-    #[arg(long, default_value_t = DEFAULT_DA_HTTP_PORT)]
+    #[arg(long, default_value_t = DEFAULT_DATA_AVAILABILITY_HTTP_PORT)]
     pub http_port: u16,
     #[arg(long, default_value_t = DEFAULT_HTTP_ALLOW_ORIGIN)]
     pub http_allow_origin: bool,

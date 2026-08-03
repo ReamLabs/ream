@@ -115,7 +115,7 @@ mod tests {
     use url::Url;
 
     use super::*;
-    use crate::cli::constants::{DEFAULT_BEACON_API_ENDPOINT, DEFAULT_DA_HTTP_PORT};
+    use crate::cli::constants::{DEFAULT_BEACON_API_ENDPOINT, DEFAULT_DATA_AVAILABILITY_HTTP_PORT};
 
     #[test]
     fn test_cli_lean_node_command() {
@@ -234,11 +234,13 @@ mod tests {
             _ => unreachable!("This test should only validate the da node cli"),
         }
 
-        // Omitting --http-port falls back to DEFAULT_DA_HTTP_PORT.
+        // Omitting --http-port falls back to DEFAULT_DATA_AVAILABILITY_HTTP_PORT.
         let cli = Cli::parse_from(["program", "da_node"]);
 
         match cli.command {
-            Commands::DaNode(config) => assert_eq!(config.http_port, DEFAULT_DA_HTTP_PORT),
+            Commands::DaNode(config) => {
+                assert_eq!(config.http_port, DEFAULT_DATA_AVAILABILITY_HTTP_PORT)
+            }
             _ => unreachable!("This test should only validate the da node cli"),
         }
     }
