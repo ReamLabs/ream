@@ -195,8 +195,8 @@ impl<BlockPayload, ColumnPayload> BlockLookupCoordinator<BlockPayload, ColumnPay
         }
 
         if !self.entries.contains_key(&meta.block_root) {
-            if let Err(rejection) = self.ensure_capacity() {
-                return StageOutcome::Rejected(rejection);
+            if let Err(err) = self.ensure_capacity() {
+                return StageOutcome::Rejected(err);
             }
             self.entries
                 .insert(meta.block_root, StagedEntry::new(meta.slot));
@@ -242,8 +242,8 @@ impl<BlockPayload, ColumnPayload> BlockLookupCoordinator<BlockPayload, ColumnPay
             });
         }
         if !self.entries.contains_key(&block_root) {
-            if let Err(rejection) = self.ensure_capacity() {
-                return StageOutcome::Rejected(rejection);
+            if let Err(err) = self.ensure_capacity() {
+                return StageOutcome::Rejected(err);
             }
             self.entries.insert(block_root, StagedEntry::new(meta.slot));
         }
