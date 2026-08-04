@@ -1,11 +1,10 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::anyhow;
-use libp2p::gossipsub::{Message, MessageAcceptance};
-use ream_chain_beacon::beacon_chain::BeaconChain;
+pub use libp2p::gossipsub::{Message, MessageAcceptance};
+use ream_chain_beacon::beacon_chain::{BeaconChain, BlockProcessingOutcome};
 use ream_consensus_beacon::{
-    blob_sidecar::BlobIdentifier,
-    data_column_sidecar::{ColumnIdentifier, DATA_COLUMN_SIDECAR_SUBNET_COUNT},
+    blob_sidecar::BlobIdentifier, data_column_sidecar::DATA_COLUMN_SIDECAR_SUBNET_COUNT,
     single_attestation::SingleAttestation,
 };
 use ream_consensus_misc::constants::beacon::{
@@ -34,16 +33,19 @@ use tracing::{error, info, trace, warn};
 use tree_hash::TreeHash;
 
 use crate::{
+    block_lookup::{DeferredGossipItem, import_validated_data_column},
     gossipsub::validate::{
         aggregate_and_proof::validate_aggregate_and_proof,
         attester_slashing::validate_attester_slashing,
         beacon_attestation::validate_beacon_attestation,
-        beacon_block::validate_gossip_beacon_block, blob_sidecar::validate_blob_sidecar,
+        beacon_block::validate_gossip_beacon_block,
+        blob_sidecar::validate_blob_sidecar,
         bls_to_execution_change::validate_bls_to_execution_change,
         data_column_sidecar::validate_data_column_sidecar_full,
         light_client_finality_update::validate_light_client_finality_update,
         light_client_optimistic_update::validate_light_client_optimistic_update,
-        proposer_slashing::validate_proposer_slashing, result::ValidationResult,
+        proposer_slashing::validate_proposer_slashing,
+        result::{DependencyValidationResult, ValidationResult},
         sync_committee::validate_sync_committee,
         sync_committee_contribution_and_proof::validate_sync_committee_contribution_and_proof,
         voluntary_exit::validate_voluntary_exit,
@@ -181,12 +183,24 @@ fn message_acceptance(validation_result: &ValidationResult) -> MessageAcceptance
     }
 }
 
+fn dependency_message_acceptance(
+    validation_result: &DependencyValidationResult<impl Sized>,
+) -> MessageAcceptance {
+    match validation_result {
+        DependencyValidationResult::Accept => MessageAcceptance::Accept,
+        DependencyValidationResult::Reject(_) => MessageAcceptance::Reject,
+        DependencyValidationResult::Ignore(_)
+        | DependencyValidationResult::ParentUnavailable { .. } => MessageAcceptance::Ignore,
+    }
+}
+
 /// Dispatches a gossipsub message to its appropriate handler.
 pub async fn handle_gossipsub_message(
     message: Message,
     beacon_chain: &BeaconChain,
     cached_db: &BeaconCacheDB,
     p2p_sender: &P2PSender,
+    deferred_item: &mut Option<DeferredGossipItem>,
 ) -> MessageAcceptance {
     match GossipsubMessage::decode(&message.topic, &message.data) {
         Ok(gossip_message) => match gossip_message {
@@ -222,20 +236,30 @@ pub async fn handle_gossipsub_message(
                     }
                 };
 
-                let acceptance = message_acceptance(&validation_result);
+                let acceptance = dependency_message_acceptance(&validation_result);
                 match validation_result {
-                    ValidationResult::Accept => {
+                    DependencyValidationResult::Accept => {
                         let signed_block_bytes = signed_block.as_ssz_bytes();
-                        if let Err(err) = beacon_chain.process_block(*signed_block).await {
-                            error!("Failed to process gossipsub beacon block: {err}");
+                        match beacon_chain.process_block(*signed_block).await {
+                            Ok(BlockProcessingOutcome::Imported { .. }) => {}
+                            Ok(BlockProcessingOutcome::PendingAvailability { .. }) => {}
+                            Err(err) => {
+                                error!("Failed to process gossipsub beacon block: {err}");
+                            }
                         }
                         forward_gossip_message(&message, p2p_sender, signed_block_bytes);
                     }
-                    ValidationResult::Ignore(reason) => {
+                    DependencyValidationResult::Ignore(reason) => {
                         warn!("Ignoring gossipsub beacon block: {reason}");
                     }
-                    ValidationResult::Reject(reason) => {
+                    DependencyValidationResult::Reject(reason) => {
                         warn!("Rejecting gossipsub beacon block: {reason}");
+                    }
+                    DependencyValidationResult::ParentUnavailable {
+                        parent_root: _,
+                        validated,
+                    } => {
+                        *deferred_item = Some(DeferredGossipItem::Block { block: validated });
                     }
                 }
                 acceptance
@@ -574,45 +598,26 @@ pub async fn handle_gossipsub_message(
                     }
                 };
 
-                let acceptance = message_acceptance(&validation_result);
+                let acceptance = dependency_message_acceptance(&validation_result);
                 match validation_result {
-                    ValidationResult::Accept => {
-                        let block_root = data_column_sidecar
-                            .signed_block_header
-                            .message
-                            .tree_hash_root();
-                        let column_index = data_column_sidecar.index;
-                        let slot = data_column_sidecar.signed_block_header.message.slot;
-                        let insert_result = beacon_chain
-                            .store
-                            .lock()
-                            .await
-                            .db
-                            .column_sidecars_provider()
-                            .insert(
-                                ColumnIdentifier::new(block_root, column_index),
-                                *data_column_sidecar,
-                            );
-
-                        match insert_result {
-                            Ok(()) => {
-                                if let Err(err) = beacon_chain
-                                    .process_data_column_sidecar(block_root, column_index, slot)
-                                    .await
-                                {
-                                    error!("Failed to process data_column_sidecar: {err}");
-                                }
-                            }
-                            Err(err) => {
-                                error!("Failed to insert data_column_sidecar: {err}");
-                            }
+                    DependencyValidationResult::Accept => {
+                        if let Err(err) =
+                            import_validated_data_column(beacon_chain, *data_column_sidecar).await
+                        {
+                            error!("Failed to import data_column_sidecar: {err}");
                         }
                     }
-                    ValidationResult::Reject(reason) => {
+                    DependencyValidationResult::Reject(reason) => {
                         info!("Data column sidecar rejected: {reason}");
                     }
-                    ValidationResult::Ignore(reason) => {
+                    DependencyValidationResult::Ignore(reason) => {
                         info!("Data column sidecar ignored: {reason}");
+                    }
+                    DependencyValidationResult::ParentUnavailable {
+                        parent_root: _,
+                        validated,
+                    } => {
+                        *deferred_item = Some(DeferredGossipItem::Column { column: validated });
                     }
                 }
                 acceptance
@@ -796,8 +801,15 @@ mod tests {
             sequence_number: None,
             topic,
         };
-        let acceptance =
-            handle_gossipsub_message(message, &beacon_chain, &cached_db, &p2p_sender).await;
+        let mut deferred_item = None;
+        let acceptance = handle_gossipsub_message(
+            message,
+            &beacon_chain,
+            &cached_db,
+            &p2p_sender,
+            &mut deferred_item,
+        )
+        .await;
 
         assert!(
             matches!(acceptance, MessageAcceptance::Reject),

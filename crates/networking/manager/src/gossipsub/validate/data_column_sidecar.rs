@@ -1,21 +1,47 @@
 use anyhow::anyhow;
-use ream_bls::traits::Verifiable;
 use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_consensus_beacon::{
     data_column_sidecar::DataColumnSidecar, electra::beacon_state::BeaconState,
 };
-use ream_consensus_misc::{
-    constants::beacon::{DOMAIN_BEACON_PROPOSER, GENESIS_SLOT},
-    misc::{compute_epoch_at_slot, compute_signing_root, compute_start_slot_at_epoch},
-};
+use ream_consensus_misc::{constants::beacon::GENESIS_SLOT, misc::compute_start_slot_at_epoch};
 use ream_network_spec::networks::beacon_network_spec;
 use ream_polynomial_commitments::handlers::verify_data_column_sidecar_kzg_proofs;
 use ream_storage::{
     cache::BeaconCacheDB,
     tables::{field::REDBField, table::REDBTable},
 };
+use tree_hash::TreeHash;
 
-use super::result::ValidationResult;
+use super::result::DependencyValidationResult;
+
+type ValidationResult = DependencyValidationResult<ValidatedColumn>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValidatedColumn {
+    sidecar: Box<DataColumnSidecar>,
+}
+
+impl ValidatedColumn {
+    fn new(sidecar: DataColumnSidecar) -> Self {
+        Self {
+            sidecar: Box::new(sidecar),
+        }
+    }
+
+    pub(crate) fn sidecar(&self) -> &DataColumnSidecar {
+        &self.sidecar
+    }
+
+    pub(crate) fn into_inner(self) -> DataColumnSidecar {
+        *self.sidecar
+    }
+}
+
+struct ParentContext {
+    block_slot: u64,
+    state: BeaconState,
+    pending_availability: bool,
+}
 
 pub async fn validate_data_column_sidecar_full(
     data_column_sidecar: &DataColumnSidecar,
@@ -55,13 +81,13 @@ pub async fn validate_data_column_sidecar_full(
 
     let store = beacon_chain.store.lock().await;
     let head_root = store.get_head()?;
-    let state: BeaconState = store
+    let head_state: BeaconState = store
         .db
         .state_provider()
         .get(head_root)?
         .ok_or_else(|| anyhow!("No beacon state found for head root: {head_root}"))?;
 
-    if !is_not_from_future_slot(&state, header.slot, current_time_ms) {
+    if !is_not_from_future_slot(&head_state, header.slot, current_time_ms) {
         return Ok(ValidationResult::Ignore(
             "The sidecar is from a future slot".to_string(),
         ));
@@ -75,25 +101,49 @@ pub async fn validate_data_column_sidecar_full(
         ));
     }
 
-    let Some(proposer) = usize::try_from(header.proposer_index)
+    let parent = if let Some(parent_block) = store.db.block_provider().get(header.parent_root)? {
+        let Some(parent_state) = store.db.state_provider().get(header.parent_root)? else {
+            return Ok(ValidationResult::Reject(
+                "Sidecar's parent failed validation".to_string(),
+            ));
+        };
+        Some(ParentContext {
+            block_slot: parent_block.message.slot,
+            state: parent_state,
+            pending_availability: false,
+        })
+    } else if let Some(pending) = store
+        .data_availability_checker
+        .pending_block(&header.parent_root)
+    {
+        if pending.signed_block.message.tree_hash_root() != header.parent_root {
+            return Err(anyhow!(
+                "pending availability block root does not match lookup key"
+            ));
+        }
+        Some(ParentContext {
+            block_slot: pending.signed_block.message.slot,
+            state: pending.post_state.clone(),
+            pending_availability: true,
+        })
+    } else {
+        None
+    };
+
+    // Looking up the parent above does not classify the message. Validation still checks the
+    // signature before returning unknown-parent, as required by the gossip specification.
+    let signature_state = parent.as_ref().map_or(&head_state, |parent| &parent.state);
+    if usize::try_from(header.proposer_index)
         .ok()
-        .and_then(|proposer_index| state.validators.get(proposer_index))
-    else {
+        .and_then(|index| signature_state.validators.get(index))
+        .is_none()
+    {
         return Ok(ValidationResult::Reject(
             "Sidecar proposer index out of range".to_string(),
         ));
-    };
-
-    let domain = state.get_domain(
-        DOMAIN_BEACON_PROPOSER,
-        Some(compute_epoch_at_slot(header.slot)),
-    );
-    let signing_root = compute_signing_root(header.clone(), domain);
+    }
     if !matches!(
-        data_column_sidecar
-            .signed_block_header
-            .signature
-            .verify(&proposer.public_key, signing_root.as_ref()),
+        signature_state.verify_block_header_signature(&data_column_sidecar.signed_block_header),
         Ok(true)
     ) {
         return Ok(ValidationResult::Reject(
@@ -101,31 +151,35 @@ pub async fn validate_data_column_sidecar_full(
         ));
     }
 
-    let Some(parent_block) = store.db.block_provider().get(header.parent_root)? else {
+    let Some(ParentContext {
+        block_slot,
+        mut state,
+        pending_availability,
+    }) = parent
+    else {
         return Ok(ValidationResult::Ignore(
             "Parent block not seen".to_string(),
         ));
     };
 
-    let Some(mut parent_state) = store.db.state_provider().get(header.parent_root)? else {
-        return Ok(ValidationResult::Reject(
-            "Sidecar's parent failed validation".to_string(),
-        ));
-    };
-
-    if header.slot <= parent_block.message.slot {
+    if header.slot <= block_slot {
         return Ok(ValidationResult::Reject(
             "Sidecar slot not higher than parent block's slot".to_string(),
         ));
     }
 
-    if store.get_checkpoint_block(header.parent_root, finalized_checkpoint.epoch)?
-        != finalized_checkpoint.root
+    #[cfg(not(feature = "disable_ancestor_validation"))]
+    if !pending_availability
+        && store.get_checkpoint_block(header.parent_root, finalized_checkpoint.epoch)?
+            != finalized_checkpoint.root
     {
         return Ok(ValidationResult::Reject(
             "Finalized checkpoint is not an ancestor of the sidecar's block".to_string(),
         ));
     }
+
+    // A pending parent is absent from the block DB, so ancestry cannot be walked at arrival.
+    // Release repeats the normal walk after that parent imports and finality may have advanced.
 
     // KZG verification and state advancement do not require exclusive access to the store.
     drop(store);
@@ -145,20 +199,19 @@ pub async fn validate_data_column_sidecar_full(
         ));
     }
 
-    if let Err(err) = parent_state.process_slots(header.slot) {
+    if let Err(err) = state.process_slots(header.slot) {
         return Ok(ValidationResult::Ignore(format!(
             "Could not advance parent state to sidecar slot: {err:?}"
         )));
     }
 
-    match parent_state.get_beacon_proposer_index(None) {
+    match state.get_beacon_proposer_index(None) {
+        Ok(expected_index) if expected_index == header.proposer_index => {}
         Ok(expected_index) => {
-            if expected_index != header.proposer_index {
-                return Ok(ValidationResult::Reject(format!(
-                    "Wrong proposer index: slot {}: expected {expected_index}, got {}",
-                    header.slot, header.proposer_index
-                )));
-            }
+            return Ok(ValidationResult::Reject(format!(
+                "Wrong proposer index: slot {}: expected {expected_index}, got {}",
+                header.slot, header.proposer_index
+            )));
         }
         Err(err) => {
             return Ok(ValidationResult::Ignore(format!(
@@ -167,8 +220,7 @@ pub async fn validate_data_column_sidecar_full(
         }
     }
 
-    // Re-check under the write lock in case another validation inserted the tuple
-    // after the initial duplicate check.
+    // Re-check under the write lock in case another validation inserted the tuple.
     let mut seen = cached_db.seen_data_column_sidecars.write().await;
     if seen.contains(&tuple) {
         return Ok(ValidationResult::Ignore(
@@ -177,7 +229,14 @@ pub async fn validate_data_column_sidecar_full(
     }
     seen.put(tuple, ());
 
-    Ok(ValidationResult::Accept)
+    if pending_availability {
+        Ok(ValidationResult::ParentUnavailable {
+            parent_root: header.parent_root,
+            validated: ValidatedColumn::new(data_column_sidecar.clone()),
+        })
+    } else {
+        Ok(ValidationResult::Accept)
+    }
 }
 
 fn is_not_from_future_slot(state: &BeaconState, slot: u64, current_time_ms: u64) -> bool {

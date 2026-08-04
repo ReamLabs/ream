@@ -19,7 +19,7 @@ use ream_api_types_beacon::{
     },
 };
 use ream_api_types_common::{error::ApiError, id::ID};
-use ream_chain_beacon::beacon_chain::BeaconChain;
+use ream_chain_beacon::beacon_chain::{BeaconChain, BlockProcessingOutcome};
 use ream_consensus_beacon::{
     blob_sidecar::BlobIdentifier,
     data_column_sidecar::{
@@ -570,7 +570,11 @@ async fn publish_and_process_block(
 
     // Integrate into state (after broadcast)
     let integration_success = match beacon_chain.process_block(signed_block.clone()).await {
-        Ok(()) => true,
+        Ok(BlockProcessingOutcome::Imported { .. }) => true,
+        Ok(BlockProcessingOutcome::PendingAvailability { block_root }) => {
+            warn!("Published block {block_root} is pending data availability");
+            false
+        }
         Err(err) => {
             if err.to_string().contains("already known")
                 || err.to_string().contains("ALREADY_KNOWN")

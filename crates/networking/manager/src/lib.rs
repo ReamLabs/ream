@@ -1,3 +1,4 @@
+pub mod block_lookup;
 pub mod config;
 pub mod gossipsub;
 pub mod p2p_sender;

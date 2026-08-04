@@ -906,14 +906,15 @@ fn backfill_data_availability_columns_from_db<State>(
 
     for column_index in required_columns {
         let column_identifier = ColumnIdentifier::new(block_root, column_index);
-        if let Some(sidecar) = db.column_sidecars_provider().get(column_identifier)?
-            && let Some(available) = data_availability_checker.add_column(
+        if let Some(sidecar) = db.column_sidecars_provider().get(column_identifier)? {
+            data_availability_checker.add_column(
                 block_root,
                 column_index,
                 sidecar.signed_block_header.message.slot,
-            )
-        {
-            return Ok(Some(available));
+            );
+            if let Some(available) = data_availability_checker.take_if_complete(block_root) {
+                return Ok(Some(available));
+            }
         }
     }
 
@@ -933,6 +934,7 @@ mod tests {
         beacon_block_header::SignedBeaconBlockHeader, constants::beacon::BYTES_PER_COMMITMENT,
         polynomial_commitments::kzg_commitment::KZGCommitment,
     };
+    use ream_data_availability::AvailabilityEntryStatus;
     use ream_storage::db::ReamDB;
     use ssz_types::{FixedVector, VariableList};
     use tempdir::TempDir;
@@ -996,13 +998,17 @@ mod tests {
         db.column_sidecars_provider()
             .insert(ColumnIdentifier::new(block_root, 0), sidecar)
             .unwrap();
-        assert!(checker.insert_pending(block_root, block, ()).is_none());
+        checker.insert_pending(block_root, block, ());
+        assert_eq!(
+            checker.status(&block_root),
+            AvailabilityEntryStatus::PendingBlock
+        );
 
         let pending =
             backfill_data_availability_columns_from_db(&db, &mut checker, block_root).unwrap();
 
         assert!(pending.is_some());
-        assert!(!checker.contains(&block_root));
+        assert_eq!(checker.status(&block_root), AvailabilityEntryStatus::Absent);
     }
 
     #[test]
@@ -1020,8 +1026,14 @@ mod tests {
 
         assert_eq!(cutoff_slot, finalized_slot + 1);
         assert_eq!(checker.prune(cutoff_slot), 1);
-        assert!(!checker.contains(&finalized_root));
-        assert!(checker.contains(&later_root));
+        assert_eq!(
+            checker.status(&finalized_root),
+            AvailabilityEntryStatus::Absent
+        );
+        assert_eq!(
+            checker.status(&later_root),
+            AvailabilityEntryStatus::ColumnsOnly
+        );
     }
 
     #[test]
@@ -1041,7 +1053,13 @@ mod tests {
 
         assert_eq!(cutoff_slot, retention_cutoff_slot);
         assert_eq!(checker.prune(cutoff_slot), 1);
-        assert!(!checker.contains(&before_root));
-        assert!(checker.contains(&boundary_root));
+        assert_eq!(
+            checker.status(&before_root),
+            AvailabilityEntryStatus::Absent
+        );
+        assert_eq!(
+            checker.status(&boundary_root),
+            AvailabilityEntryStatus::ColumnsOnly
+        );
     }
 }
