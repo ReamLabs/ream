@@ -8,6 +8,14 @@ use ream_consensus_beacon::{
 
 use crate::{PendingAvailability, PendingBlock};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AvailabilityEntryStatus {
+    Absent,
+    ColumnsOnly,
+    PendingBlock,
+    Complete,
+}
+
 #[derive(Debug)]
 pub struct DataAvailabilityChecker<State = BeaconState> {
     entries: HashMap<B256, PendingAvailability<State>>,
@@ -47,24 +55,18 @@ impl<State> DataAvailabilityChecker<State> {
         block_root: B256,
         signed_block: SignedBeaconBlock,
         post_state: State,
-    ) -> Option<PendingBlock<State>> {
+    ) {
         let entry = self.entries.entry(block_root).or_default();
         entry.slot = signed_block.message.slot;
         entry.pending_block = Some(PendingBlock {
             signed_block,
             post_state,
         });
-        self.take_if_complete(block_root)
     }
 
-    pub fn add_column(
-        &mut self,
-        block_root: B256,
-        column_index: u64,
-        slot: u64,
-    ) -> Option<PendingBlock<State>> {
+    pub fn add_column(&mut self, block_root: B256, column_index: u64, slot: u64) {
         if !self.required_columns.contains(&column_index) {
-            return None;
+            return;
         }
 
         let entry = self.entries.entry(block_root).or_default();
@@ -72,7 +74,6 @@ impl<State> DataAvailabilityChecker<State> {
             entry.slot = slot;
         }
         entry.received_columns.insert(column_index);
-        self.take_if_complete(block_root)
     }
 
     pub fn prune(&mut self, cutoff_slot: u64) -> usize {
@@ -85,8 +86,19 @@ impl<State> DataAvailabilityChecker<State> {
         self.entries.remove(block_root)
     }
 
-    pub fn contains(&self, block_root: &B256) -> bool {
-        self.entries.contains_key(block_root)
+    pub fn status(&self, block_root: &B256) -> AvailabilityEntryStatus {
+        match self.entries.get(block_root) {
+            None => AvailabilityEntryStatus::Absent,
+            Some(entry) if self.is_complete(entry) => AvailabilityEntryStatus::Complete,
+            Some(entry) if entry.pending_block.is_some() => AvailabilityEntryStatus::PendingBlock,
+            Some(_) => AvailabilityEntryStatus::ColumnsOnly,
+        }
+    }
+
+    pub fn pending_block(&self, block_root: &B256) -> Option<&PendingBlock<State>> {
+        self.entries
+            .get(block_root)
+            .and_then(|entry| entry.pending_block.as_ref())
     }
 
     pub fn len(&self) -> usize {
@@ -97,7 +109,7 @@ impl<State> DataAvailabilityChecker<State> {
         self.entries.is_empty()
     }
 
-    fn take_if_complete(&mut self, block_root: B256) -> Option<PendingBlock<State>> {
+    pub fn take_if_complete(&mut self, block_root: B256) -> Option<PendingBlock<State>> {
         if !self.is_complete(self.entries.get(&block_root)?) {
             return None;
         }
@@ -164,8 +176,10 @@ mod tests {
         let mut checker = checker(&[0, 1, 2]);
         let root = B256::repeat_byte(1);
 
-        let available = checker.insert_pending(root, block_with_blobs(0), ());
+        checker.insert_pending(root, block_with_blobs(0), ());
 
+        assert_eq!(checker.status(&root), AvailabilityEntryStatus::Complete);
+        let available = checker.take_if_complete(root);
         assert!(available.is_some());
         assert!(checker.is_empty());
     }
@@ -175,17 +189,16 @@ mod tests {
         let mut checker = checker(&[0, 1, 2]);
         let root = B256::repeat_byte(2);
 
-        assert!(
-            checker
-                .insert_pending(root, block_with_blobs(1), ())
-                .is_none()
-        );
-        assert!(checker.add_column(root, 0, 10).is_none());
-        assert!(checker.add_column(root, 1, 10).is_none());
+        checker.insert_pending(root, block_with_blobs(1), ());
+        assert_eq!(checker.status(&root), AvailabilityEntryStatus::PendingBlock);
+        checker.add_column(root, 0, 10);
+        checker.add_column(root, 1, 10);
 
-        let available = checker.add_column(root, 2, 10);
+        checker.add_column(root, 2, 10);
+        assert_eq!(checker.status(&root), AvailabilityEntryStatus::Complete);
+        let available = checker.take_if_complete(root);
         assert!(available.is_some());
-        assert!(!checker.contains(&root));
+        assert_eq!(checker.status(&root), AvailabilityEntryStatus::Absent);
     }
 
     #[test]
@@ -193,10 +206,13 @@ mod tests {
         let mut checker = checker(&[0, 1]);
         let root = B256::repeat_byte(3);
 
-        assert!(checker.add_column(root, 0, 10).is_none());
-        assert!(checker.add_column(root, 1, 10).is_none());
+        checker.add_column(root, 0, 10);
+        checker.add_column(root, 1, 10);
+        assert_eq!(checker.status(&root), AvailabilityEntryStatus::ColumnsOnly);
 
-        let available = checker.insert_pending(root, block_with_blobs(1), ());
+        checker.insert_pending(root, block_with_blobs(1), ());
+        assert_eq!(checker.status(&root), AvailabilityEntryStatus::Complete);
+        let available = checker.take_if_complete(root);
         assert!(available.is_some());
         assert!(checker.is_empty());
     }
@@ -207,9 +223,12 @@ mod tests {
         let root = B256::repeat_byte(4);
 
         checker.insert_pending(root, block_with_blobs(1), ());
-        assert!(checker.add_column(root, 0, 10).is_none());
-        assert!(checker.add_column(root, 0, 10).is_none());
-        assert!(checker.add_column(root, 1, 10).is_some());
+        checker.add_column(root, 0, 10);
+        checker.add_column(root, 0, 10);
+        assert_eq!(checker.status(&root), AvailabilityEntryStatus::PendingBlock);
+        checker.add_column(root, 1, 10);
+        assert_eq!(checker.status(&root), AvailabilityEntryStatus::Complete);
+        assert!(checker.take_if_complete(root).is_some());
     }
 
     #[test]
@@ -217,8 +236,8 @@ mod tests {
         let mut checker = checker(&[0]);
         let root = B256::repeat_byte(5);
 
-        assert!(checker.add_column(root, 0, 10).is_none());
-        assert!(checker.contains(&root));
+        checker.add_column(root, 0, 10);
+        assert_eq!(checker.status(&root), AvailabilityEntryStatus::ColumnsOnly);
     }
 
     #[test]
@@ -227,8 +246,11 @@ mod tests {
         let root = B256::repeat_byte(6);
 
         checker.insert_pending(root, block_with_blobs(1), ());
-        assert!(checker.add_column(root, 5, 10).is_none());
-        assert!(checker.add_column(root, 0, 10).is_some());
+        checker.add_column(root, 5, 10);
+        assert_eq!(checker.status(&root), AvailabilityEntryStatus::PendingBlock);
+        checker.add_column(root, 0, 10);
+        assert_eq!(checker.status(&root), AvailabilityEntryStatus::Complete);
+        assert!(checker.take_if_complete(root).is_some());
     }
 
     #[test]
@@ -236,7 +258,7 @@ mod tests {
         let mut checker = checker(&[0]);
         let root = B256::repeat_byte(7);
 
-        assert!(checker.add_column(root, 5, 10).is_none());
+        checker.add_column(root, 5, 10);
         assert!(checker.is_empty());
     }
 
@@ -247,13 +269,11 @@ mod tests {
 
         checker.insert_pending(root, block_with_blobs(1), ());
         for index in 0..NUMBER_OF_COLUMNS - 1 {
-            assert!(checker.add_column(root, index, 10).is_none());
+            checker.add_column(root, index, 10);
         }
-        assert!(
-            checker
-                .add_column(root, NUMBER_OF_COLUMNS - 1, 10)
-                .is_some()
-        );
+        checker.add_column(root, NUMBER_OF_COLUMNS - 1, 10);
+        assert_eq!(checker.status(&root), AvailabilityEntryStatus::Complete);
+        assert!(checker.take_if_complete(root).is_some());
     }
 
     #[test]
@@ -270,8 +290,11 @@ mod tests {
         checker.insert_pending(new_root, new_block, ());
 
         assert_eq!(checker.prune(10), 1);
-        assert!(!checker.contains(&old_root));
-        assert!(checker.contains(&new_root));
+        assert_eq!(checker.status(&old_root), AvailabilityEntryStatus::Absent);
+        assert_eq!(
+            checker.status(&new_root),
+            AvailabilityEntryStatus::PendingBlock
+        );
     }
 
     #[test]
@@ -284,8 +307,11 @@ mod tests {
         checker.add_column(new_root, 0, 10);
 
         assert_eq!(checker.prune(10), 1);
-        assert!(!checker.contains(&old_root));
-        assert!(checker.contains(&new_root));
+        assert_eq!(checker.status(&old_root), AvailabilityEntryStatus::Absent);
+        assert_eq!(
+            checker.status(&new_root),
+            AvailabilityEntryStatus::ColumnsOnly
+        );
     }
 
     #[test]
@@ -298,8 +324,14 @@ mod tests {
         checker.add_column(after_root, 0, 11);
 
         assert_eq!(checker.prune(10), 0);
-        assert!(checker.contains(&cutoff_root));
-        assert!(checker.contains(&after_root));
+        assert_eq!(
+            checker.status(&cutoff_root),
+            AvailabilityEntryStatus::ColumnsOnly
+        );
+        assert_eq!(
+            checker.status(&after_root),
+            AvailabilityEntryStatus::ColumnsOnly
+        );
     }
 
     #[test]
@@ -309,10 +341,10 @@ mod tests {
 
         checker.add_column(root, 0, 9);
         assert_eq!(checker.prune(10), 1);
-        assert!(!checker.contains(&root));
+        assert_eq!(checker.status(&root), AvailabilityEntryStatus::Absent);
 
         checker.add_column(root, 0, 11);
-        assert!(checker.contains(&root));
+        assert_eq!(checker.status(&root), AvailabilityEntryStatus::ColumnsOnly);
     }
 
     #[test]

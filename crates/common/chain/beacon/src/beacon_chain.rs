@@ -3,7 +3,9 @@ use std::sync::Arc;
 use alloy_primitives::B256;
 use anyhow::bail;
 use ream_consensus_beacon::{
-    attestation::Attestation, attester_slashing::AttesterSlashing,
+    attestation::Attestation,
+    attester_slashing::AttesterSlashing,
+    data_column_sidecar::{ColumnIdentifier, DataColumnSidecar},
     electra::beacon_block::SignedBeaconBlock,
 };
 use ream_consensus_misc::{
@@ -24,18 +26,37 @@ use ream_operation_pool::OperationPool;
 use ream_req_resp::beacon::messages::status::Status;
 use ream_storage::{
     db::beacon::BeaconDB,
-    tables::{field::REDBField, table::REDBTable},
+    tables::{
+        field::REDBField,
+        table::{CustomTable, REDBTable},
+    },
 };
 use ream_sync_committee_pool::SyncCommitteePool;
 use tokio::sync::{Mutex, broadcast};
 use tracing::{debug, warn};
 use tree_hash::TreeHash;
 
+pub const BLOCK_IMPORT_EVENT_CHANNEL_CAPACITY: usize = 1024;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[must_use = "block processing may be pending data availability rather than imported"]
+pub enum BlockProcessingOutcome {
+    Imported { block_root: B256 },
+    PendingAvailability { block_root: B256 },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlockImportEvent {
+    Imported { block_root: B256 },
+    PendingAvailability { block_root: B256 },
+}
+
 /// BeaconChain is the main struct which manages the nodes local beacon chain.
 pub struct BeaconChain {
     pub store: Mutex<Store>,
     pub execution_engine: Option<ExecutionEngine>,
     pub event_sender: Option<broadcast::Sender<BeaconEvent>>,
+    block_import_sender: broadcast::Sender<BlockImportEvent>,
     force_data_availability_checks: bool,
 }
 
@@ -48,10 +69,13 @@ impl BeaconChain {
         execution_engine: Option<ExecutionEngine>,
         event_sender: Option<broadcast::Sender<BeaconEvent>>,
     ) -> Self {
+        let (block_import_sender, _) = broadcast::channel(BLOCK_IMPORT_EVENT_CHANNEL_CAPACITY);
+
         Self {
             store: Mutex::new(Store::new(db, operation_pool, Some(sync_committee_pool))),
             execution_engine,
             event_sender,
+            block_import_sender,
             force_data_availability_checks: false,
         }
     }
@@ -63,7 +87,17 @@ impl BeaconChain {
         self
     }
 
-    pub async fn process_block(&self, signed_block: SignedBeaconBlock) -> anyhow::Result<()> {
+    /// Published after the store lock is released, so subscribers can re-enter `process_block`.
+    /// Handle `Lagged` by reconciling against the database, or waiting children are stranded.
+    pub fn subscribe_block_imports(&self) -> broadcast::Receiver<BlockImportEvent> {
+        self.block_import_sender.subscribe()
+    }
+
+    pub async fn process_block(
+        &self,
+        signed_block: SignedBeaconBlock,
+    ) -> anyhow::Result<BlockProcessingOutcome> {
+        let block_root = signed_block.message.tree_hash_root();
         let mut store = self.store.lock().await;
         let network_spec = beacon_network_spec();
         let verify_data_availability = self.force_data_availability_checks
@@ -83,17 +117,19 @@ impl BeaconChain {
         .await?;
 
         if outcome == OnBlockOutcome::PendingAvailability {
-            debug!(
-                "Block is pending data availability: root={}",
-                signed_block.message.tree_hash_root()
-            );
-            return Ok(());
+            debug!("Block is pending data availability: root={}", block_root);
+            drop(store);
+            self.notify_block_pending_availability(block_root);
+            return Ok(BlockProcessingOutcome::PendingAvailability { block_root });
         }
 
         self.process_block_attestations(&mut store, &signed_block);
-        self.emit_block_event(&store, &signed_block)?;
+        let block_event = self.build_block_event(&store, &signed_block);
+        drop(store);
 
-        Ok(())
+        self.notify_block_imported(block_root);
+        self.publish_block_event(block_event);
+        Ok(BlockProcessingOutcome::Imported { block_root })
     }
 
     pub async fn process_data_column_sidecar(
@@ -103,33 +139,96 @@ impl BeaconChain {
         slot: u64,
     ) -> anyhow::Result<()> {
         let mut store = self.store.lock().await;
+        let imported_block =
+            self.process_data_column_sidecar_locked(&mut store, block_root, column_index, slot)?;
+        drop(store);
 
-        // Block with available data columns will be stored here, this is
-        // a guard check to prevent processing a column for an imported block
-        if store.db.block_provider().get(block_root)?.is_some() {
-            return Ok(());
-        }
-
-        if let Some(pending) =
-            store
-                .data_availability_checker
-                .add_column(block_root, column_index, slot)
-        {
-            self.import_available_block(&mut store, pending)?;
+        if let Some((imported_block_root, block_event)) = imported_block {
+            self.notify_block_imported(imported_block_root);
+            self.publish_block_event(block_event);
         }
 
         Ok(())
+    }
+
+    /// Stores and processes a validated column under the same Store guard as a caller-supplied
+    /// release check. Coupling these operations prevents mutable finality/ancestry facts from
+    /// changing between release validation and completion of a pending block.
+    pub async fn import_data_column_sidecar_if<F>(
+        &self,
+        sidecar: DataColumnSidecar,
+        validate_release: F,
+    ) -> anyhow::Result<()>
+    where
+        F: FnOnce(&Store) -> anyhow::Result<()> + Send,
+    {
+        let block_root = sidecar.signed_block_header.message.tree_hash_root();
+        let column_index = sidecar.index;
+        let slot = sidecar.signed_block_header.message.slot;
+        let mut store = self.store.lock().await;
+        validate_release(&store)?;
+        store
+            .db
+            .column_sidecars_provider()
+            .insert(ColumnIdentifier::new(block_root, column_index), sidecar)?;
+        let imported_block =
+            self.process_data_column_sidecar_locked(&mut store, block_root, column_index, slot)?;
+        drop(store);
+
+        if let Some((imported_block_root, block_event)) = imported_block {
+            self.notify_block_imported(imported_block_root);
+            self.publish_block_event(block_event);
+        }
+
+        Ok(())
+    }
+
+    fn process_data_column_sidecar_locked(
+        &self,
+        store: &mut Store,
+        block_root: B256,
+        column_index: u64,
+        slot: u64,
+    ) -> anyhow::Result<Option<(B256, Option<BeaconEvent>)>> {
+        // Block with available data columns will be stored here, this is
+        // a guard check to prevent processing a column for an imported block
+        if store.db.block_provider().get(block_root)?.is_some() {
+            return Ok(None);
+        }
+
+        store
+            .data_availability_checker
+            .add_column(block_root, column_index, slot);
+        if let Some(pending) = store.data_availability_checker.take_if_complete(block_root) {
+            Ok(Some(self.import_available_block(store, pending)?))
+        } else {
+            Ok(None)
+        }
     }
 
     fn import_available_block(
         &self,
         store: &mut Store,
         pending: PendingBlock,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<(B256, Option<BeaconEvent>)> {
         let signed_block = pending.signed_block.clone();
+        let block_root = signed_block.message.tree_hash_root();
         process_available_block(store, pending)?;
         self.process_block_attestations(store, &signed_block);
-        self.emit_block_event(store, &signed_block)
+        let block_event = self.build_block_event(store, &signed_block);
+        Ok((block_root, block_event))
+    }
+
+    fn notify_block_imported(&self, block_root: B256) {
+        let _ = self
+            .block_import_sender
+            .send(BlockImportEvent::Imported { block_root });
+    }
+
+    fn notify_block_pending_availability(&self, block_root: B256) {
+        let _ = self
+            .block_import_sender
+            .send(BlockImportEvent::PendingAvailability { block_root });
     }
 
     fn process_block_attestations(&self, store: &mut Store, signed_block: &SignedBeaconBlock) {
@@ -140,19 +239,28 @@ impl BeaconChain {
         }
     }
 
-    fn emit_block_event(
+    fn build_block_event(
         &self,
         store: &Store,
         signed_block: &SignedBeaconBlock,
-    ) -> anyhow::Result<()> {
+    ) -> Option<BeaconEvent> {
+        let block_root = signed_block.message.tree_hash_root();
         let finalized_checkpoint = store.db.finalized_checkpoint_provider().get().ok();
-        let block_event =
-            BlockEvent::from_block(signed_block, finalized_checkpoint, |block_root, epoch| {
-                store.get_checkpoint_block(block_root, epoch)
-            })?;
-        self.event_sender
-            .send_event(BeaconEvent::Block(block_event));
-        Ok(())
+        match BlockEvent::from_block(signed_block, finalized_checkpoint, |block_root, epoch| {
+            store.get_checkpoint_block(block_root, epoch)
+        }) {
+            Ok(block_event) => Some(BeaconEvent::Block(block_event)),
+            Err(err) => {
+                warn!("Failed to build block event after importing {block_root}: {err:?}");
+                None
+            }
+        }
+    }
+
+    fn publish_block_event(&self, block_event: Option<BeaconEvent>) {
+        if let Some(block_event) = block_event {
+            self.event_sender.send_event(block_event);
+        }
     }
 
     pub async fn process_attester_slashing(

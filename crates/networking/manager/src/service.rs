@@ -5,23 +5,35 @@ use std::{
 };
 
 use ream_chain_beacon::beacon_chain::BeaconChain;
+use ream_consensus_misc::misc::compute_start_slot_at_epoch;
 use ream_discv5::{
     config::DiscoveryConfig,
     subnet::{AttestationSubnets, CustodyGroupCount, SyncCommitteeSubnets},
 };
 use ream_executor::ReamExecutor;
+use ream_fork_choice_beacon::data_availability::AvailabilityEntryStatus;
 use ream_network_spec::networks::beacon_network_spec;
 use ream_p2p::{
     config::NetworkConfig,
     network::beacon::{Network, ReamNetworkEvent, network_state::NetworkState},
 };
-use ream_storage::{cache::BeaconCacheDB, db::beacon::BeaconDB};
+use ream_storage::{
+    cache::BeaconCacheDB,
+    db::beacon::BeaconDB,
+    tables::{field::REDBField, table::REDBTable},
+};
 use ream_sync_committee_pool::SyncCommitteePool;
 use ream_syncer::block_range::BlockRangeSyncer;
 use tokio::{sync::mpsc, time::interval};
-use tracing::{error, info};
+use tracing::{error, info, warn};
+use tree_hash::TreeHash;
 
 use crate::{
+    block_lookup::{
+        BlockLookupConfig, BlockLookupCoordinator, DeferredGossipItem, apply_block_import_event,
+        apply_coordinator_update, log_stage_outcome, spawn_block_lookup_worker,
+        stage_deferred_item,
+    },
     config::ManagerConfig,
     gossipsub::handle::{handle_gossipsub_message, init_gossipsub_config_with_topics},
     p2p_sender::P2PSender,
@@ -37,6 +49,45 @@ pub struct NetworkManagerService {
     pub ream_db: BeaconDB,
     pub cached_db: Arc<BeaconCacheDB>,
     pub sync_committee_pool: Arc<SyncCommitteePool>,
+}
+
+struct ReconciledBlockLookupState {
+    imported_roots: Vec<alloy_primitives::B256>,
+    pending_availability_roots: Vec<alloy_primitives::B256>,
+}
+
+async fn reconcile_block_lookup_state(
+    beacon_chain: &BeaconChain,
+    roots: Vec<alloy_primitives::B256>,
+) -> ReconciledBlockLookupState {
+    let store = beacon_chain.store.lock().await;
+    let mut imported_roots = roots.clone();
+    imported_roots.retain(|block_root| {
+        let has_block = store
+            .db
+            .block_provider()
+            .get(*block_root)
+            .is_ok_and(|block| block.is_some());
+        let has_state = store
+            .db
+            .state_provider()
+            .get(*block_root)
+            .is_ok_and(|state| state.is_some());
+        has_block && has_state
+    });
+    let pending_availability_roots = roots
+        .into_iter()
+        .filter(|block_root| {
+            matches!(
+                store.data_availability_checker.status(block_root),
+                AvailabilityEntryStatus::PendingBlock | AvailabilityEntryStatus::Complete
+            )
+        })
+        .collect();
+    ReconciledBlockLookupState {
+        imported_roots,
+        pending_availability_roots,
+    }
 }
 
 /// The `NetworkManagerService` acts as the manager for all networking activities in Ream.
@@ -150,11 +201,77 @@ impl NetworkManagerService {
         let mut interval = interval(Duration::from_secs(
             beacon_network_spec().seconds_per_slot(),
         ));
+        let mut block_import_receiver = beacon_chain.subscribe_block_imports();
+        let mut block_import_receiver_active = true;
+        let mut block_lookup_coordinator =
+            BlockLookupCoordinator::new(BlockLookupConfig::for_data_column_retention(
+                beacon_network_spec().min_epochs_for_data_column_sidecars_requests,
+            ));
+        let (block_lookup_action_sender, mut block_lookup_update_receiver) =
+            spawn_block_lookup_worker(beacon_chain.clone());
+        let mut block_lookup_worker_active = true;
         let mut syncer_handle = block_range_syncer.start();
         // Avoid polling a completed JoinHandle after the syncer has caught up.
         let mut syncer_active = true;
         loop {
             tokio::select! {
+                permit = block_lookup_action_sender.reserve(), if block_lookup_worker_active
+                    && block_lookup_coordinator.pending_action_count() > 0
+                    && block_lookup_coordinator.in_flight_action_count() == 0 => {
+                    match permit {
+                        Ok(permit) => {
+                            if let Some(action) = block_lookup_coordinator.next_action() {
+                                permit.send(action);
+                            }
+                        }
+                        Err(err) => {
+                            block_lookup_worker_active = false;
+                            block_lookup_coordinator.fail_in_flight_action();
+                            error!("Block lookup worker action channel closed: {err}");
+                        }
+                    }
+                }
+                update = block_lookup_update_receiver.recv(), if block_lookup_worker_active => {
+                    match update {
+                        Some(update) => apply_coordinator_update(
+                            &mut block_lookup_coordinator,
+                            update,
+                        ),
+                        None => {
+                            block_lookup_worker_active = false;
+                            block_lookup_coordinator.fail_in_flight_action();
+                            error!("Block lookup worker result channel closed");
+                        }
+                    }
+                }
+                import_event = block_import_receiver.recv(), if block_import_receiver_active => {
+                    match import_event {
+                        Ok(event) => apply_block_import_event(
+                            &mut block_lookup_coordinator,
+                            event,
+                        ),
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                            warn!(skipped, "Block import notifications lagged; reconciling staged parents");
+                            let roots = block_lookup_coordinator.reconciliation_roots();
+                            let reconciliation = reconcile_block_lookup_state(
+                                &beacon_chain,
+                                roots,
+                            )
+                            .await;
+                            for block_root in reconciliation.imported_roots {
+                                block_lookup_coordinator.parent_imported(block_root);
+                            }
+                            for block_root in reconciliation.pending_availability_roots {
+                                block_lookup_coordinator
+                                    .mark_block_pending_availability(block_root);
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                            block_import_receiver_active = false;
+                            error!("Block import notification channel closed");
+                        }
+                    }
+                }
                 result = &mut syncer_handle, if syncer_active => {
                     syncer_active = false;
                     let joined_result = match result {
@@ -195,22 +312,70 @@ impl NetworkManagerService {
                     if let Err(err) =  beacon_chain.process_tick(time).await {
                         error!("Failed to process gossipsub tick: {err}");
                     }
+
+                    let slots = {
+                        let store = beacon_chain.store.lock().await;
+                        (
+                            store.get_current_slot(),
+                            store.db.finalized_checkpoint_provider().get(),
+                        )
+                    };
+                    match slots {
+                        (Ok(current_slot), Ok(finalized_checkpoint)) => {
+                            block_lookup_coordinator.prune(
+                                current_slot,
+                                compute_start_slot_at_epoch(finalized_checkpoint.epoch),
+                            );
+                        }
+                        (Err(err), _) => error!("Failed to read current slot: {err}"),
+                        (_, Err(err)) => error!("Failed to read finalized checkpoint: {err}"),
+                    }
                 }
                 Some(event) = manager_receiver.recv() => {
                     match event {
                         // Handles Gossipsub messages from other peers.
                         ReamNetworkEvent::GossipsubMessage { propagation_source, message_id, message } => {
+                            let mut deferred_item = None;
                             let acceptance = handle_gossipsub_message(
                                 message,
                                 &beacon_chain,
                                 &cached_db,
                                 &p2p_sender,
+                                &mut deferred_item,
                             ).await;
                             p2p_sender.report_gossip_validation(
                                 message_id,
                                 propagation_source,
                                 acceptance,
                             );
+
+                            if let Some(item) = deferred_item {
+                                let block_root = match &item {
+                                    DeferredGossipItem::Block { block, .. } => {
+                                        block.block().message.tree_hash_root()
+                                    }
+                                    DeferredGossipItem::Column { column, .. } => {
+                                        column.sidecar().signed_block_header.message.tree_hash_root()
+                                    }
+                                };
+                                let current_slot = {
+                                    let store = beacon_chain.store.lock().await;
+                                    store.get_current_slot()
+                                };
+                                match current_slot {
+                                    Ok(current_slot) => log_stage_outcome(
+                                        block_root,
+                                        stage_deferred_item(
+                                            &mut block_lookup_coordinator,
+                                            item,
+                                            current_slot,
+                                        ),
+                                    ),
+                                    Err(err) => {
+                                        error!("Failed to read current slot for deferred gossip: {err}")
+                                    }
+                                }
+                            }
                         }
                         // Handles Req/Resp messages from other peers.
                         ReamNetworkEvent::RequestMessage { peer_id, stream_id, connection_id, message } =>

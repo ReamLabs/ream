@@ -60,6 +60,25 @@ fn sample_blob(seed: u8) -> anyhow::Result<Blob> {
     })
 }
 
+/// Builds deterministic blob data and its matching commitment for integration tests.
+pub fn sample_blob_and_commitment(seed: u8) -> anyhow::Result<(Blob, KZGCommitment)> {
+    let blob = sample_blob(seed)?;
+    let blob_data = blob.inner.to_vec();
+    ensure!(
+        blob_data.len() == BYTES_PER_BLOB,
+        "sample blob has unexpected length: {}",
+        blob_data.len()
+    );
+    let blob_bytes: [u8; BYTES_PER_BLOB] =
+        blob_data.try_into().expect("length already checked above");
+    let commitment = KZGCommitment(
+        das_context()
+            .blob_to_kzg_commitment(&blob_bytes)
+            .map_err(|err| anyhow!("failed to compute sample blob commitment: {err:?}"))?,
+    );
+    Ok((blob, commitment))
+}
+
 #[derive(Debug)]
 pub struct ForkchoiceUpdated {
     pub payload_status: PayloadStatusV1,

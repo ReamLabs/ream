@@ -975,6 +975,8 @@ pub async fn countdown_for_genesis() {
 
 #[cfg(test)]
 mod tests {
+    mod block_lookup_tests;
+
     use std::{
         env::temp_dir,
         fs,

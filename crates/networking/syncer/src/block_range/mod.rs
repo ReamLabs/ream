@@ -16,7 +16,7 @@ use futures::task::noop_waker;
 use libp2p::PeerId;
 use peer_manager::PeerManager;
 use peer_range_downloader::{PeerBlobIdentifierDownloader, PeerRootsDownloader};
-use ream_chain_beacon::beacon_chain::BeaconChain;
+use ream_chain_beacon::beacon_chain::{BeaconChain, BlockProcessingOutcome};
 use ream_consensus_beacon::{
     blob_sidecar::{BlobIdentifier, BlobSidecar},
     electra::beacon_block::SignedBeaconBlock,
@@ -223,7 +223,16 @@ impl BlockRangeSyncer {
                     }
                 }
 
-                self.beacon_chain.process_block(block).await?;
+                match self.beacon_chain.process_block(block).await? {
+                    BlockProcessingOutcome::Imported { .. } => {}
+                    BlockProcessingOutcome::PendingAvailability { block_root } => {
+                        info!(
+                            ?block_root,
+                            "Range-sync block is pending data availability; handing control back before processing descendants"
+                        );
+                        return Ok(self);
+                    }
+                }
             }
 
             info!("All blocks processed successfully.");

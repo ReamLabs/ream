@@ -93,11 +93,12 @@ pub async fn on_block(
         return Ok(OnBlockOutcome::Imported);
     }
 
-    let available = store.data_availability_checker.insert_pending(
+    store.data_availability_checker.insert_pending(
         block_root,
         pending.signed_block,
         pending.post_state,
     );
+    let available = store.data_availability_checker.take_if_complete(block_root);
     // The backfill here is the case when data columns come before the arrival of this block.
     // Then we have to backfill the availability columns for this block.
     // This is a rare case - but can still happen.
