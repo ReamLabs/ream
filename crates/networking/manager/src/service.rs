@@ -372,7 +372,7 @@ impl NetworkManagerService {
                                         ),
                                     ),
                                     Err(err) => {
-                                        error!("Failed to read current slot for deferred gossip: {err}")
+                                        error!("Failed to read current slot for pending gossip: {err}")
                                     }
                                 }
                             }

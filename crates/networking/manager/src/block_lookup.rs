@@ -16,12 +16,14 @@ use tracing::{debug, warn};
 use tree_hash::TreeHash;
 
 use crate::gossipsub::validate::{
-    beacon_block::ValidatedBlock, data_column_sidecar::ValidatedColumn,
+    beacon_block::GossipValidatedBlock, data_column_sidecar::GossipValidatedDataColumn,
 };
 
-pub type BlockLookupCoordinator =
-    ream_syncer::block_lookups::BlockLookupCoordinator<ValidatedBlock, ValidatedColumn>;
-pub type BlockLookupAction = CoordinatorAction<ValidatedBlock, ValidatedColumn>;
+pub type BlockLookupCoordinator = ream_syncer::block_lookups::BlockLookupCoordinator<
+    GossipValidatedBlock,
+    GossipValidatedDataColumn,
+>;
+pub type BlockLookupAction = CoordinatorAction<GossipValidatedBlock, GossipValidatedDataColumn>;
 
 pub fn spawn_block_lookup_worker(
     beacon_chain: Arc<BeaconChain>,
@@ -59,24 +61,28 @@ fn spawn_sequential_worker<Action, Update, Execute, ExecuteFuture>(
 }
 
 pub enum PendingGossipItem {
-    Block { block: ValidatedBlock },
-    Column { column: ValidatedColumn },
+    Block { block: GossipValidatedBlock },
+    Column { column: GossipValidatedDataColumn },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CoordinatorUpdate {
+    /// The pending block was imported successfully.
     BlockImported {
         action_id: ActionId,
         block_root: B256,
     },
+    /// The pending block passed block processing but is waiting for data availability.
     BlockPendingAvailability {
         action_id: ActionId,
         block_root: B256,
     },
+    /// The pending block could not be imported and will be dropped.
     BlockFailed {
         action_id: ActionId,
         block_root: B256,
     },
+    /// The pending data column import attempt finished, whether it succeeded or failed.
     ColumnFinished {
         action_id: ActionId,
         identifier: ColumnIdentifier,
@@ -171,7 +177,8 @@ pub async fn execute_coordinator_action(
             ..
         } => {
             if let Err(err) =
-                validate_release_context(beacon_chain, meta.slot, meta.parent_root, None).await
+                ensure_pending_item_is_importable(beacon_chain, meta.slot, meta.parent_root, None)
+                    .await
             {
                 debug!(
                     block_root = ?meta.block_root,
@@ -184,9 +191,7 @@ pub async fn execute_coordinator_action(
                 };
             }
 
-            // This payload already passed every arrival-time gossip check. Re-running the gossip
-            // validator would self-ignore on the seen-cache entry written at arrival and would
-            // duplicate immutable signature/proposer/KZG work.
+            // Import directly because revalidating this gossip-validated block would self-ignore.
             match beacon_chain.process_block(payload.into_inner()).await {
                 Ok(BlockProcessingOutcome::Imported { block_root }) => {
                     CoordinatorUpdate::BlockImported {
@@ -221,14 +226,14 @@ pub async fn execute_coordinator_action(
         } => {
             let sidecar = payload.sidecar();
             let parent_root = sidecar.signed_block_header.message.parent_root;
-            let pending_block_root = meta.identifier.block_root;
+            let data_column_block_root = meta.identifier.block_root;
             let import_result = beacon_chain
                 .import_data_column_sidecar_if(payload.into_inner(), move |store| {
-                    validate_release_context_locked(
+                    ensure_pending_item_is_importable_with_store(
                         store,
                         meta.slot,
                         parent_root,
-                        Some(pending_block_root),
+                        Some(data_column_block_root),
                     )
                 })
                 .await;
@@ -247,27 +252,27 @@ pub async fn execute_coordinator_action(
     }
 }
 
-async fn validate_release_context(
+async fn ensure_pending_item_is_importable(
     beacon_chain: &BeaconChain,
     slot: u64,
     parent_root: B256,
-    pending_block_root: Option<B256>,
+    data_column_block_root: Option<B256>,
 ) -> anyhow::Result<()> {
     let store = beacon_chain.store.lock().await;
-    validate_release_context_locked(&store, slot, parent_root, pending_block_root)
+    ensure_pending_item_is_importable_with_store(&store, slot, parent_root, data_column_block_root)
 }
 
-fn validate_release_context_locked(
+fn ensure_pending_item_is_importable_with_store(
     store: &Store,
     slot: u64,
     parent_root: B256,
-    pending_block_root: Option<B256>,
+    data_column_block_root: Option<B256>,
 ) -> anyhow::Result<()> {
     let current_slot = store.get_current_slot()?;
     let finalized_checkpoint = store.db.finalized_checkpoint_provider().get()?;
     let finalized_slot = compute_start_slot_at_epoch(finalized_checkpoint.epoch);
 
-    validate_release_facts(
+    ensure_slot_and_parent_are_importable(
         slot,
         current_slot,
         finalized_slot,
@@ -282,7 +287,8 @@ fn validate_release_context_locked(
         bail!("finalized checkpoint is no longer an ancestor");
     }
 
-    if let Some(block_root) = pending_block_root
+    // Make sure data column only's imported when it's actually in DA checker module
+    if let Some(block_root) = data_column_block_root
         && !matches!(
             store.data_availability_checker.status(&block_root),
             AvailabilityEntryStatus::PendingBlock | AvailabilityEntryStatus::Complete
@@ -294,7 +300,9 @@ fn validate_release_context_locked(
     Ok(())
 }
 
-fn validate_release_facts(
+/// Making sure block is importable if it's in range (finalized_checkpoint_head, current head], and
+/// parent's state exist
+fn ensure_slot_and_parent_are_importable(
     slot: u64,
     current_slot: u64,
     finalized_slot: u64,
@@ -343,17 +351,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn release_rejects_future_and_finalized_items() {
-        assert!(validate_release_facts(11, 10, 5, true, true).is_err());
-        assert!(validate_release_facts(5, 10, 5, true, true).is_err());
-        assert!(validate_release_facts(4, 10, 5, true, true).is_err());
+    fn pending_item_import_rejects_future_and_finalized_items() {
+        assert!(ensure_slot_and_parent_are_importable(11, 10, 5, true, true).is_err());
+        assert!(ensure_slot_and_parent_are_importable(5, 10, 5, true, true).is_err());
+        assert!(ensure_slot_and_parent_are_importable(4, 10, 5, true, true).is_err());
     }
 
     #[test]
-    fn release_requires_imported_parent_block_and_state() {
-        assert!(validate_release_facts(6, 10, 5, false, true).is_err());
-        assert!(validate_release_facts(6, 10, 5, true, false).is_err());
-        assert!(validate_release_facts(6, 10, 5, true, true).is_ok());
+    fn pending_item_import_requires_imported_parent_block_and_state() {
+        assert!(ensure_slot_and_parent_are_importable(6, 10, 5, false, true).is_err());
+        assert!(ensure_slot_and_parent_are_importable(6, 10, 5, true, false).is_err());
+        assert!(ensure_slot_and_parent_are_importable(6, 10, 5, true, true).is_ok());
     }
 
     #[test]

@@ -14,14 +14,14 @@ use tree_hash::TreeHash;
 
 use super::result::DependencyValidationResult;
 
-type ValidationResult = DependencyValidationResult<ValidatedColumn>;
+type ValidationResult = DependencyValidationResult<GossipValidatedDataColumn>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ValidatedColumn {
+pub struct GossipValidatedDataColumn {
     sidecar: Box<DataColumnSidecar>,
 }
 
-impl ValidatedColumn {
+impl GossipValidatedDataColumn {
     fn new(sidecar: DataColumnSidecar) -> Self {
         Self {
             sidecar: Box::new(sidecar),
@@ -232,7 +232,7 @@ pub async fn validate_data_column_sidecar_full(
     if pending_availability {
         Ok(ValidationResult::ParentPendingAvailability {
             parent_root: header.parent_root,
-            validated: ValidatedColumn::new(data_column_sidecar.clone()),
+            validated: GossipValidatedDataColumn::new(data_column_sidecar.clone()),
         })
     } else {
         Ok(ValidationResult::Accept)

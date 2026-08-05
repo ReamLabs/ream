@@ -13,11 +13,11 @@ use tree_hash::TreeHash;
 use super::result::{DependencyValidationResult, ValidationResult};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ValidatedBlock {
+pub struct GossipValidatedBlock {
     block: Box<SignedBeaconBlock>,
 }
 
-impl ValidatedBlock {
+impl GossipValidatedBlock {
     fn new(block: SignedBeaconBlock) -> Self {
         Self {
             block: Box::new(block),
@@ -43,7 +43,7 @@ pub async fn validate_gossip_beacon_block(
     beacon_chain: &BeaconChain,
     cached_db: &BeaconCacheDB,
     block: &SignedBeaconBlock,
-) -> anyhow::Result<DependencyValidationResult<ValidatedBlock>> {
+) -> anyhow::Result<DependencyValidationResult<GossipValidatedBlock>> {
     let (head_state, parent) = {
         let store = beacon_chain.store.lock().await;
         let head_root = store.get_head()?;
@@ -130,7 +130,7 @@ pub async fn validate_gossip_beacon_block(
     if parent.is_some_and(|parent| parent.pending_availability) {
         Ok(DependencyValidationResult::ParentPendingAvailability {
             parent_root: block.message.parent_root,
-            validated: ValidatedBlock::new(block.clone()),
+            validated: GossipValidatedBlock::new(block.clone()),
         })
     } else {
         Ok(DependencyValidationResult::Accept)

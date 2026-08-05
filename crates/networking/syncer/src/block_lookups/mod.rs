@@ -69,11 +69,13 @@ pub enum InsertOutcome {
 
 #[derive(Debug)]
 pub enum CoordinatorAction<BlockPayload, ColumnPayload> {
+    /// A pending block that is ready for import because its parent has been imported.
     ImportBlock {
         action_id: ActionId,
         meta: PendingBlockMeta,
         payload: BlockPayload,
     },
+    /// A pending data column that is ready for import because its block is pending availability.
     ImportColumn {
         action_id: ActionId,
         meta: PendingColumnMeta,
@@ -155,9 +157,13 @@ enum PendingAction {
 /// Validation, lookup, peer and retry policy deliberately live in the caller.
 pub struct BlockLookupCoordinator<BlockPayload, ColumnPayload> {
     config: BlockLookupConfig,
+    /// Pending blocks and data columns grouped by their owning block root.
     entries: HashMap<B256, PendingBlockEntry<BlockPayload, ColumnPayload>>,
+    /// Reverse index from a parent root to its immediate pending child roots.
     children_by_parent: HashMap<B256, VecDeque<B256>>,
+    /// FIFO queue of pending items that are ready to be sent to the worker.
     pending_actions: VecDeque<PendingAction>,
+    /// Monotonic identifier used to ignore stale worker results.
     next_action_id: u64,
 }
 
