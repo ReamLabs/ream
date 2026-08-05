@@ -9,7 +9,7 @@ use ream_consensus_beacon::{
     single_attestation::SingleAttestation,
 };
 use ream_consensus_misc::constants::beacon::{
-    FULU_FORK_EPOCH, MIN_ATTESTATION_INCLUSION_DELAY, genesis_validators_root,
+    MIN_ATTESTATION_INCLUSION_DELAY, genesis_validators_root,
 };
 use ream_execution_rpc_types::get_blobs::BlobAndProofV1;
 use ream_network_spec::networks::beacon_network_spec;
@@ -56,7 +56,10 @@ pub fn init_gossipsub_config_with_topics(history_length: Option<usize>) -> Gossi
         GossipsubConfig::default,
         GossipsubConfig::with_history_length,
     );
-    let fork_digest = beacon_network_spec().fork_digest(FULU_FORK_EPOCH, genesis_validators_root());
+    let fork_digest = beacon_network_spec().fork_digest(
+        beacon_network_spec().current_epoch(),
+        genesis_validators_root(),
+    );
 
     let mut topics = vec![
         GossipTopic {
@@ -731,6 +734,7 @@ mod tests {
     use ream_consensus_beacon::data_column_sidecar::{Cell, DataColumnSidecar};
     use ream_consensus_misc::{
         beacon_block_header::SignedBeaconBlockHeader,
+        constants::beacon::FULU_FORK_EPOCH,
         polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
     };
     use ream_network_spec::networks::initialize_test_network_spec;

@@ -7,8 +7,7 @@ use ream_consensus_beacon::{
     electra::beacon_block::SignedBeaconBlock,
 };
 use ream_consensus_misc::{
-    constants::beacon::{FULU_FORK_EPOCH, genesis_validators_root},
-    misc::compute_epoch_at_slot,
+    constants::beacon::genesis_validators_root, misc::compute_epoch_at_slot,
 };
 use ream_events_beacon::{BeaconEvent, BeaconEventSender, event::chain::BlockEvent};
 use ream_execution_engine::ExecutionEngine;
@@ -209,8 +208,10 @@ impl BeaconChain {
         };
 
         Ok(Status {
-            fork_digest: beacon_network_spec()
-                .fork_digest(FULU_FORK_EPOCH, genesis_validators_root()),
+            fork_digest: beacon_network_spec().fork_digest(
+                beacon_network_spec().current_epoch(),
+                genesis_validators_root(),
+            ),
             finalized_root: finalized_checkpoint.root,
             finalized_epoch: finalized_checkpoint.epoch,
             head_root,

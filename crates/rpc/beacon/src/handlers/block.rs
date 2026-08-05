@@ -35,7 +35,7 @@ use ream_consensus_beacon::{
     matrix_entry::{compute_cells_and_kzg_proofs, das_context},
 };
 use ream_consensus_misc::constants::beacon::{
-    FULU_FORK_EPOCH, WHISTLEBLOWER_REWARD_QUOTIENT, genesis_validators_root,
+    WHISTLEBLOWER_REWARD_QUOTIENT, genesis_validators_root,
 };
 use ream_network_manager::p2p_sender::P2PSender;
 use ream_network_spec::networks::beacon_network_spec;
@@ -550,7 +550,10 @@ async fn publish_and_process_block(
         })?;
 
     // Broadcast via P2P
-    let fork_digest = beacon_network_spec().fork_digest(FULU_FORK_EPOCH, genesis_validators_root());
+    let fork_digest = beacon_network_spec().fork_digest(
+        beacon_network_spec().current_epoch(),
+        genesis_validators_root(),
+    );
     let topic = GossipTopic {
         fork: fork_digest,
         kind: GossipTopicKind::BeaconBlock,
@@ -676,7 +679,10 @@ async fn broadcast_data_column_sidecars(
         }
     };
 
-    let fork_digest = beacon_network_spec().fork_digest(FULU_FORK_EPOCH, genesis_validators_root());
+    let fork_digest = beacon_network_spec().fork_digest(
+        beacon_network_spec().current_epoch(),
+        genesis_validators_root(),
+    );
     for sidecar in sidecars {
         let topic = GossipTopic {
             fork: fork_digest,
