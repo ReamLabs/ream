@@ -30,9 +30,9 @@ use tree_hash::TreeHash;
 
 use crate::{
     block_lookup::{
-        BlockLookupConfig, BlockLookupCoordinator, DeferredGossipItem, apply_block_import_event,
-        apply_coordinator_update, log_stage_outcome, spawn_block_lookup_worker,
-        stage_deferred_item,
+        BlockLookupConfig, BlockLookupCoordinator, PendingGossipItem, apply_block_import_event,
+        apply_coordinator_update, insert_pending_item, log_insert_outcome,
+        spawn_block_lookup_worker,
     },
     config::ManagerConfig,
     gossipsub::handle::{handle_gossipsub_message, init_gossipsub_config_with_topics},
@@ -251,7 +251,7 @@ impl NetworkManagerService {
                             event,
                         ),
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
-                            warn!(skipped, "Block import notifications lagged; reconciling staged parents");
+                            warn!(skipped, "Block import notifications lagged; reconciling pending parents");
                             let roots = block_lookup_coordinator.reconciliation_roots();
                             let reconciliation = reconcile_block_lookup_state(
                                 &beacon_chain,
@@ -335,13 +335,13 @@ impl NetworkManagerService {
                     match event {
                         // Handles Gossipsub messages from other peers.
                         ReamNetworkEvent::GossipsubMessage { propagation_source, message_id, message } => {
-                            let mut deferred_item = None;
+                            let mut pending_item = None;
                             let acceptance = handle_gossipsub_message(
                                 message,
                                 &beacon_chain,
                                 &cached_db,
                                 &p2p_sender,
-                                &mut deferred_item,
+                                &mut pending_item,
                             ).await;
                             p2p_sender.report_gossip_validation(
                                 message_id,
@@ -349,12 +349,12 @@ impl NetworkManagerService {
                                 acceptance,
                             );
 
-                            if let Some(item) = deferred_item {
+                            if let Some(item) = pending_item {
                                 let block_root = match &item {
-                                    DeferredGossipItem::Block { block, .. } => {
+                                    PendingGossipItem::Block { block, .. } => {
                                         block.block().message.tree_hash_root()
                                     }
-                                    DeferredGossipItem::Column { column, .. } => {
+                                    PendingGossipItem::Column { column, .. } => {
                                         column.sidecar().signed_block_header.message.tree_hash_root()
                                     }
                                 };
@@ -363,9 +363,9 @@ impl NetworkManagerService {
                                     store.get_current_slot()
                                 };
                                 match current_slot {
-                                    Ok(current_slot) => log_stage_outcome(
+                                    Ok(current_slot) => log_insert_outcome(
                                         block_root,
-                                        stage_deferred_item(
+                                        insert_pending_item(
                                             &mut block_lookup_coordinator,
                                             item,
                                             current_slot,

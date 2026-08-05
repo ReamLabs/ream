@@ -128,7 +128,7 @@ pub async fn validate_gossip_beacon_block(
     }
 
     if parent.is_some_and(|parent| parent.pending_availability) {
-        Ok(DependencyValidationResult::ParentUnavailable {
+        Ok(DependencyValidationResult::ParentPendingAvailability {
             parent_root: block.message.parent_root,
             validated: ValidatedBlock::new(block.clone()),
         })

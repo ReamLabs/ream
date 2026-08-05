@@ -366,7 +366,7 @@ mod tests {
                 .unwrap();
 
         assert!(
-            matches!(result, DependencyValidationResult::ParentUnavailable {
+            matches!(result, DependencyValidationResult::ParentPendingAvailability {
                 parent_root: actual_parent_root,
                 ..
             } if actual_parent_root == parent_root)

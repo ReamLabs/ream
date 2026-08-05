@@ -8,8 +8,8 @@ use ream_consensus_misc::misc::compute_start_slot_at_epoch;
 use ream_fork_choice_beacon::{data_availability::AvailabilityEntryStatus, store::Store};
 use ream_storage::tables::{field::REDBField, table::REDBTable};
 pub use ream_syncer::block_lookups::{
-    ActionId, BlockLookupConfig, CoordinatorAction, QuarantinedColumnMeta, StageOutcome,
-    StageRejection, StagedBlockMeta,
+    ActionId, BlockLookupConfig, CoordinatorAction, InsertError, InsertOutcome, PendingBlockMeta,
+    PendingColumnMeta,
 };
 use tokio::sync::mpsc;
 use tracing::{debug, warn};
@@ -58,7 +58,7 @@ fn spawn_sequential_worker<Action, Update, Execute, ExecuteFuture>(
     });
 }
 
-pub enum DeferredGossipItem {
+pub enum PendingGossipItem {
     Block { block: ValidatedBlock },
     Column { column: ValidatedColumn },
 }
@@ -83,29 +83,29 @@ pub enum CoordinatorUpdate {
     },
 }
 
-pub fn stage_deferred_item(
+pub fn insert_pending_item(
     coordinator: &mut BlockLookupCoordinator,
-    item: DeferredGossipItem,
+    item: PendingGossipItem,
     current_slot: u64,
-) -> StageOutcome {
+) -> InsertOutcome {
     match item {
-        DeferredGossipItem::Block { block } => {
+        PendingGossipItem::Block { block } => {
             let signed_block = block.block();
-            let meta = StagedBlockMeta {
+            let meta = PendingBlockMeta {
                 block_root: signed_block.message.tree_hash_root(),
                 parent_root: signed_block.message.parent_root,
                 slot: signed_block.message.slot,
             };
-            coordinator.stage_block(meta, block, current_slot)
+            coordinator.insert_pending_block(meta, block, current_slot)
         }
-        DeferredGossipItem::Column { column } => {
+        PendingGossipItem::Column { column } => {
             let sidecar = column.sidecar();
             let block_root = sidecar.signed_block_header.message.tree_hash_root();
-            let meta = QuarantinedColumnMeta {
+            let meta = PendingColumnMeta {
                 identifier: ColumnIdentifier::new(block_root, sidecar.index),
                 slot: sidecar.signed_block_header.message.slot,
             };
-            coordinator.quarantine_column(meta, column, current_slot)
+            coordinator.insert_pending_column(meta, column, current_slot)
         }
     }
 }
@@ -176,7 +176,7 @@ pub async fn execute_coordinator_action(
                 debug!(
                     block_root = ?meta.block_root,
                     ?err,
-                    "Dropping staged block whose release conditions no longer hold"
+                    "Dropping pending block whose release conditions no longer hold"
                 );
                 return CoordinatorUpdate::BlockFailed {
                     action_id,
@@ -204,7 +204,7 @@ pub async fn execute_coordinator_action(
                     warn!(
                         block_root = ?meta.block_root,
                         ?err,
-                        "Failed to import validated staged block"
+                        "Failed to import validated pending block"
                     );
                     CoordinatorUpdate::BlockFailed {
                         action_id,
@@ -236,7 +236,7 @@ pub async fn execute_coordinator_action(
                 warn!(
                     ?meta.identifier,
                     ?err,
-                    "Failed to import validated quarantined data column"
+                    "Failed to import validated pending data column"
                 );
             }
             CoordinatorUpdate::ColumnFinished {
@@ -305,7 +305,7 @@ fn validate_release_facts(
         bail!("item is from a future slot");
     }
     if slot <= finalized_slot {
-        bail!("finality advanced past the staged item");
+        bail!("finality advanced past the pending item");
     }
     if !parent_block_known || !parent_state_known {
         return Err(anyhow!("parent block or state is not imported"));
@@ -322,14 +322,14 @@ pub async fn import_validated_data_column(
         .await
 }
 
-pub fn log_stage_outcome(block_root: B256, outcome: StageOutcome) {
+pub fn log_insert_outcome(block_root: B256, outcome: InsertOutcome) {
     match outcome {
-        StageOutcome::Inserted => {}
-        StageOutcome::Duplicate => {
-            debug!(?block_root, "Ignored duplicate staged block lookup data");
+        InsertOutcome::Inserted => {}
+        InsertOutcome::Duplicate => {
+            debug!(?block_root, "Ignored duplicate pending block lookup data");
         }
-        StageOutcome::Rejected(reason) => {
-            warn!(?block_root, ?reason, "Rejected block lookup staging");
+        InsertOutcome::Rejected(reason) => {
+            warn!(?block_root, ?reason, "Rejected pending block insertion");
         }
     }
 }
@@ -357,7 +357,7 @@ mod tests {
     }
 
     #[test]
-    fn external_pending_availability_event_releases_its_quarantined_columns() {
+    fn external_pending_availability_event_releases_its_pending_columns() {
         ream_network_spec::networks::beacon::initialize_test_network_spec();
         let mut coordinator = ream_syncer::block_lookups::BlockLookupCoordinator::<u8, u8>::new(
             BlockLookupConfig::for_data_column_retention(1),
@@ -365,15 +365,15 @@ mod tests {
         let block_root = B256::repeat_byte(1);
         let identifier = ColumnIdentifier::new(block_root, 0);
         assert!(matches!(
-            coordinator.quarantine_column(
-                QuarantinedColumnMeta {
+            coordinator.insert_pending_column(
+                PendingColumnMeta {
                     identifier,
                     slot: 1,
                 },
                 2,
                 1,
             ),
-            StageOutcome::Inserted
+            InsertOutcome::Inserted
         ));
 
         apply_block_import_event(
@@ -381,7 +381,7 @@ mod tests {
             BlockImportEvent::PendingAvailability { block_root },
         );
 
-        assert_eq!(coordinator.staged_block_count(), 0);
+        assert_eq!(coordinator.pending_block_count(), 0);
         assert!(matches!(
             coordinator.next_action(),
             Some(CoordinatorAction::ImportColumn { meta, payload: 2, .. })

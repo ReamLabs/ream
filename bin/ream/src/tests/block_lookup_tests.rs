@@ -27,8 +27,8 @@ use ream_mock_execution_engine::block_generator::{
 };
 use ream_network_manager::{
     block_lookup::{
-        BlockLookupConfig, BlockLookupCoordinator, StageOutcome, apply_block_import_event,
-        apply_coordinator_update, execute_coordinator_action, stage_deferred_item,
+        BlockLookupConfig, BlockLookupCoordinator, InsertOutcome, apply_block_import_event,
+        apply_coordinator_update, execute_coordinator_action, insert_pending_item,
     },
     gossipsub::handle::{Message, MessageAcceptance, handle_gossipsub_message},
     p2p_sender::P2PSender,
@@ -204,7 +204,7 @@ impl GossipLookupHarness {
     async fn deliver_block(
         &mut self,
         signed_block: &SignedBeaconBlock,
-    ) -> (MessageAcceptance, Vec<StageOutcome>) {
+    ) -> (MessageAcceptance, Vec<InsertOutcome>) {
         self.deliver(GossipTopicKind::BeaconBlock, signed_block.as_ssz_bytes())
             .await
     }
@@ -212,7 +212,7 @@ impl GossipLookupHarness {
     async fn deliver_column(
         &mut self,
         column: &DataColumnSidecar,
-    ) -> (MessageAcceptance, Vec<StageOutcome>) {
+    ) -> (MessageAcceptance, Vec<InsertOutcome>) {
         self.deliver(
             GossipTopicKind::DataColumnSidecar(column.compute_subnet()),
             column.as_ssz_bytes(),
@@ -224,7 +224,7 @@ impl GossipLookupHarness {
         &mut self,
         kind: GossipTopicKind,
         data: Vec<u8>,
-    ) -> (MessageAcceptance, Vec<StageOutcome>) {
+    ) -> (MessageAcceptance, Vec<InsertOutcome>) {
         let topic = GossipTopic {
             fork: ream_network_spec::networks::beacon_network_spec().fork_digest(
                 ream_consensus_misc::constants::beacon::FULU_FORK_EPOCH,
@@ -232,7 +232,7 @@ impl GossipLookupHarness {
             ),
             kind,
         };
-        let mut deferred_item = None;
+        let mut pending_item = None;
         let acceptance = handle_gossipsub_message(
             Message {
                 source: None,
@@ -243,12 +243,12 @@ impl GossipLookupHarness {
             &self.beacon_chain,
             &self.cached_db,
             &self.p2p_sender,
-            &mut deferred_item,
+            &mut pending_item,
         )
         .await;
 
         let mut outcomes = Vec::new();
-        if let Some(item) = deferred_item {
+        if let Some(item) = pending_item {
             let current_slot = self
                 .beacon_chain
                 .store
@@ -256,7 +256,7 @@ impl GossipLookupHarness {
                 .await
                 .get_current_slot()
                 .expect("current slot should be available");
-            outcomes.push(stage_deferred_item(
+            outcomes.push(insert_pending_item(
                 &mut self.coordinator,
                 item,
                 current_slot,
@@ -498,9 +498,9 @@ async fn test_pending_parent_block_imports_after_parent_becomes_available() {
     let late_child_root = late_child.signed_block.message.tree_hash_root();
     let failed_child_root = failed_child.signed_block.message.tree_hash_root();
 
-    let (acceptance, staged) = harness.deliver_block(&parent.signed_block).await;
+    let (acceptance, insert_outcomes) = harness.deliver_block(&parent.signed_block).await;
     assert!(matches!(acceptance, MessageAcceptance::Accept));
-    assert!(staged.is_empty());
+    assert!(insert_outcomes.is_empty());
     assert_eq!(
         harness
             .beacon_chain
@@ -537,9 +537,12 @@ async fn test_pending_parent_block_imports_after_parent_becomes_available() {
         (head_root, proposer_index, original_head_public_key)
     };
 
-    let (acceptance, staged) = harness.deliver_block(&child.signed_block).await;
+    let (acceptance, insert_outcomes) = harness.deliver_block(&child.signed_block).await;
     assert!(matches!(acceptance, MessageAcceptance::Ignore));
-    assert!(matches!(staged.as_slice(), [StageOutcome::Inserted]));
+    assert!(matches!(
+        insert_outcomes.as_slice(),
+        [InsertOutcome::Inserted]
+    ));
     let child_proposer = parent
         .post_state
         .as_ref()
@@ -557,35 +560,38 @@ async fn test_pending_parent_block_imports_after_parent_becomes_available() {
                 address: child_proposer.public_key.clone(),
                 slot: child.signed_block.message.slot,
             }),
-        "a fully validated deferred child must enter the seen cache at arrival"
+        "a fully validated pending child must enter the seen cache at arrival"
     );
-    let staged_count = harness.coordinator.staged_block_count();
+    let pending_count = harness.coordinator.pending_block_count();
     let (duplicate_acceptance, duplicate) = harness.deliver_block(&child.signed_block).await;
     assert!(matches!(duplicate_acceptance, MessageAcceptance::Ignore));
     assert!(duplicate.is_empty());
-    assert_eq!(harness.coordinator.staged_block_count(), staged_count);
+    assert_eq!(harness.coordinator.pending_block_count(), pending_count);
 
-    let (acceptance, staged) = harness.deliver_block(&invalid_sibling.signed_block).await;
+    let (acceptance, insert_outcomes) = harness.deliver_block(&invalid_sibling.signed_block).await;
     assert!(matches!(acceptance, MessageAcceptance::Reject));
-    assert!(staged.is_empty());
+    assert!(insert_outcomes.is_empty());
     assert_eq!(
         harness.coordinator.children(&parent_root),
         vec![child_root],
         "a wrong-proposer child must not enter the coordinator"
     );
-    let (acceptance, staged) = harness.deliver_column(&invalid_sibling.column).await;
+    let (acceptance, insert_outcomes) = harness.deliver_column(&invalid_sibling.column).await;
     assert!(matches!(acceptance, MessageAcceptance::Reject));
-    assert!(staged.is_empty());
+    assert!(insert_outcomes.is_empty());
     assert!(
         !harness
             .coordinator
             .contains_column(&ColumnIdentifier::new(sibling_root, 0)),
-        "a wrong-proposer column must be rejected before quarantine"
+        "a wrong-proposer column must be rejected before pending insertion"
     );
 
-    let (acceptance, staged) = harness.deliver_block(&failed_child.signed_block).await;
+    let (acceptance, insert_outcomes) = harness.deliver_block(&failed_child.signed_block).await;
     assert!(matches!(acceptance, MessageAcceptance::Ignore));
-    assert!(matches!(staged.as_slice(), [StageOutcome::Inserted]));
+    assert!(matches!(
+        insert_outcomes.as_slice(),
+        [InsertOutcome::Inserted]
+    ));
     assert_eq!(
         harness.coordinator.children(&parent_root),
         vec![child_root, failed_child_root],
@@ -593,13 +599,19 @@ async fn test_pending_parent_block_imports_after_parent_becomes_available() {
     );
 
     for column in [&child.column, &failed_child.column] {
-        let (acceptance, staged) = harness.deliver_column(column).await;
+        let (acceptance, insert_outcomes) = harness.deliver_column(column).await;
         assert!(matches!(acceptance, MessageAcceptance::Ignore));
-        assert!(matches!(staged.as_slice(), [StageOutcome::Inserted]));
+        assert!(matches!(
+            insert_outcomes.as_slice(),
+            [InsertOutcome::Inserted]
+        ));
     }
-    let (acceptance, staged) = harness.deliver_column(&late_child.column).await;
+    let (acceptance, insert_outcomes) = harness.deliver_column(&late_child.column).await;
     assert!(matches!(acceptance, MessageAcceptance::Ignore));
-    assert!(matches!(staged.as_slice(), [StageOutcome::Inserted]));
+    assert!(matches!(
+        insert_outcomes.as_slice(),
+        [InsertOutcome::Inserted]
+    ));
     assert!(
         harness
             .coordinator
@@ -625,21 +637,22 @@ async fn test_pending_parent_block_imports_after_parent_becomes_available() {
     }
 
     harness.assert_no_blocks_by_root_request();
-    let (acceptance, staged) = timeout(TEST_TIMEOUT, harness.deliver_column(&parent.column))
-        .await
-        .expect("parent DA completion deadlocked while children were queued");
+    let (acceptance, insert_outcomes) =
+        timeout(TEST_TIMEOUT, harness.deliver_column(&parent.column))
+            .await
+            .expect("parent DA completion deadlocked while children were queued");
     assert!(matches!(acceptance, MessageAcceptance::Accept));
-    assert!(staged.is_empty());
+    assert!(insert_outcomes.is_empty());
 
-    // This block was never staged: only its column arrived before the parent import. Its typed
-    // PendingAvailability outcome must still wake the existing quarantine.
-    let (acceptance, staged) = harness.deliver_block(&late_child.signed_block).await;
+    // This block was never pending: only its column arrived before the parent import. Its typed
+    // PendingAvailability outcome must still wake the existing pending column.
+    let (acceptance, insert_outcomes) = harness.deliver_block(&late_child.signed_block).await;
     assert!(matches!(acceptance, MessageAcceptance::Accept));
-    assert!(staged.is_empty());
+    assert!(insert_outcomes.is_empty());
 
     timeout(TEST_TIMEOUT, harness.resume_until_idle())
         .await
-        .expect("deferred import deadlocked, likely while holding the Store guard");
+        .expect("pending import deadlocked, likely while holding the Store guard");
 
     harness.assert_imported(parent_root).await;
     harness.assert_imported(child_root).await;
@@ -689,7 +702,7 @@ async fn test_pending_parent_block_imports_after_parent_becomes_available() {
                 .get(failed_child_root)
                 .expect("failed child lookup should succeed")
                 .is_none(),
-            "a staged child that fails full import must be dropped"
+            "a pending child that fails full import must be dropped"
         );
         assert!(
             store
@@ -698,17 +711,17 @@ async fn test_pending_parent_block_imports_after_parent_becomes_available() {
                 .get(ColumnIdentifier::new(failed_child_root, 0))
                 .expect("failed child column lookup should succeed")
                 .is_none(),
-            "a failed child's quarantined column must not enter served storage"
+            "a failed child's pending column must not enter served storage"
         );
     }
-    assert_eq!(harness.coordinator.staged_entry_count(), 0);
+    assert_eq!(harness.coordinator.pending_entry_count(), 0);
     assert_eq!(harness.coordinator.pending_action_count(), 0);
     harness.assert_no_blocks_by_root_request();
 }
 
 #[tokio::test]
 #[serial]
-async fn test_staged_child_is_dropped_if_finality_advances_past_it() {
+async fn test_pending_child_is_dropped_if_finality_advances_past_it() {
     let (mut harness, genesis_state, genesis_block) =
         GossipLookupHarness::new("pending_child_finality_advance").await;
     harness.wait_for_slot(2).await;
@@ -728,19 +741,25 @@ async fn test_staged_child_is_dropped_if_finality_advances_past_it() {
     let parent_root = parent.signed_block.message.tree_hash_root();
     let child_root = child.signed_block.message.tree_hash_root();
 
-    let (acceptance, staged) = harness.deliver_block(&parent.signed_block).await;
+    let (acceptance, insert_outcomes) = harness.deliver_block(&parent.signed_block).await;
     assert!(matches!(acceptance, MessageAcceptance::Accept));
-    assert!(staged.is_empty());
-    let (acceptance, staged) = harness.deliver_block(&child.signed_block).await;
+    assert!(insert_outcomes.is_empty());
+    let (acceptance, insert_outcomes) = harness.deliver_block(&child.signed_block).await;
     assert!(matches!(acceptance, MessageAcceptance::Ignore));
-    assert!(matches!(staged.as_slice(), [StageOutcome::Inserted]));
-    let (acceptance, staged) = harness.deliver_column(&child.column).await;
+    assert!(matches!(
+        insert_outcomes.as_slice(),
+        [InsertOutcome::Inserted]
+    ));
+    let (acceptance, insert_outcomes) = harness.deliver_column(&child.column).await;
     assert!(matches!(acceptance, MessageAcceptance::Ignore));
-    assert!(matches!(staged.as_slice(), [StageOutcome::Inserted]));
+    assert!(matches!(
+        insert_outcomes.as_slice(),
+        [InsertOutcome::Inserted]
+    ));
 
-    let (acceptance, staged) = harness.deliver_column(&parent.column).await;
+    let (acceptance, insert_outcomes) = harness.deliver_column(&parent.column).await;
     assert!(matches!(acceptance, MessageAcceptance::Accept));
-    assert!(staged.is_empty());
+    assert!(insert_outcomes.is_empty());
     harness.assert_imported(parent_root).await;
 
     {
@@ -764,7 +783,7 @@ async fn test_staged_child_is_dropped_if_finality_advances_past_it() {
     let action = harness
         .coordinator
         .next_action()
-        .expect("parent completion should queue the staged child");
+        .expect("parent completion should queue the pending child");
     let update = execute_coordinator_action(action, &harness.beacon_chain).await;
     apply_coordinator_update(&mut harness.coordinator, update);
 
@@ -773,7 +792,7 @@ async fn test_staged_child_is_dropped_if_finality_advances_past_it() {
         !harness
             .coordinator
             .contains_column(&ColumnIdentifier::new(child_root, 0)),
-        "finality rejection must drop the child's quarantined columns"
+        "finality rejection must drop the child's pending columns"
     );
     let store = harness.beacon_chain.store.lock().await;
     assert!(
@@ -783,7 +802,7 @@ async fn test_staged_child_is_dropped_if_finality_advances_past_it() {
             .get(child_root)
             .expect("child lookup should succeed")
             .is_none(),
-        "a child passed by finality while staged must not import"
+        "a child passed by finality while pending must not import"
     );
 }
 
@@ -866,7 +885,7 @@ async fn test_finality_advance_before_column_release_does_not_import_pending_chi
     let column_action = harness
         .coordinator
         .next_action()
-        .expect("pending child should queue its quarantined column");
+        .expect("pending child should queue its pending column");
     let column_update = execute_coordinator_action(column_action, &harness.beacon_chain).await;
     apply_coordinator_update(&mut harness.coordinator, column_update);
 

@@ -7,18 +7,18 @@ use alloy_primitives::B256;
 use ream_consensus_beacon::data_column_sidecar::ColumnIdentifier;
 use ream_consensus_misc::constants::beacon::SLOTS_PER_EPOCH;
 
-/// Staged entries contain untrusted data, so retained memory must stay bounded. One block-root
-/// entry is at most about 12.5 MiB (a ~10 MiB block plus 128 columns totalling ~2.5 MiB); 160
-/// entries therefore remain below 2 GiB. At 12-second slots the stuck timeout spans about 40
-/// honest child roots, so this leaves four times that working headroom.
-pub const DEFAULT_MAX_STAGED_ENTRIES: usize = 160;
-/// A lookup with no progress for 15 seconds per slot across an epoch is stuck. This 480-second
-/// bound matches Lighthouse and is far longer than normal data-availability completion.
+/// A pending entry contains untrusted data and is estimated at up to 12.5 MiB on the wire
+/// (~10 MiB block + ~2.5 MiB columns), so 160 entries target a 2 GiB retained-data bound.
+pub const DEFAULT_MAX_PENDING_ENTRIES: usize = 160;
+
+/// A lookup with no progress for 15 seconds per slot across an epoch can be considered stuck.
+/// If no progress is made within this 480-second bound, the lookup is dropped, matching
+/// Lighthouse.
 pub const DEFAULT_NO_PROGRESS_TIMEOUT: Duration = Duration::from_secs(15 * SLOTS_PER_EPOCH);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockLookupConfig {
-    pub max_staged_entries: usize,
+    pub max_pending_entries: usize,
     pub data_column_retention_epochs: u64,
     pub no_progress_timeout: Duration,
 }
@@ -26,7 +26,7 @@ pub struct BlockLookupConfig {
 impl BlockLookupConfig {
     pub fn for_data_column_retention(retention_epochs: u64) -> Self {
         Self {
-            max_staged_entries: DEFAULT_MAX_STAGED_ENTRIES,
+            max_pending_entries: DEFAULT_MAX_PENDING_ENTRIES,
             data_column_retention_epochs: retention_epochs,
             no_progress_timeout: DEFAULT_NO_PROGRESS_TIMEOUT,
         }
@@ -37,46 +37,46 @@ impl BlockLookupConfig {
 pub struct ActionId(u64);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct StagedBlockMeta {
+pub struct PendingBlockMeta {
     pub block_root: B256,
     pub parent_root: B256,
     pub slot: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct QuarantinedColumnMeta {
+pub struct PendingColumnMeta {
     pub identifier: ColumnIdentifier,
     pub slot: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum StageRejection {
-    StagingDisabled,
+pub enum InsertError {
+    Disabled,
     SlotOutsideRetention {
         slot: u64,
         current_slot: u64,
         retention_epochs: u64,
     },
-    StagingCapacityUnavailable,
+    CapacityUnavailable,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum StageOutcome {
+pub enum InsertOutcome {
     Inserted,
     Duplicate,
-    Rejected(StageRejection),
+    Rejected(InsertError),
 }
 
 #[derive(Debug)]
 pub enum CoordinatorAction<BlockPayload, ColumnPayload> {
     ImportBlock {
         action_id: ActionId,
-        meta: StagedBlockMeta,
+        meta: PendingBlockMeta,
         payload: BlockPayload,
     },
     ImportColumn {
         action_id: ActionId,
-        meta: QuarantinedColumnMeta,
+        meta: PendingColumnMeta,
         payload: ColumnPayload,
     },
 }
@@ -99,28 +99,28 @@ enum ActionState {
 }
 
 #[derive(Debug)]
-struct StagedBlock<BlockPayload> {
-    meta: StagedBlockMeta,
+struct PendingBlock<BlockPayload> {
+    meta: PendingBlockMeta,
     payload: Option<BlockPayload>,
     action_state: ActionState,
 }
 
 #[derive(Debug)]
-struct QuarantinedColumn<ColumnPayload> {
-    meta: QuarantinedColumnMeta,
+struct PendingColumn<ColumnPayload> {
+    meta: PendingColumnMeta,
     payload: Option<ColumnPayload>,
     action_state: ActionState,
 }
 
 #[derive(Debug)]
-struct StagedEntry<BlockPayload, ColumnPayload> {
+struct PendingBlockEntry<BlockPayload, ColumnPayload> {
     slot: u64,
     last_progress: Instant,
-    block: Option<StagedBlock<BlockPayload>>,
-    columns: Vec<QuarantinedColumn<ColumnPayload>>,
+    block: Option<PendingBlock<BlockPayload>>,
+    columns: Vec<PendingColumn<ColumnPayload>>,
 }
 
-impl<BlockPayload, ColumnPayload> StagedEntry<BlockPayload, ColumnPayload> {
+impl<BlockPayload, ColumnPayload> PendingBlockEntry<BlockPayload, ColumnPayload> {
     fn new(slot: u64) -> Self {
         Self {
             slot,
@@ -155,7 +155,7 @@ enum PendingAction {
 /// Validation, lookup, peer and retry policy deliberately live in the caller.
 pub struct BlockLookupCoordinator<BlockPayload, ColumnPayload> {
     config: BlockLookupConfig,
-    entries: HashMap<B256, StagedEntry<BlockPayload, ColumnPayload>>,
+    entries: HashMap<B256, PendingBlockEntry<BlockPayload, ColumnPayload>>,
     children_by_parent: HashMap<B256, VecDeque<B256>>,
     pending_actions: VecDeque<PendingAction>,
     next_action_id: u64,
@@ -173,21 +173,21 @@ impl<BlockPayload, ColumnPayload> BlockLookupCoordinator<BlockPayload, ColumnPay
     }
 
     /// Holds a validated block until its DA-pending parent is imported.
-    pub fn stage_block(
+    pub fn insert_pending_block(
         &mut self,
-        meta: StagedBlockMeta,
+        meta: PendingBlockMeta,
         payload: BlockPayload,
         current_slot: u64,
-    ) -> StageOutcome {
+    ) -> InsertOutcome {
         if self
             .entries
             .get(&meta.block_root)
             .is_some_and(|entry| entry.block.is_some())
         {
-            return StageOutcome::Duplicate;
+            return InsertOutcome::Duplicate;
         }
         if self.slot_is_outside_retention(meta.slot, current_slot) {
-            return StageOutcome::Rejected(StageRejection::SlotOutsideRetention {
+            return InsertOutcome::Rejected(InsertError::SlotOutsideRetention {
                 slot: meta.slot,
                 current_slot,
                 retention_epochs: self.config.data_column_retention_epochs,
@@ -196,10 +196,10 @@ impl<BlockPayload, ColumnPayload> BlockLookupCoordinator<BlockPayload, ColumnPay
 
         if !self.entries.contains_key(&meta.block_root) {
             if let Err(err) = self.ensure_capacity() {
-                return StageOutcome::Rejected(err);
+                return InsertOutcome::Rejected(err);
             }
             self.entries
-                .insert(meta.block_root, StagedEntry::new(meta.slot));
+                .insert(meta.block_root, PendingBlockEntry::new(meta.slot));
         }
         self.children_by_parent
             .entry(meta.parent_root)
@@ -208,23 +208,23 @@ impl<BlockPayload, ColumnPayload> BlockLookupCoordinator<BlockPayload, ColumnPay
         let entry = self
             .entries
             .get_mut(&meta.block_root)
-            .expect("staged entry must exist");
+            .expect("pending block entry must exist");
         entry.last_progress = Instant::now();
-        entry.block = Some(StagedBlock {
+        entry.block = Some(PendingBlock {
             meta,
             payload: Some(payload),
             action_state: ActionState::Waiting,
         });
-        StageOutcome::Inserted
+        InsertOutcome::Inserted
     }
 
     /// Holds a validated column until its own block enters the DA checker.
-    pub fn quarantine_column(
+    pub fn insert_pending_column(
         &mut self,
-        meta: QuarantinedColumnMeta,
+        meta: PendingColumnMeta,
         payload: ColumnPayload,
         current_slot: u64,
-    ) -> StageOutcome {
+    ) -> InsertOutcome {
         let block_root = meta.identifier.block_root;
         if self.entries.get(&block_root).is_some_and(|entry| {
             entry
@@ -232,10 +232,10 @@ impl<BlockPayload, ColumnPayload> BlockLookupCoordinator<BlockPayload, ColumnPay
                 .iter()
                 .any(|column| column.meta.identifier == meta.identifier)
         }) {
-            return StageOutcome::Duplicate;
+            return InsertOutcome::Duplicate;
         }
         if self.slot_is_outside_retention(meta.slot, current_slot) {
-            return StageOutcome::Rejected(StageRejection::SlotOutsideRetention {
+            return InsertOutcome::Rejected(InsertError::SlotOutsideRetention {
                 slot: meta.slot,
                 current_slot,
                 retention_epochs: self.config.data_column_retention_epochs,
@@ -243,24 +243,25 @@ impl<BlockPayload, ColumnPayload> BlockLookupCoordinator<BlockPayload, ColumnPay
         }
         if !self.entries.contains_key(&block_root) {
             if let Err(err) = self.ensure_capacity() {
-                return StageOutcome::Rejected(err);
+                return InsertOutcome::Rejected(err);
             }
-            self.entries.insert(block_root, StagedEntry::new(meta.slot));
+            self.entries
+                .insert(block_root, PendingBlockEntry::new(meta.slot));
         }
         let entry = self
             .entries
             .get_mut(&block_root)
-            .expect("staged entry must exist");
+            .expect("pending block entry must exist");
         entry.last_progress = Instant::now();
-        entry.columns.push(QuarantinedColumn {
+        entry.columns.push(PendingColumn {
             meta,
             payload: Some(payload),
             action_state: ActionState::Waiting,
         });
-        StageOutcome::Inserted
+        InsertOutcome::Inserted
     }
 
-    /// Queues only the immediate staged children of an imported parent.
+    /// Queues only the immediate pending children of an imported parent.
     pub fn parent_imported(&mut self, parent_root: B256) {
         self.remove_entry(parent_root);
         if let Some(children) = self.children_by_parent.remove(&parent_root) {
@@ -436,11 +437,11 @@ impl<BlockPayload, ColumnPayload> BlockLookupCoordinator<BlockPayload, ColumnPay
         removed
     }
 
-    pub fn staged_entry_count(&self) -> usize {
+    pub fn pending_entry_count(&self) -> usize {
         self.entries.len()
     }
 
-    pub fn staged_block_count(&self) -> usize {
+    pub fn pending_block_count(&self) -> usize {
         self.entries
             .values()
             .filter(|entry| entry.block.is_some())
@@ -507,11 +508,11 @@ impl<BlockPayload, ColumnPayload> BlockLookupCoordinator<BlockPayload, ColumnPay
         slot < cutoff_epoch.saturating_mul(SLOTS_PER_EPOCH)
     }
 
-    fn ensure_capacity(&mut self) -> Result<(), StageRejection> {
-        if self.config.max_staged_entries == 0 {
-            return Err(StageRejection::StagingDisabled);
+    fn ensure_capacity(&mut self) -> Result<(), InsertError> {
+        if self.config.max_pending_entries == 0 {
+            return Err(InsertError::Disabled);
         }
-        if self.entries.len() < self.config.max_staged_entries {
+        if self.entries.len() < self.config.max_pending_entries {
             return Ok(());
         }
 
@@ -521,7 +522,7 @@ impl<BlockPayload, ColumnPayload> BlockLookupCoordinator<BlockPayload, ColumnPay
             .filter(|(_, entry)| !entry.has_in_flight_action())
             .min_by_key(|(root, entry)| (entry.last_progress, **root))
             .map(|(root, _)| *root)
-            .ok_or(StageRejection::StagingCapacityUnavailable)?;
+            .ok_or(InsertError::CapacityUnavailable)?;
         self.remove_entry(evicted_root);
         Ok(())
     }
@@ -551,7 +552,7 @@ impl<BlockPayload, ColumnPayload> BlockLookupCoordinator<BlockPayload, ColumnPay
             .is_some_and(|column| column.action_state == ActionState::InFlight(action_id))
     }
 
-    fn remove_block_only(&mut self, block_root: B256) -> Option<StagedBlock<BlockPayload>> {
+    fn remove_block_only(&mut self, block_root: B256) -> Option<PendingBlock<BlockPayload>> {
         let block = self.entries.get_mut(&block_root)?.block.take()?;
         self.pending_actions.retain(
             |pending| !matches!(pending, PendingAction::ImportBlock(root) if *root == block_root),
@@ -565,7 +566,7 @@ impl<BlockPayload, ColumnPayload> BlockLookupCoordinator<BlockPayload, ColumnPay
         if self
             .entries
             .get(&block_root)
-            .is_some_and(StagedEntry::is_empty)
+            .is_some_and(PendingBlockEntry::is_empty)
         {
             self.entries.remove(&block_root);
         }
@@ -575,7 +576,7 @@ impl<BlockPayload, ColumnPayload> BlockLookupCoordinator<BlockPayload, ColumnPay
     fn remove_column_only(
         &mut self,
         identifier: ColumnIdentifier,
-    ) -> Option<QuarantinedColumn<ColumnPayload>> {
+    ) -> Option<PendingColumn<ColumnPayload>> {
         let entry = self.entries.get_mut(&identifier.block_root)?;
         let position = entry
             .columns
@@ -616,22 +617,22 @@ mod tests {
 
     fn config() -> BlockLookupConfig {
         BlockLookupConfig {
-            max_staged_entries: 32,
+            max_pending_entries: 32,
             data_column_retention_epochs: 2,
             no_progress_timeout: DEFAULT_NO_PROGRESS_TIMEOUT,
         }
     }
 
-    fn block_meta(root: u8, parent: u8, slot: u64) -> StagedBlockMeta {
-        StagedBlockMeta {
+    fn block_meta(root: u8, parent: u8, slot: u64) -> PendingBlockMeta {
+        PendingBlockMeta {
             block_root: B256::repeat_byte(root),
             parent_root: B256::repeat_byte(parent),
             slot,
         }
     }
 
-    fn column_meta(root: u8, index: u64, slot: u64) -> QuarantinedColumnMeta {
-        QuarantinedColumnMeta {
+    fn column_meta(root: u8, index: u64, slot: u64) -> PendingColumnMeta {
+        PendingColumnMeta {
             identifier: ColumnIdentifier::new(B256::repeat_byte(root), index),
             slot,
         }
@@ -640,15 +641,15 @@ mod tests {
     #[test]
     fn capacity_evicts_the_oldest_waiting_entry() {
         let mut config = config();
-        config.max_staged_entries = 1;
+        config.max_pending_entries = 1;
         let mut coordinator = BlockLookupCoordinator::<u8, u8>::new(config);
         assert_eq!(
-            coordinator.stage_block(block_meta(1, 9, 1), 1, 1),
-            StageOutcome::Inserted
+            coordinator.insert_pending_block(block_meta(1, 9, 1), 1, 1),
+            InsertOutcome::Inserted
         );
         assert_eq!(
-            coordinator.stage_block(block_meta(2, 9, 1), 2, 1),
-            StageOutcome::Inserted
+            coordinator.insert_pending_block(block_meta(2, 9, 1), 2, 1),
+            InsertOutcome::Inserted
         );
         assert!(!coordinator.contains_block(&B256::repeat_byte(1)));
         assert!(coordinator.contains_block(&B256::repeat_byte(2)));
@@ -657,16 +658,19 @@ mod tests {
     #[test]
     fn capacity_does_not_evict_an_in_flight_entry() {
         let mut config = config();
-        config.max_staged_entries = 1;
+        config.max_pending_entries = 1;
         let mut coordinator = BlockLookupCoordinator::<u8, u8>::new(config);
         let first = block_meta(1, 9, 1);
-        assert_eq!(coordinator.stage_block(first, 1, 1), StageOutcome::Inserted);
+        assert_eq!(
+            coordinator.insert_pending_block(first, 1, 1),
+            InsertOutcome::Inserted
+        );
         coordinator.parent_imported(first.parent_root);
         let _action = coordinator.next_action().expect("child should dispatch");
 
         assert_eq!(
-            coordinator.stage_block(block_meta(2, 9, 1), 2, 1),
-            StageOutcome::Rejected(StageRejection::StagingCapacityUnavailable)
+            coordinator.insert_pending_block(block_meta(2, 9, 1), 2, 1),
+            InsertOutcome::Rejected(InsertError::CapacityUnavailable)
         );
         assert!(coordinator.contains_block(&first.block_root));
     }
@@ -674,16 +678,19 @@ mod tests {
     #[test]
     fn evicting_an_entry_removes_its_queued_actions() {
         let mut config = config();
-        config.max_staged_entries = 1;
+        config.max_pending_entries = 1;
         let mut coordinator = BlockLookupCoordinator::<u8, u8>::new(config);
         let first = block_meta(1, 9, 1);
-        assert_eq!(coordinator.stage_block(first, 1, 1), StageOutcome::Inserted);
+        assert_eq!(
+            coordinator.insert_pending_block(first, 1, 1),
+            InsertOutcome::Inserted
+        );
         coordinator.parent_imported(first.parent_root);
         assert_eq!(coordinator.pending_action_count(), 1);
 
         assert_eq!(
-            coordinator.stage_block(block_meta(2, 10, 1), 2, 1),
-            StageOutcome::Inserted
+            coordinator.insert_pending_block(block_meta(2, 10, 1), 2, 1),
+            InsertOutcome::Inserted
         );
         assert_eq!(coordinator.pending_action_count(), 0);
     }
@@ -692,8 +699,8 @@ mod tests {
     fn slots_older_than_da_retention_are_rejected() {
         let mut coordinator = BlockLookupCoordinator::<u8, u8>::new(config());
         assert_eq!(
-            coordinator.stage_block(block_meta(1, 9, 31), 1, 3 * SLOTS_PER_EPOCH),
-            StageOutcome::Rejected(StageRejection::SlotOutsideRetention {
+            coordinator.insert_pending_block(block_meta(1, 9, 31), 1, 3 * SLOTS_PER_EPOCH),
+            InsertOutcome::Rejected(InsertError::SlotOutsideRetention {
                 slot: 31,
                 current_slot: 3 * SLOTS_PER_EPOCH,
                 retention_epochs: 2,
@@ -704,24 +711,27 @@ mod tests {
     #[test]
     fn block_and_columns_share_one_capacity_entry() {
         let mut config = config();
-        config.max_staged_entries = 1;
+        config.max_pending_entries = 1;
         let mut coordinator = BlockLookupCoordinator::<u8, u8>::new(config);
         assert_eq!(
-            coordinator.stage_block(block_meta(1, 9, 1), 1, 1),
-            StageOutcome::Inserted
+            coordinator.insert_pending_block(block_meta(1, 9, 1), 1, 1),
+            InsertOutcome::Inserted
         );
         assert_eq!(
-            coordinator.quarantine_column(column_meta(1, 0, 1), 2, 1),
-            StageOutcome::Inserted
+            coordinator.insert_pending_column(column_meta(1, 0, 1), 2, 1),
+            InsertOutcome::Inserted
         );
-        assert_eq!(coordinator.staged_entry_count(), 1);
+        assert_eq!(coordinator.pending_entry_count(), 1);
     }
 
     #[test]
     fn dispatched_action_keeps_an_in_flight_marker() {
         let mut coordinator = BlockLookupCoordinator::<u8, u8>::new(config());
         let meta = block_meta(1, 9, 1);
-        assert_eq!(coordinator.stage_block(meta, 7, 1), StageOutcome::Inserted);
+        assert_eq!(
+            coordinator.insert_pending_block(meta, 7, 1),
+            InsertOutcome::Inserted
+        );
         coordinator.parent_imported(meta.parent_root);
 
         assert!(matches!(
@@ -730,7 +740,10 @@ mod tests {
         ));
         assert!(coordinator.contains_block(&meta.block_root));
         assert_eq!(coordinator.in_flight_action_count(), 1);
-        assert_eq!(coordinator.stage_block(meta, 8, 1), StageOutcome::Duplicate);
+        assert_eq!(
+            coordinator.insert_pending_block(meta, 8, 1),
+            InsertOutcome::Duplicate
+        );
         assert!(coordinator.next_action().is_none());
     }
 
@@ -738,7 +751,10 @@ mod tests {
     fn in_flight_entry_is_not_pruned() {
         let mut coordinator = BlockLookupCoordinator::<u8, u8>::new(config());
         let meta = block_meta(1, 9, 1);
-        assert_eq!(coordinator.stage_block(meta, 1, 1), StageOutcome::Inserted);
+        assert_eq!(
+            coordinator.insert_pending_block(meta, 1, 1),
+            InsertOutcome::Inserted
+        );
         coordinator.parent_imported(meta.parent_root);
         let _action = coordinator.next_action().expect("child should dispatch");
 
@@ -751,8 +767,8 @@ mod tests {
         let mut coordinator = BlockLookupCoordinator::<u8, u8>::new(config());
         let meta = column_meta(1, 0, 1);
         assert_eq!(
-            coordinator.quarantine_column(meta, 4, 1),
-            StageOutcome::Inserted
+            coordinator.insert_pending_column(meta, 4, 1),
+            InsertOutcome::Inserted
         );
         assert!(coordinator.next_action().is_none());
 
@@ -768,10 +784,13 @@ mod tests {
         let mut pending = BlockLookupCoordinator::<u8, u8>::new(config());
         let block = block_meta(1, 9, 1);
         let column = column_meta(1, 0, 1);
-        assert_eq!(pending.stage_block(block, 1, 1), StageOutcome::Inserted);
         assert_eq!(
-            pending.quarantine_column(column, 2, 1),
-            StageOutcome::Inserted
+            pending.insert_pending_block(block, 1, 1),
+            InsertOutcome::Inserted
+        );
+        assert_eq!(
+            pending.insert_pending_column(column, 2, 1),
+            InsertOutcome::Inserted
         );
         pending.parent_imported(block.parent_root);
         let action_id = pending
@@ -787,10 +806,13 @@ mod tests {
         let mut imported = BlockLookupCoordinator::<u8, u8>::new(config());
         let block = block_meta(2, 9, 1);
         let column = column_meta(2, 0, 1);
-        assert_eq!(imported.stage_block(block, 1, 1), StageOutcome::Inserted);
         assert_eq!(
-            imported.quarantine_column(column, 2, 1),
-            StageOutcome::Inserted
+            imported.insert_pending_block(block, 1, 1),
+            InsertOutcome::Inserted
+        );
+        assert_eq!(
+            imported.insert_pending_column(column, 2, 1),
+            InsertOutcome::Inserted
         );
         imported.parent_imported(block.parent_root);
         let action_id = imported
@@ -807,17 +829,17 @@ mod tests {
         let failed = block_meta(1, 9, 1);
         let sibling = block_meta(2, 9, 1);
         assert_eq!(
-            coordinator.stage_block(failed, 1, 1),
-            StageOutcome::Inserted
+            coordinator.insert_pending_block(failed, 1, 1),
+            InsertOutcome::Inserted
         );
         assert_eq!(
-            coordinator.stage_block(sibling, 2, 1),
-            StageOutcome::Inserted
+            coordinator.insert_pending_block(sibling, 2, 1),
+            InsertOutcome::Inserted
         );
         let column = column_meta(1, 0, 1);
         assert_eq!(
-            coordinator.quarantine_column(column, 3, 1),
-            StageOutcome::Inserted
+            coordinator.insert_pending_column(column, 3, 1),
+            InsertOutcome::Inserted
         );
 
         coordinator.parent_imported(failed.parent_root);
@@ -839,7 +861,10 @@ mod tests {
     fn stale_worker_result_cannot_remove_a_replacement_entry() {
         let mut coordinator = BlockLookupCoordinator::<u8, u8>::new(config());
         let meta = block_meta(1, 9, 1);
-        assert_eq!(coordinator.stage_block(meta, 1, 1), StageOutcome::Inserted);
+        assert_eq!(
+            coordinator.insert_pending_block(meta, 1, 1),
+            InsertOutcome::Inserted
+        );
         coordinator.parent_imported(meta.parent_root);
         let stale_id = coordinator
             .next_action()
@@ -847,7 +872,10 @@ mod tests {
             .action_id();
 
         coordinator.parent_imported(meta.block_root);
-        assert_eq!(coordinator.stage_block(meta, 2, 1), StageOutcome::Inserted);
+        assert_eq!(
+            coordinator.insert_pending_block(meta, 2, 1),
+            InsertOutcome::Inserted
+        );
         coordinator.block_failed(stale_id, meta.block_root);
         assert!(coordinator.contains_block(&meta.block_root));
     }
@@ -856,16 +884,16 @@ mod tests {
     fn finalized_entries_are_pruned() {
         let mut coordinator = BlockLookupCoordinator::<u8, u8>::new(config());
         assert_eq!(
-            coordinator.stage_block(block_meta(1, 9, 1), 1, 1),
-            StageOutcome::Inserted
+            coordinator.insert_pending_block(block_meta(1, 9, 1), 1, 1),
+            InsertOutcome::Inserted
         );
         assert_eq!(
-            coordinator.quarantine_column(column_meta(2, 0, 4), 2, 4),
-            StageOutcome::Inserted
+            coordinator.insert_pending_column(column_meta(2, 0, 4), 2, 4),
+            InsertOutcome::Inserted
         );
 
         assert_eq!(coordinator.prune(4, 1), 1);
-        assert_eq!(coordinator.staged_entry_count(), 1);
+        assert_eq!(coordinator.pending_entry_count(), 1);
     }
 
     #[test]
@@ -874,8 +902,8 @@ mod tests {
         config.no_progress_timeout = Duration::ZERO;
         let mut coordinator = BlockLookupCoordinator::<u8, u8>::new(config);
         assert_eq!(
-            coordinator.stage_block(block_meta(1, 9, 1), 1, 1),
-            StageOutcome::Inserted
+            coordinator.insert_pending_block(block_meta(1, 9, 1), 1, 1),
+            InsertOutcome::Inserted
         );
 
         assert_eq!(coordinator.prune(1, 0), 1);

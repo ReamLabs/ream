@@ -33,7 +33,7 @@ use tracing::{error, info, trace, warn};
 use tree_hash::TreeHash;
 
 use crate::{
-    block_lookup::{DeferredGossipItem, import_validated_data_column},
+    block_lookup::{PendingGossipItem, import_validated_data_column},
     gossipsub::validate::{
         aggregate_and_proof::validate_aggregate_and_proof,
         attester_slashing::validate_attester_slashing,
@@ -193,7 +193,7 @@ fn dependency_message_acceptance(
         DependencyValidationResult::Accept => MessageAcceptance::Accept,
         DependencyValidationResult::Reject(_) => MessageAcceptance::Reject,
         DependencyValidationResult::Ignore(_)
-        | DependencyValidationResult::ParentUnavailable { .. } => MessageAcceptance::Ignore,
+        | DependencyValidationResult::ParentPendingAvailability { .. } => MessageAcceptance::Ignore,
     }
 }
 
@@ -203,7 +203,7 @@ pub async fn handle_gossipsub_message(
     beacon_chain: &BeaconChain,
     cached_db: &BeaconCacheDB,
     p2p_sender: &P2PSender,
-    deferred_item: &mut Option<DeferredGossipItem>,
+    pending_item: &mut Option<PendingGossipItem>,
 ) -> MessageAcceptance {
     match GossipsubMessage::decode(&message.topic, &message.data) {
         Ok(gossip_message) => match gossip_message {
@@ -258,11 +258,11 @@ pub async fn handle_gossipsub_message(
                     DependencyValidationResult::Reject(reason) => {
                         warn!("Rejecting gossipsub beacon block: {reason}");
                     }
-                    DependencyValidationResult::ParentUnavailable {
+                    DependencyValidationResult::ParentPendingAvailability {
                         parent_root: _,
                         validated,
                     } => {
-                        *deferred_item = Some(DeferredGossipItem::Block { block: validated });
+                        *pending_item = Some(PendingGossipItem::Block { block: validated });
                     }
                 }
                 acceptance
@@ -616,11 +616,11 @@ pub async fn handle_gossipsub_message(
                     DependencyValidationResult::Ignore(reason) => {
                         info!("Data column sidecar ignored: {reason}");
                     }
-                    DependencyValidationResult::ParentUnavailable {
+                    DependencyValidationResult::ParentPendingAvailability {
                         parent_root: _,
                         validated,
                     } => {
-                        *deferred_item = Some(DeferredGossipItem::Column { column: validated });
+                        *pending_item = Some(PendingGossipItem::Column { column: validated });
                     }
                 }
                 acceptance
@@ -805,13 +805,13 @@ mod tests {
             sequence_number: None,
             topic,
         };
-        let mut deferred_item = None;
+        let mut pending_item = None;
         let acceptance = handle_gossipsub_message(
             message,
             &beacon_chain,
             &cached_db,
             &p2p_sender,
-            &mut deferred_item,
+            &mut pending_item,
         )
         .await;
 

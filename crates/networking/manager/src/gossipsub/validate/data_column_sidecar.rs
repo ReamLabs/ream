@@ -230,7 +230,7 @@ pub async fn validate_data_column_sidecar_full(
     seen.put(tuple, ());
 
     if pending_availability {
-        Ok(ValidationResult::ParentUnavailable {
+        Ok(ValidationResult::ParentPendingAvailability {
             parent_root: header.parent_root,
             validated: ValidatedColumn::new(data_column_sidecar.clone()),
         })
