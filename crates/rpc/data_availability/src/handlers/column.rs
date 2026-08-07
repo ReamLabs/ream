@@ -2,41 +2,37 @@ use std::sync::Arc;
 
 use actix_web::{
     HttpResponse, Responder, get,
+    http::header::ContentType,
     web::{Data, Path},
 };
-use alloy_primitives::B256;
 use ream_api_types_common::{error::ApiError, id::ID};
-use ream_data_availability::{column::VerifiedColumn, id::ColumnId, store::ColumnReadStore};
-use serde::Serialize;
+use ream_data_availability::{id::ColumnId, store::ColumnReadStore};
+use ssz::Encode;
+use ssz_types::VariableList;
 
-use crate::handlers::block_root_from_id;
+use crate::handlers::{
+    block_root_from_id,
+    ingest::{WireBlockBatch, WireIndexedPayload},
+};
 
-/// JSON view of a stored column; the payload travels as a `0x`-hex string.
+/// Wrap a stored payload as a batch entry.
 ///
-/// TODO: hex-JSON is the dev/debug interface, not the final wire format — the
-/// local beacon wants the bytes verbatim.
-#[derive(Serialize)]
-pub struct ColumnResponse {
-    block_root: B256,
-    index: u64,
-    slot: u64,
-    payload: String,
+/// The bound can only be exceeded by a payload that never passed ingest, so a
+/// failure here means the store handed back something impossible.
+fn wire_entry(index: u64, payload: &[u8]) -> Result<WireIndexedPayload, ApiError> {
+    Ok(WireIndexedPayload {
+        index,
+        payload: VariableList::new(payload.to_vec()).map_err(|err| {
+            ApiError::InternalError(format!(
+                "stored column {index} exceeds the payload bound: {err:?}"
+            ))
+        })?,
+    })
 }
 
-impl From<VerifiedColumn> for ColumnResponse {
-    fn from(column: VerifiedColumn) -> Self {
-        let id = column.id();
-        Self {
-            block_root: id.block_root(),
-            index: id.index(),
-            slot: column.context().slot,
-            payload: alloy_primitives::hex::encode_prefixed(column.payload()),
-        }
-    }
-}
-
-/// `GET /data/v0/columns/{block_root}/{index}` — serve a single stored column;
-/// 400 for an out-of-range index, 404 when not held.
+/// `GET /data/v0/columns/{block_root}/{index}` — serve a single stored column.
+/// 400 for an out-of-range index,
+/// 404 when not held.
 #[get("/columns/{block_root}/{index}")]
 pub async fn get_column(
     store: Data<Arc<dyn ColumnReadStore>>,
@@ -52,11 +48,14 @@ pub async fn get_column(
         .map_err(|err| ApiError::InternalError(format!("column lookup failed: {err}")))?
         .ok_or_else(|| ApiError::NotFound(format!("column {index} for {block_root:?} not held")))?;
 
-    Ok(HttpResponse::Ok().json(ColumnResponse::from(column)))
+    Ok(HttpResponse::Ok()
+        .content_type(ContentType::octet_stream())
+        .body(column.payload().to_vec()))
 }
 
 /// `GET /data/v0/columns/{block_root}` — serve every column this node holds for
-/// a block; an unknown block yields an empty array, not a 404.
+/// a block.
+/// An unknown block yields an empty list, not a 404.
 #[get("/columns/{block_root}")]
 pub async fn get_columns(
     store: Data<Arc<dyn ColumnReadStore>>,
@@ -76,9 +75,17 @@ pub async fn get_columns(
             .get(&id)
             .map_err(|err| ApiError::InternalError(format!("column lookup failed: {err}")))?
         {
-            columns.push(ColumnResponse::from(column));
+            columns.push(wire_entry(index, column.payload())?);
         }
     }
 
-    Ok(HttpResponse::Ok().json(columns))
+    // The list bound mirrors `NUMBER_OF_COLUMNS`, which also bounds the held
+    // indices, so this only fails on a store that broke its own invariant.
+    let batch: WireBlockBatch = VariableList::new(columns).map_err(|err| {
+        ApiError::InternalError(format!("held columns exceed the batch bound: {err:?}"))
+    })?;
+
+    Ok(HttpResponse::Ok()
+        .content_type(ContentType::octet_stream())
+        .body(batch.as_ssz_bytes()))
 }

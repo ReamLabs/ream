@@ -9,7 +9,14 @@ use std::{
     },
 };
 
-use actix_web::{App, http::StatusCode, test, web::Data};
+use actix_web::{
+    App,
+    body::MessageBody,
+    dev::ServiceResponse,
+    http::{StatusCode, header},
+    test,
+    web::Data,
+};
 use alloy_primitives::B256;
 use ream_data_availability::{
     column::{ColumnContext, VerifiedColumn},
@@ -21,7 +28,7 @@ use ream_data_availability_node::{
     store::FileColumnStore,
 };
 use serde_json::{Value, json};
-use ssz::Encode;
+use ssz::{Decode, Encode};
 use ssz_types::VariableList;
 
 use crate::{
@@ -40,7 +47,7 @@ impl TempStore {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
         let root = std::env::temp_dir().join(format!(
-            "ream-rpc-data-availabilityta-test-{}-{n}",
+            "ream-rpc-data-availabilityta-availabilityta-test-{}-{n}",
             std::process::id()
         ));
         let inner = Arc::new(FileColumnStore::new(root.clone()).expect("open store"));
@@ -372,6 +379,16 @@ async fn availability_rejects_non_root_id() {
 // /columns/{block_root}[/{index}]
 // ---------------------------------------------------------------------------
 
+/// Assert a response carries the SSZ/raw-bytes content type.
+fn assert_octet_stream(resp: &ServiceResponse<impl MessageBody>) {
+    assert_eq!(
+        resp.headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok()),
+        Some("application/octet-stream"),
+    );
+}
+
 #[actix_web::test]
 async fn get_column_returns_stored_payload() {
     let store = TempStore::new();
@@ -390,11 +407,11 @@ async fn get_column_returns_stored_payload() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::OK);
+    assert_octet_stream(&resp);
 
-    let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["index"].as_u64(), Some(5));
-    assert_eq!(body["slot"].as_u64(), Some(77));
-    assert_eq!(body["payload"].as_str(), Some("0xdeadbeef"));
+    // The payload comes back verbatim: no SSZ wrapper, no hex, no metadata.
+    let body = test::read_body(resp).await;
+    assert_eq!(body.as_ref(), &[0xde, 0xad, 0xbe, 0xef]);
 }
 
 #[actix_web::test]
@@ -440,8 +457,9 @@ async fn get_column_out_of_range_index_is_400() {
 async fn get_columns_returns_every_held_column() {
     let store = TempStore::new();
     let root = B256::repeat_byte(4);
-    for index in [0u64, 1, 2] {
-        store.put(root, index, 30, b"x");
+    let payloads = [(0u64, &[0xaa][..]), (1, &[0xbb, 0xbb]), (2, &[0xcc])];
+    for (index, payload) in payloads {
+        store.put(root, index, 30, payload);
     }
 
     let app = test::init_service(
@@ -456,16 +474,41 @@ async fn get_columns_returns_every_held_column() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::OK);
+    assert_octet_stream(&resp);
 
-    let body: Value = test::read_body_json(resp).await;
-    let columns = body.as_array().expect("an array of columns");
-    assert_eq!(columns.len(), 3);
-    let mut indices: Vec<u64> = columns
-        .iter()
-        .map(|c| c["index"].as_u64().expect("index"))
-        .collect();
-    indices.sort_unstable();
-    assert_eq!(indices, vec![0, 1, 2]);
+    // The body is the same batch shape the ingest endpoint accepts, in
+    // ascending column-index order.
+    let body = test::read_body(resp).await;
+    let batch = WireBlockBatch::from_ssz_bytes(&body).expect("a decodable batch");
+    assert_eq!(batch.len(), 3);
+    for (entry, (expected_index, expected_payload)) in batch.iter().zip(&payloads) {
+        assert_eq!(entry.index, *expected_index);
+        assert_eq!(entry.payload.as_ref(), *expected_payload);
+    }
+}
+
+#[actix_web::test]
+async fn get_columns_unknown_block_is_an_empty_batch() {
+    let store = TempStore::new();
+    let app = test::init_service(
+        App::new()
+            .app_data(Data::new(store.read_handle()))
+            .configure(register_routers),
+    )
+    .await;
+
+    // An unknown block is "nothing held", not an error.
+    let unknown = B256::repeat_byte(9);
+    let req = test::TestRequest::get()
+        .uri(&format!("/data/v0/columns/0x{unknown:x}"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_octet_stream(&resp);
+
+    let body = test::read_body(resp).await;
+    let batch = WireBlockBatch::from_ssz_bytes(&body).expect("a decodable batch");
+    assert!(batch.is_empty());
 }
 
 // ---------------------------------------------------------------------------
