@@ -97,10 +97,12 @@ impl Store {
     }
 
     pub fn get_slots_since_genesis(&self) -> anyhow::Result<u64> {
-        Ok(
-            (self.db.time_provider().get()? - self.db.genesis_time_provider().get()?)
-                / beacon_network_spec().seconds_per_slot(),
-        )
+        Ok(self
+            .db
+            .time_provider()
+            .get()?
+            .saturating_sub(self.db.genesis_time_provider().get()?)
+            / beacon_network_spec().seconds_per_slot())
     }
 
     pub fn get_ancestor(&self, root: B256, slot: u64) -> anyhow::Result<B256> {

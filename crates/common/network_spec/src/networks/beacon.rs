@@ -269,10 +269,13 @@ impl BeaconNetworkSpec {
     /// if n_days_ago is larger then the current slot, it returns 0.
     pub fn slot_n_days_ago(&self, n_days_ago: u64) -> u64 {
         let genesis_instant = UNIX_EPOCH + Duration::from_secs(self.min_genesis_time);
-        let elapsed = SystemTime::now()
+        // A node started before genesis — routine on a devnet with a genesis delay — is at
+        // slot 0, not a crash. `current_epoch` funnels through here, so panicking would take
+        // down gossip topic construction and message validation, not just this call.
+        let current_slot = SystemTime::now()
             .duration_since(genesis_instant)
-            .expect("System Time is before the genesis time");
-        let current_slot = elapsed.as_millis() as u64 / self.slot_duration_ms;
+            .map(|elapsed| elapsed.as_millis() as u64 / self.slot_duration_ms)
+            .unwrap_or(0);
         current_slot.saturating_sub(n_days_ago * 24 * 60 * 60 * 1000 / self.slot_duration_ms)
     }
 

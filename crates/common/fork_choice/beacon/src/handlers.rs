@@ -216,8 +216,16 @@ pub fn on_attester_slashing(
 pub fn on_tick(store: &mut Store, time: u64) -> anyhow::Result<()> {
     // If the ``store.time`` falls behind, while loop catches up slot by slot
     // to ensure that every previous slot is processed with ``on_tick_per_slot``
-    let tick_slot =
-        (time - store.db.genesis_time_provider().get()?) / beacon_network_spec().seconds_per_slot();
+    // A node started ahead of genesis ticks with a `time` below it. Subtracting would wrap,
+    // making `tick_slot` ~u64::MAX and turning the catch-up below into a loop that never
+    // ends, hanging whichever task called us. There is no slot to advance to yet either, and
+    // storing the pre-genesis `time` would walk the store's slot backwards, so do nothing.
+    let genesis_time = store.db.genesis_time_provider().get()?;
+    if time < genesis_time {
+        return Ok(());
+    }
+
+    let tick_slot = (time - genesis_time) / beacon_network_spec().seconds_per_slot();
     while store.get_current_slot()? < tick_slot {
         let previous_time = store.db.genesis_time_provider().get()?
             + (store.get_current_slot()? + 1) * beacon_network_spec().seconds_per_slot();
