@@ -318,6 +318,24 @@ impl NetworkManagerService {
                         error!("Failed to process gossipsub tick: {err}");
                     }
 
+                    // Started ahead of genesis: p2p, discovery and the HTTP API all stay up so
+                    // the gossip mesh is formed by slot 0. `on_tick` is a no-op until then, but
+                    // announce the wait so a node that looks idle is visibly just early.
+                    // Everything below still runs: skipping it would freeze the store's slot
+                    // clock and make blocks arriving right after genesis look future-dated.
+                    if let Ok(genesis_time) = {
+                        let store = beacon_chain.store.lock().await;
+                        store.db.genesis_time_provider().get()
+                    } && time < genesis_time
+                    {
+                        let remaining = genesis_time - time;
+                        warn!(
+                            "Waiting for genesis in {:02}:{:02}",
+                            remaining / 60,
+                            remaining % 60,
+                        );
+                    }
+
                     let slots = {
                         let store = beacon_chain.store.lock().await;
                         (
