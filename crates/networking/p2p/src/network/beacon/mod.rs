@@ -31,7 +31,7 @@ use libp2p_identity::{Keypair, PublicKey, secp256k1};
 use network_state::NetworkState;
 use parking_lot::{Mutex, RwLock};
 use peer::CachedPeer;
-use ream_consensus_misc::constants::beacon::genesis_validators_root;
+use ream_consensus_misc::constants::beacon::{NUM_CUSTODY_GROUPS, genesis_validators_root};
 use ream_discv5::discovery::{Discovery, DiscoveryOutEvent, QueryType};
 use ream_executor::ReamExecutor;
 use ream_network_spec::networks::beacon_network_spec;
@@ -208,12 +208,19 @@ impl Network {
         let network_state = Arc::new(NetworkState {
             local_enr: RwLock::new(local_enr),
             peer_table: RwLock::new(HashMap::new()),
-            meta_data: RwLock::new(
-                read_meta_data_from_disk(config.data_dir.clone()).unwrap_or_else(|err| {
-                    error!("Failed to read meta data from disk: {err:?}");
-                    GetMetaDataV3::default()
-                }),
-            ),
+            meta_data: RwLock::new({
+                let mut meta_data = read_meta_data_from_disk(config.data_dir.clone())
+                    .unwrap_or_else(|err| {
+                        error!("Failed to read meta data from disk: {err:?}");
+                        GetMetaDataV3::default()
+                    });
+                // We custody every group (see `DataAvailabilityChecker::supernode`) and
+                // subscribe to all data column subnets. Peers reject a custody group count
+                // below `CUSTODY_REQUIREMENT` outright, so a stale or defaulted zero here
+                // gets us banned rather than merely under-served.
+                meta_data.custody_group_count = NUM_CUSTODY_GROUPS;
+                meta_data
+            }),
             status: RwLock::new(status),
             data_dir: config.data_dir.clone(),
         });
@@ -946,7 +953,7 @@ mod tests {
                 disable_discovery,
                 attestation_subnets: AttestationSubnets::new(),
                 sync_committee_subnets: SyncCommitteeSubnets::new(),
-                custody_group_count: CustodyGroupCount::default(),
+                custody_group_count: CustodyGroupCount(NUM_CUSTODY_GROUPS),
             },
             gossipsub_config: GossipsubConfig {
                 topics,
