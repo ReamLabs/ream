@@ -62,6 +62,13 @@ RUN cp /app/target/$BUILD_PROFILE/ream /app/ream
 FROM ubuntu AS runtime
 WORKDIR /app
 
+# The base image ships no trust store, and reqwest panics while *building* a client
+# when no system roots load, so the node dies on startup before it ever reaches the
+# network. Keep this even for plain-HTTP deployments such as a local devnet.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy ream over from the build stage
 COPY --from=builder /app/ream /usr/local/bin
 
