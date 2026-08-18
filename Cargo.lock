@@ -7440,6 +7440,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "ssz_types",
+ "thiserror 2.0.19",
  "tokio",
  "tracing",
  "tree_hash",

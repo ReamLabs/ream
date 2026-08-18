@@ -362,7 +362,7 @@ fn sign_block(
         &[],
         &[(proposal_signature.public_key, proposal_signature.signature)],
         &block_root_bytes,
-        slot as u32,
+        proposal_signature.epoch,
     )
     .map_err(|err| anyhow!("Failed to build proposer single-message aggregate proof: {err}"))?;
     components.push(proposer_type_1);

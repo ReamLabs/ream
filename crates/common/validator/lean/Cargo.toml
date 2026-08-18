@@ -40,6 +40,7 @@ ssz_types.workspace = true
 tokio.workspace = true
 tracing = { workspace = true, features = ["log"] }
 tree_hash.workspace = true
+thiserror.workspace = true
 
 # ream dependencies
 ream-chain-lean.workspace = true
