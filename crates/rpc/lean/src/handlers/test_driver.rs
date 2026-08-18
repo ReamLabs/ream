@@ -33,6 +33,7 @@ use ream_storage::{
     dir::setup_data_dir,
     tables::{field::REDBField, table::REDBTable},
 };
+use ream_validator_lean::signer::{ProposalSigner, ProposalSignerError};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "devnet5")]
 use ssz_types::typenum::U524288;
@@ -141,6 +142,37 @@ pub struct VerifySignaturesRunResponse {
     error: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SignProposalRequest {
+    request_id: String,
+    validator_index: u64,
+    slot: u64,
+    block_root: B256,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SignProposalStatus {
+    Signed,
+    Refused,
+    Error,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SignProposalResponse {
+    request_id: String,
+    status: SignProposalStatus,
+    validator_index: u64,
+    slot: u64,
+    block_root: B256,
+    proposal_public_key: Option<PublicKey>,
+    signature: Option<String>,
+    error_code: Option<String>,
+    error_message: Option<String>,
+}
+
 pub fn test_driver_enabled() -> bool {
     env::var(TEST_DRIVER_ENV)
         .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
@@ -188,6 +220,40 @@ impl VerifySignaturesRunResponse {
         Self {
             succeeded: false,
             error: Some(err.to_string()),
+        }
+    }
+}
+
+impl SignProposalResponse {
+    fn signed(request: SignProposalRequest, public_key: PublicKey, signature: Signature) -> Self {
+        Self {
+            request_id: request.request_id,
+            status: SignProposalStatus::Signed,
+            validator_index: request.validator_index,
+            slot: request.slot,
+            block_root: request.block_root,
+            proposal_public_key: Some(public_key),
+            signature: Some(format!("0x{}", hex::encode(signature.inner))),
+            error_code: None,
+            error_message: None,
+        }
+    }
+
+    fn rejected(request: SignProposalRequest, error: ProposalSignerError) -> Self {
+        let status = match &error {
+            ProposalSignerError::SigningFailed { .. } => SignProposalStatus::Error,
+            _ => SignProposalStatus::Refused,
+        };
+        Self {
+            request_id: request.request_id,
+            status,
+            validator_index: request.validator_index,
+            slot: request.slot,
+            block_root: request.block_root,
+            proposal_public_key: None,
+            signature: None,
+            error_code: Some(error.code().to_owned()),
+            error_message: Some(error.to_string()),
         }
     }
 }
@@ -652,5 +718,136 @@ pub async fn run_verify_signatures(
     match result {
         Ok(()) => Ok(HttpResponse::Ok().json(VerifySignaturesRunResponse::success())),
         Err(err) => Ok(HttpResponse::Ok().json(VerifySignaturesRunResponse::error(err))),
+    }
+}
+
+#[post("/test_driver/signer/sign_proposal")]
+pub async fn sign_proposal(
+    request: Json<SignProposalRequest>,
+    proposal_signer: Data<ProposalSigner>,
+) -> impl Responder {
+    let request = request.into_inner();
+    let response = match proposal_signer.sign_proposal(
+        request.validator_index,
+        request.slot,
+        &request.block_root,
+    ) {
+        Ok(signed) => SignProposalResponse::signed(request, signed.public_key, signed.signature),
+        Err(error) => SignProposalResponse::rejected(request, error),
+    };
+
+    HttpResponse::Ok().json(response)
+}
+
+#[cfg(test)]
+mod signer_endpoint_tests {
+    use std::sync::Arc;
+
+    use actix_web::{App, http::StatusCode, test, web::Data};
+    use alloy_primitives::{B256, hex};
+    use ream_keystore::lean_keystore::ValidatorKeystore;
+    use ream_post_quantum_crypto::leansig::{private_key::PrivateKey, signature::Signature};
+
+    use super::{
+        ProposalSigner, SignProposalRequest, SignProposalResponse, SignProposalStatus,
+        sign_proposal,
+    };
+    use crate::routes::register_routers;
+
+    fn test_signer() -> (
+        ProposalSigner,
+        ream_post_quantum_crypto::leansig::public_key::PublicKey,
+    ) {
+        let (attestation_public_key, attestation_private_key) =
+            PrivateKey::generate_key_pair_from_seed([1; 32], 0, 4);
+        let (proposal_public_key, proposal_private_key) =
+            PrivateKey::generate_key_pair_from_seed([2; 32], 0, 4);
+
+        (
+            ProposalSigner::new(vec![Arc::new(ValidatorKeystore {
+                index: 7,
+                attestation_public_key,
+                attestation_private_key,
+                proposal_public_key,
+                proposal_private_key,
+            })]),
+            proposal_public_key,
+        )
+    }
+
+    #[actix_web::test]
+    async fn signs_and_returns_structured_refusals() {
+        let (signer, public_key) = test_signer();
+        let app = test::init_service(
+            App::new()
+                .app_data(Data::new(signer))
+                .service(sign_proposal),
+        )
+        .await;
+        let block_root = B256::repeat_byte(0x42);
+
+        let signed_request = test::TestRequest::post()
+            .uri("/test_driver/signer/sign_proposal")
+            .set_json(&SignProposalRequest {
+                request_id: "request-1".to_owned(),
+                validator_index: 7,
+                slot: 2,
+                block_root,
+            })
+            .to_request();
+        let signed: SignProposalResponse =
+            test::call_and_read_body_json(&app, signed_request).await;
+
+        assert_eq!(signed.status, SignProposalStatus::Signed);
+        assert_eq!(signed.proposal_public_key, Some(public_key));
+        assert_eq!(signed.block_root, block_root);
+        assert!(signed.error_code.is_none());
+        let signature = signed
+            .signature
+            .as_deref()
+            .expect("successful response should contain a signature");
+        let signature_bytes =
+            hex::decode(signature.trim_start_matches("0x")).expect("signature should be hex");
+        assert!(
+            Signature::from(signature_bytes.as_slice())
+                .verify(&public_key, 2, block_root.as_ref())
+                .expect("signature verification should run")
+        );
+
+        let refused_request = test::TestRequest::post()
+            .uri("/test_driver/signer/sign_proposal")
+            .set_json(&SignProposalRequest {
+                request_id: "request-2".to_owned(),
+                validator_index: 8,
+                slot: 2,
+                block_root,
+            })
+            .to_request();
+        let refused: SignProposalResponse =
+            test::call_and_read_body_json(&app, refused_request).await;
+
+        assert_eq!(refused.status, SignProposalStatus::Refused);
+        assert_eq!(refused.error_code.as_deref(), Some("validator_not_found"));
+        assert!(refused.signature.is_none());
+        assert!(refused.proposal_public_key.is_none());
+    }
+
+    #[actix_web::test]
+    async fn signer_route_is_absent_from_the_normal_rpc() {
+        let app = test::init_service(App::new().configure(register_routers)).await;
+        let request = test::TestRequest::post()
+            .uri("/lean/v0/test_driver/signer/sign_proposal")
+            .set_json(&SignProposalRequest {
+                request_id: "request-1".to_owned(),
+                validator_index: 7,
+                slot: 2,
+                block_root: B256::ZERO,
+            })
+            .to_request();
+
+        assert_eq!(
+            test::call_service(&app, request).await.status(),
+            StatusCode::NOT_FOUND
+        );
     }
 }

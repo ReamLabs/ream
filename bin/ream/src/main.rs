@@ -378,6 +378,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
             lean_chain_writer,
             network_state,
             aggregator_state,
+            proposal_signer.clone(),
         )
         .await
         .expect("Lean test-driver RPC service stopped unexpectedly");
