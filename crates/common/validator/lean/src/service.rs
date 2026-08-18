@@ -17,7 +17,6 @@ use ream_consensus_lean::{
 };
 use ream_consensus_misc::constants::lean::{INTERVALS_PER_SLOT, attestation_committee_count};
 use ream_fork_choice_lean::store::compute_subnet_id;
-use ream_keystore::lean_keystore::ValidatorKeystore;
 use ream_metrics::{
     ATTESTATIONS_PRODUCTION_TIME, LEAN_ATTESTATION_AGGREGATE_SUBNETS,
     LEAN_ATTESTATION_AGGREGATE_VALIDATORS, PQ_SIG_ATTESTATION_SIGNATURES_TOTAL,
@@ -38,6 +37,8 @@ use tokio::{
 use tracing::{Level, debug, enabled, info, warn};
 use tree_hash::TreeHash;
 
+use crate::signer::ProposalSigner;
+
 /// ValidatorService is responsible for managing validator operations
 /// such as proposing blocks and submitting attestations on them. This service also holds the
 /// keystores for its validators, which are used to sign.
@@ -45,18 +46,18 @@ use tree_hash::TreeHash;
 /// Every second tick (t=1/4) it attestations on the proposed block.
 /// NOTE: Other ticks should be handled by the other services, such as [LeanChainService].
 pub struct ValidatorService {
-    keystores: Vec<Arc<ValidatorKeystore>>,
+    proposal_signer: Arc<ProposalSigner>,
     chain_sender: mpsc::UnboundedSender<LeanChainServiceMessage>,
     prebuilding_slot: Option<u64>,
 }
 
 impl ValidatorService {
     pub async fn new(
-        keystores: Vec<Arc<ValidatorKeystore>>,
+        proposal_signer: Arc<ProposalSigner>,
         chain_sender: mpsc::UnboundedSender<LeanChainServiceMessage>,
     ) -> Self {
         ValidatorService {
-            keystores,
+            proposal_signer,
             chain_sender,
             prebuilding_slot: None,
         }
@@ -66,9 +67,13 @@ impl ValidatorService {
         info!(
             genesis_time = lean_network_spec().genesis_time,
             "ValidatorService started with {} validator(s)",
-            self.keystores.len()
+            self.proposal_signer.keystores().len()
         );
-        set_int_gauge_vec(&VALIDATORS_COUNT, self.keystores.len() as i64, &[]);
+        set_int_gauge_vec(
+            &VALIDATORS_COUNT,
+            self.proposal_signer.keystores().len() as i64,
+            &[],
+        );
 
         let mut tick_count = get_initial_tick_count();
 
@@ -84,23 +89,25 @@ impl ValidatorService {
                     match tick_count % INTERVALS_PER_SLOT {
                         4 => {
                             let next_slot = slot + 1;
-                            if let Some(keystore) = self.is_proposer(next_slot) {
-                                info!(slot = next_slot, tick = tick_count, "Pre-building block by Validator {}", keystore.index);
+                            if let Some(validator_index) = self.proposer_index(next_slot) {
+                                info!(slot = next_slot, tick = tick_count, "Pre-building block by Validator {validator_index}");
                                 self.prebuilding_slot = Some(next_slot);
                                 let chain_sender = self.chain_sender.clone();
+                                let proposal_signer = self.proposal_signer.clone();
                                 tokio::spawn(async move {
-                                    build_block(chain_sender, next_slot, keystore).await;
+                                    build_block(chain_sender, next_slot, validator_index, proposal_signer).await;
                                 });
                             }
                         }
                         0 => {
                             if self.prebuilding_slot == Some(slot) {
                                 self.prebuilding_slot = None;
-                            } else if slot > 0 && let Some(keystore) = self.is_proposer(slot) {
-                                info!(slot, tick = tick_count, "Proposing block by Validator {}", keystore.index);
+                            } else if slot > 0 && let Some(validator_index) = self.proposer_index(slot) {
+                                info!(slot, tick = tick_count, "Proposing block by Validator {validator_index}");
                                 let chain_sender = self.chain_sender.clone();
+                                let proposal_signer = self.proposal_signer.clone();
                                 tokio::spawn(async move {
-                                    build_block(chain_sender, slot, keystore).await;
+                                    build_block(chain_sender, slot, validator_index, proposal_signer).await;
                                 });
                             } else {
                                 let proposer_index = slot % lean_network_spec().num_validators;
@@ -109,7 +116,7 @@ impl ValidatorService {
                         }
                         1 => {
                             // Second tick (t=1/4): Attestation.
-                            info!(slot, tick = tick_count, "Starting attestation phase: {} validator(s) voting", self.keystores.len());
+                            info!(slot, tick = tick_count, "Starting attestation phase: {} validator(s) voting", self.proposal_signer.keystores().len());
 
                             let attestation_production_timer =
                                 start_timer(&ATTESTATIONS_PRODUCTION_TIME, &[]);
@@ -165,8 +172,9 @@ impl ValidatorService {
                             }
 
                             let message_root = attestation_data.tree_hash_root();
-                            let mut signed_attestations = Vec::with_capacity(self.keystores.len());
-                            for keystore in &self.keystores {
+                            let mut signed_attestations =
+                                Vec::with_capacity(self.proposal_signer.keystores().len());
+                            for keystore in self.proposal_signer.keystores() {
                                 let timer = start_timer(&PQ_SIG_ATTESTATION_SIGNING_TIME, &[]);
                                 let signature = keystore.attestation_private_key.sign(&message_root, slot as u32)?;
                                 stop_timer(timer);
@@ -220,20 +228,20 @@ impl ValidatorService {
     }
 
     /// Determine if one of the keystores is the proposer for the current slot.
-    fn is_proposer(&self, slot: u64) -> Option<Arc<ValidatorKeystore>> {
+    fn proposer_index(&self, slot: u64) -> Option<u64> {
         let proposer_index = slot % lean_network_spec().num_validators;
 
-        self.keystores
-            .iter()
-            .find(|keystore| keystore.index == proposer_index as u64)
-            .cloned()
+        self.proposal_signer
+            .has_validator(proposer_index)
+            .then_some(proposer_index)
     }
 }
 
 pub async fn build_block(
     chain_sender: mpsc::UnboundedSender<LeanChainServiceMessage>,
     slot: u64,
-    keystore: Arc<ValidatorKeystore>,
+    validator_index: u64,
+    proposal_signer: Arc<ProposalSigner>,
 ) {
     let (tx, rx) = oneshot::channel();
 
@@ -279,11 +287,15 @@ pub async fn build_block(
     info!(
         slot = block_with_signatures.block.slot,
         block_root = ?block_with_signatures.block.tree_hash_root(),
-        "Building block finished by Validator {}",
-        keystore.index,
+        "Building block finished by Validator {validator_index}",
     );
 
-    let signed_block = match sign_block(keystore, block_with_signatures, slot) {
+    let signed_block = match sign_block(
+        &proposal_signer,
+        validator_index,
+        block_with_signatures,
+        slot,
+    ) {
         Ok(signed_block) => signed_block,
         Err(err) => {
             warn!("Failed to sign block for slot {slot}: {err}");
@@ -311,7 +323,8 @@ pub async fn build_block(
 
 #[cfg(feature = "devnet5")]
 fn sign_block(
-    keystore: Arc<ValidatorKeystore>,
+    proposal_signer: &ProposalSigner,
+    validator_index: u64,
     block_with_signatures: BlockWithSignatures,
     slot: u64,
 ) -> anyhow::Result<SignedBlock> {
@@ -333,9 +346,7 @@ fn sign_block(
     let block_root_bytes: [u8; 32] = block_root.into();
 
     let timer = start_timer(&PQ_SIG_ATTESTATION_SIGNING_TIME, &[]);
-    let proposer_signature = keystore
-        .proposal_private_key
-        .sign(&block_root, slot as u32)?;
+    let proposal_signature = proposal_signer.sign_proposal(validator_index, slot, &block_root)?;
     stop_timer(timer);
     inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_TOTAL, &[]);
 
@@ -349,7 +360,7 @@ fn sign_block(
 
     let proposer_type_1 = type_1_aggregate(
         &[],
-        &[(keystore.proposal_public_key, proposer_signature)],
+        &[(proposal_signature.public_key, proposal_signature.signature)],
         &block_root_bytes,
         slot as u32,
     )
