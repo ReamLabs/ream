@@ -7,7 +7,6 @@ use tree_hash::TreeHash;
 
 use super::{
     children_index::{ChildIndexEntry, LeanChildrenIndexTable},
-    slot_index::LeanSlotIndexTable,
     state_root_index::LeanStateRootIndexTable,
 };
 use crate::{
@@ -82,10 +81,6 @@ impl REDBTable for LeanBlockTable {
         let mut table = write_txn.open_table(Self::TABLE_DEFINITION)?;
         let value = table.remove(key)?.map(|v| v.value());
         if let Some(block) = &value {
-            let slot_index_table = LeanSlotIndexTable {
-                db: self.db.clone(),
-            };
-            slot_index_table.remove(block.block.slot)?;
             let state_root_index_table = LeanStateRootIndexTable {
                 db: self.db.clone(),
             };
@@ -109,14 +104,7 @@ impl LeanBlockTable {
     }
 
     pub fn insert_ref(&self, key: B256, value: &SignedBlock) -> Result<(), StoreError> {
-        // insert entry to slot_index table
         let block_root = value.block.tree_hash_root();
-        let slot_index_table = LeanSlotIndexTable {
-            db: self.db.clone(),
-        };
-
-        slot_index_table.insert(value.block.slot, block_root)?;
-
         // insert entry to state root index table
         let state_root_index_table = LeanStateRootIndexTable {
             db: self.db.clone(),

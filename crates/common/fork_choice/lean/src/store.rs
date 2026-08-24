@@ -578,6 +578,7 @@ impl Store {
         };
 
         let latest_finalized_checkpoint = latest_finalized_provider.get()?;
+        let old_head = head_provider.get()?;
         let finalized_slot = latest_finalized_checkpoint.slot;
         let attestations = {
             let mut relevant_keys = Vec::new();
@@ -657,8 +658,62 @@ impl Store {
         };
         *self.network_state.finalized_checkpoint.write() = final_finalized_checkpoint;
 
-        head_provider.insert(new_head)?;
+        self.update_canonical_head(old_head, new_head).await?;
         latest_finalized_provider.insert(final_finalized_checkpoint)?;
+
+        Ok(())
+    }
+
+    /// Align the slot index with the canonical chain after a fork-choice head change.
+    ///
+    /// Imported blocks are retained in the block and children tables regardless of
+    /// whether they are canonical.  Consequently the slot index must be updated from
+    /// the old and new heads, rather than from block-import order.
+    async fn update_canonical_head(&self, old_head: B256, new_head: B256) -> anyhow::Result<()> {
+        if old_head == new_head {
+            return Ok(());
+        }
+
+        let block_provider = {
+            let db = self.store.lock().await;
+            db.block_provider()
+        };
+        let mut new_entries = HashMap::<u64, B256>::new();
+        let mut stale_slots = HashSet::<u64>::new();
+        let mut old_root = old_head;
+        let mut new_root = new_head;
+
+        while old_root != new_root {
+            let new_block = block_provider.get(new_root)?;
+            let old_block = block_provider.get(old_root)?;
+
+            match (new_block, old_block) {
+                (Some(block), old)
+                    if old
+                        .as_ref()
+                        .is_none_or(|old| block.block.slot >= old.block.slot) =>
+                {
+                    new_entries.insert(block.block.slot, new_root);
+                    new_root = block.block.parent_root;
+                }
+                (_, Some(block)) => {
+                    stale_slots.insert(block.block.slot);
+                    old_root = block.block.parent_root;
+                }
+                _ => break,
+            }
+        }
+
+        let mut new_slots: Vec<_> = new_entries.into_iter().collect();
+        new_slots.sort_unstable_by_key(|(slot, _)| *slot);
+        let new_slot_numbers: HashSet<_> = new_slots.iter().map(|(slot, _)| *slot).collect();
+        let mut stale_slots: Vec<_> = stale_slots.difference(&new_slot_numbers).copied().collect();
+        stale_slots.sort_unstable();
+
+        self.store
+            .lock()
+            .await
+            .update_canonical_head(new_head, &new_slots, &stale_slots)?;
 
         Ok(())
     }
@@ -2784,6 +2839,52 @@ mod tests {
             orphan_1_root,
             orphan_2_root,
         )
+    }
+
+    #[tokio::test]
+    async fn side_branch_import_does_not_overwrite_slot_index() {
+        let store = sample_store_as_store(10).await;
+        let db = store.store.lock().await;
+        let genesis_root = db.head_provider().get().unwrap();
+        let side_block = fake_signed_block(1, 1, genesis_root);
+        let side_root = side_block.block.tree_hash_root();
+
+        db.block_provider().insert(side_root, side_block).unwrap();
+
+        assert_eq!(db.slot_index_provider().get(1).unwrap(), None);
+        assert_eq!(db.head_provider().get().unwrap(), genesis_root);
+    }
+
+    #[tokio::test]
+    async fn canonical_reindex_rewrites_and_deletes_reorged_slots() {
+        let store = sample_store_as_store(10).await;
+        let genesis_root = { store.store.lock().await.head_provider().get().unwrap() };
+        let old_1 = fake_signed_block(1, 0, genesis_root);
+        let old_1_root = old_1.block.tree_hash_root();
+        let old_2 = fake_signed_block(2, 0, old_1_root);
+        let old_2_root = old_2.block.tree_hash_root();
+        let new_2 = fake_signed_block(2, 1, genesis_root);
+        let new_2_root = new_2.block.tree_hash_root();
+
+        {
+            let db = store.store.lock().await;
+            db.block_provider().insert(old_1_root, old_1).unwrap();
+            db.block_provider().insert(old_2_root, old_2).unwrap();
+            db.block_provider().insert(new_2_root, new_2).unwrap();
+            db.slot_index_provider().insert(1, old_1_root).unwrap();
+            db.slot_index_provider().insert(2, old_2_root).unwrap();
+            db.head_provider().insert(old_2_root).unwrap();
+        }
+
+        store
+            .update_canonical_head(old_2_root, new_2_root)
+            .await
+            .unwrap();
+
+        let db = store.store.lock().await;
+        assert_eq!(db.slot_index_provider().get(1).unwrap(), None);
+        assert_eq!(db.slot_index_provider().get(2).unwrap(), Some(new_2_root));
+        assert_eq!(db.head_provider().get().unwrap(), new_2_root);
     }
 
     #[tokio::test]
