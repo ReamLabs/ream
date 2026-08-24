@@ -42,8 +42,10 @@ use ream_executor::ReamExecutor;
 use ream_metrics::{
     GOSSIP_AGGREGATION_SIZE_BYTES, GOSSIP_ATTESTATION_SIZE_BYTES, GOSSIP_BLOCK_SIZE_BYTES,
     LEAN_CONNECTION_EVENT_TOTAL, LEAN_DISCONNECTION_EVENT_TOTAL, LEAN_GOSSIP_MESH_PEERS,
-    LEAN_PEER_COUNT, inc_int_counter_vec, observe_histogram_vec, set_int_gauge_vec,
+    LEAN_PEER_COUNT, inc_int_counter_vec, init_gossip_arrival_metrics, observe_aggregation_arrival,
+    observe_attestation_arrival, observe_block_arrival, observe_histogram_vec, set_int_gauge_vec,
 };
+use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::{NetworkState, cached_peer::CachedPeer};
 use ream_peer::{ConnectionState, Direction};
 use ream_req_resp::{
@@ -428,6 +430,8 @@ impl LeanNetworkService {
         outbound_p2p_request: UnboundedReceiver<LeanP2PRequest>,
         network_state: Arc<NetworkState>,
     ) -> anyhow::Result<Self> {
+        init_gossip_arrival_metrics();
+
         let connection_limits = {
             let limits = ConnectionLimits::default()
                 .with_max_pending_incoming(Some(5))
@@ -929,6 +933,8 @@ impl LeanNetworkService {
                         let bytes = message.data.len();
                         observe_histogram_vec(&GOSSIP_BLOCK_SIZE_BYTES, bytes as f64, &[]);
                         let slot = signed_block.block.slot;
+                        let spec = lean_network_spec();
+                        observe_block_arrival(slot, spec.genesis_time, spec.seconds_per_slot);
 
                         info!(
                             slot,
@@ -956,6 +962,8 @@ impl LeanNetworkService {
                         let bytes = message.data.len();
                         observe_histogram_vec(&GOSSIP_ATTESTATION_SIZE_BYTES, bytes as f64, &[]);
                         let slot = signed_attestation.message.slot;
+                        let spec = lean_network_spec();
+                        observe_attestation_arrival(slot, spec.genesis_time, spec.seconds_per_slot);
 
                         info!(
                             slot,
@@ -985,6 +993,8 @@ impl LeanNetworkService {
                         let bytes = message.data.len();
                         observe_histogram_vec(&GOSSIP_AGGREGATION_SIZE_BYTES, bytes as f64, &[]);
                         let slot = aggregated_attestation.data.slot;
+                        let spec = lean_network_spec();
+                        observe_aggregation_arrival(spec.genesis_time, spec.seconds_per_slot);
 
                         info!(slot, "Received aggregated attestation from gossip");
                         log_gossip_bandwidth("in", "aggregated_attestation", bytes, slot);

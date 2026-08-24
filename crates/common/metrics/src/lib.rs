@@ -1,7 +1,7 @@
 #![recursion_limit = "256"]
 pub mod timer;
 
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use prometheus_exporter::prometheus::{
     Histogram, HistogramOpts, HistogramTimer, HistogramVec, IntCounter, IntCounterVec, IntGaugeVec,
@@ -33,6 +33,15 @@ pub const AGGREGATOR_SKIP_REASONS: &[&str] = &[
 
 pub const ATTESTATION_AGGREGATE_COVERAGE_DIFFERENT_DIRECTIONS: &[&str] =
     &["block_only", "timely_only"];
+
+pub const GOSSIP_ARRIVAL_DELAY_BUCKETS: &[f64] =
+    &[0.05, 0.1, 0.2, 0.4, 0.8, 1.2, 1.6, 2.4, 4.0, 8.0, 16.0];
+
+const INTERVALS_PER_SLOT: u64 = 5;
+const BLOCK_PUBLICATION_INTERVAL: u64 = 0;
+const ATTESTATION_PRODUCTION_INTERVAL: u64 = 1;
+const AGGREGATION_INTERVAL: u64 = 2;
+const MAX_MEASURABLE_SLOT_DISTANCE: u64 = 256;
 
 // Provisioning each metrics
 lazy_static::lazy_static! {
@@ -500,6 +509,73 @@ lazy_static::lazy_static! {
         ).expect("failed to create GOSSIP_AGGREGATION_SIZE_BYTES histogram vec")
     };
 
+    // Gossip arrival timing metrics from the leanMetrics registry.
+    pub static ref LEAN_GOSSIP_BLOCK_ARRIVAL_DELAY_SECONDS: Histogram = {
+        let opts = HistogramOpts::new(
+            "lean_gossip_block_arrival_delay_seconds",
+            "Absolute delay between a gossip block's arrival and the start of the interval it was due in",
+        ).buckets(GOSSIP_ARRIVAL_DELAY_BUCKETS.to_vec());
+        register_histogram_with_registry!(opts, default_registry())
+            .expect("failed to create gossip block arrival histogram")
+    };
+
+    pub static ref LEAN_GOSSIP_ATTESTATION_ARRIVAL_DELAY_SECONDS: Histogram = {
+        let opts = HistogramOpts::new(
+            "lean_gossip_attestation_arrival_delay_seconds",
+            "Absolute delay between a gossip attestation's arrival and the start of the interval it was due in",
+        ).buckets(GOSSIP_ARRIVAL_DELAY_BUCKETS.to_vec());
+        register_histogram_with_registry!(opts, default_registry())
+            .expect("failed to create gossip attestation arrival histogram")
+    };
+
+    pub static ref LEAN_GOSSIP_AGGREGATION_ARRIVAL_DELAY_SECONDS: Histogram = {
+        let opts = HistogramOpts::new(
+            "lean_gossip_aggregation_arrival_delay_seconds",
+            "Absolute delay between a gossip aggregate's arrival and the most recent aggregation-interval boundary",
+        ).buckets(GOSSIP_ARRIVAL_DELAY_BUCKETS.to_vec());
+        register_histogram_with_registry!(opts, default_registry())
+            .expect("failed to create gossip aggregation arrival histogram")
+    };
+
+    pub static ref LEAN_GOSSIP_BLOCK_ARRIVAL_TOTAL: IntCounterVec = {
+        let metric = register_int_counter_vec_with_registry!(
+            "lean_gossip_block_arrival_total",
+            "Gossip blocks by arrival position relative to the interval they were due in",
+            &["position"],
+            default_registry()
+        ).expect("failed to create gossip block arrival counter");
+        for position in ["before", "inside", "after"] {
+            metric.with_label_values(&[position]).inc_by(0);
+        }
+        metric
+    };
+
+    pub static ref LEAN_GOSSIP_ATTESTATION_ARRIVAL_TOTAL: IntCounterVec = {
+        let metric = register_int_counter_vec_with_registry!(
+            "lean_gossip_attestation_arrival_total",
+            "Gossip attestations by arrival position relative to the interval they were due in",
+            &["position"],
+            default_registry()
+        ).expect("failed to create gossip attestation arrival counter");
+        for position in ["before", "inside", "after"] {
+            metric.with_label_values(&[position]).inc_by(0);
+        }
+        metric
+    };
+
+    pub static ref LEAN_GOSSIP_AGGREGATION_ARRIVAL_TOTAL: IntCounterVec = {
+        let metric = register_int_counter_vec_with_registry!(
+            "lean_gossip_aggregation_arrival_total",
+            "Gossip aggregates by arrival position relative to the most recent aggregation-interval boundary",
+            &["position"],
+            default_registry()
+        ).expect("failed to create gossip aggregation arrival counter");
+        for position in ["inside", "after"] {
+            metric.with_label_values(&[position]).inc_by(0);
+        }
+        metric
+    };
+
     // Validator Attestation Production Metrics
     pub static ref ATTESTATIONS_PRODUCTION_TIME: HistogramVec = {
         let opts = HistogramOpts::new(
@@ -700,4 +776,137 @@ pub fn observe_block_proposal_attestation_data_selected(count: usize) {
 
 pub fn observe_block_proposal_aggregates_selected(count: usize) {
     LEAN_BLOCK_PROPOSAL_AGGREGATES_SELECTED.observe(count as f64);
+}
+
+/// Register all gossip-arrival collectors and materialize their counter series.
+pub fn init_gossip_arrival_metrics() {
+    lazy_static::initialize(&LEAN_GOSSIP_BLOCK_ARRIVAL_DELAY_SECONDS);
+    lazy_static::initialize(&LEAN_GOSSIP_ATTESTATION_ARRIVAL_DELAY_SECONDS);
+    lazy_static::initialize(&LEAN_GOSSIP_AGGREGATION_ARRIVAL_DELAY_SECONDS);
+    lazy_static::initialize(&LEAN_GOSSIP_BLOCK_ARRIVAL_TOTAL);
+    lazy_static::initialize(&LEAN_GOSSIP_ATTESTATION_ARRIVAL_TOTAL);
+    lazy_static::initialize(&LEAN_GOSSIP_AGGREGATION_ARRIVAL_TOTAL);
+}
+
+fn milliseconds_since_genesis(genesis_time: u64) -> u64 {
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    now_ms.saturating_sub(genesis_time.saturating_mul(1_000))
+}
+
+fn interval_milliseconds(seconds_per_slot: u64) -> u64 {
+    seconds_per_slot.saturating_mul(1_000) / INTERVALS_PER_SLOT
+}
+
+fn interval_delta_ms(
+    arrival_ms: u64,
+    message_slot: u64,
+    interval: u64,
+    seconds_per_slot: u64,
+) -> i128 {
+    let interval_ms = interval_milliseconds(seconds_per_slot) as i128;
+    let boundary =
+        message_slot as i128 * seconds_per_slot as i128 * 1_000 + interval as i128 * interval_ms;
+    arrival_ms as i128 - boundary
+}
+
+fn arrival_position(delta_ms: i128, seconds_per_slot: u64) -> &'static str {
+    if delta_ms < 0 {
+        "before"
+    } else if delta_ms < interval_milliseconds(seconds_per_slot) as i128 {
+        "inside"
+    } else {
+        "after"
+    }
+}
+
+fn is_measurable_arrival(arrival_ms: u64, message_slot: u64, seconds_per_slot: u64) -> bool {
+    let slot_ms = seconds_per_slot.saturating_mul(1_000);
+    if slot_ms == 0 {
+        return false;
+    }
+    (arrival_ms / slot_ms).abs_diff(message_slot) <= MAX_MEASURABLE_SLOT_DISTANCE
+}
+
+pub fn observe_block_arrival(block_slot: u64, genesis_time: u64, seconds_per_slot: u64) {
+    let arrival_ms = milliseconds_since_genesis(genesis_time);
+    if !is_measurable_arrival(arrival_ms, block_slot, seconds_per_slot) {
+        return;
+    }
+    let delta = interval_delta_ms(
+        arrival_ms,
+        block_slot,
+        BLOCK_PUBLICATION_INTERVAL,
+        seconds_per_slot,
+    );
+    LEAN_GOSSIP_BLOCK_ARRIVAL_DELAY_SECONDS.observe(delta.unsigned_abs() as f64 / 1_000.0);
+    LEAN_GOSSIP_BLOCK_ARRIVAL_TOTAL
+        .with_label_values(&[arrival_position(delta, seconds_per_slot)])
+        .inc();
+}
+
+pub fn observe_attestation_arrival(data_slot: u64, genesis_time: u64, seconds_per_slot: u64) {
+    let arrival_ms = milliseconds_since_genesis(genesis_time);
+    if !is_measurable_arrival(arrival_ms, data_slot, seconds_per_slot) {
+        return;
+    }
+    let delta = interval_delta_ms(
+        arrival_ms,
+        data_slot,
+        ATTESTATION_PRODUCTION_INTERVAL,
+        seconds_per_slot,
+    );
+    LEAN_GOSSIP_ATTESTATION_ARRIVAL_DELAY_SECONDS.observe(delta.unsigned_abs() as f64 / 1_000.0);
+    LEAN_GOSSIP_ATTESTATION_ARRIVAL_TOTAL
+        .with_label_values(&[arrival_position(delta, seconds_per_slot)])
+        .inc();
+}
+
+pub fn observe_aggregation_arrival(genesis_time: u64, seconds_per_slot: u64) {
+    let arrival_ms = milliseconds_since_genesis(genesis_time);
+    let slot_ms = seconds_per_slot.saturating_mul(1_000);
+    if slot_ms == 0 {
+        return;
+    }
+    let offset = AGGREGATION_INTERVAL.saturating_mul(interval_milliseconds(seconds_per_slot));
+    let delta = ((arrival_ms as i128 - offset as i128).rem_euclid(slot_ms as i128)) as u64;
+    LEAN_GOSSIP_AGGREGATION_ARRIVAL_DELAY_SECONDS.observe(delta as f64 / 1_000.0);
+    LEAN_GOSSIP_AGGREGATION_ARRIVAL_TOTAL
+        .with_label_values(&[arrival_position(delta as i128, seconds_per_slot)])
+        .inc();
+}
+
+#[cfg(test)]
+mod arrival_tests {
+    use super::*;
+
+    #[test]
+    fn classifies_signed_arrivals() {
+        assert_eq!(arrival_position(-1, 4), "before");
+        assert_eq!(arrival_position(799, 4), "inside");
+        assert_eq!(arrival_position(800, 4), "after");
+    }
+
+    #[test]
+    fn aggregate_delta_wraps_to_latest_boundary() {
+        let slot_ms = 4_000;
+        let offset = AGGREGATION_INTERVAL * interval_milliseconds(4);
+        assert_eq!(
+            (2_000_i128 - offset as i128).rem_euclid(slot_ms as i128),
+            400
+        );
+        assert_eq!(
+            (1_500_i128 - offset as i128).rem_euclid(slot_ms as i128),
+            3_900
+        );
+    }
+
+    #[test]
+    fn rejects_implausible_message_slots() {
+        assert!(is_measurable_arrival(10 * 4_000, 266, 4));
+        assert!(!is_measurable_arrival(10 * 4_000, 267, 4));
+        assert!(!is_measurable_arrival(10 * 4_000, u64::MAX, 4));
+    }
 }
