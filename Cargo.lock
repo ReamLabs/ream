@@ -6667,7 +6667,7 @@ version = "0.1.0"
 dependencies = [
  "alloy-primitives",
  "serde",
- "thiserror 2.0.18",
+ "thiserror 2.0.19",
 ]
 
 [[package]]
@@ -6678,7 +6678,7 @@ dependencies = [
  "ream-data-availability",
  "ream-executor",
  "serde",
- "thiserror 2.0.18",
+ "thiserror 2.0.19",
  "tokio",
  "tracing",
 ]
