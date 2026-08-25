@@ -1,13 +1,4 @@
 //! `ream-data-availability-tool` — a small end-to-end driver for the standalone data node.
-//!
-//! Talks to a running `ream da_node` over its loopback RPC exactly the way the
-//! future beacon-side feeder will: submit data columns for verification, query
-//! availability, and — the main event — pull a real block's blobs from a live
-//! beacon node, derive its data column sidecars locally (real KZG cells and
-//! proofs), and feed them through the ingest → verify → store pipeline. For
-//! working offline, `generate` synthesizes KZG-valid sidecars from thin air
-//! instead of fetching a real block.
-//!
 //! Usage:
 //!   ream-data-availability-tool health
 //!   ream-data-availability-tool availability <block_root>
@@ -50,10 +41,7 @@ enum Command {
     /// Check that the data node is up.
     Health,
     /// Query column availability for a block root.
-    Availability {
-        /// The beacon block root, 0x-prefixed.
-        block_root: B256,
-    },
+    Availability { block_root: B256 },
     /// Fetch a block's blobs from a beacon node, derive its data column
     /// sidecars, submit them to the data node, and wait for them to be held.
     Feed {

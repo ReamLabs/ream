@@ -14,14 +14,12 @@ use tree_hash::TreeHash;
 
 /// Decodes a candidate's payload as an SSZ `DataColumnSidecar` and admits it
 /// only if it is structurally sound and its cells verify against their KZG
-/// commitments. The per-block blob limit is epoch-dependent (EIP-7892 BPO
-/// forks), resolved from the network's blob schedule at each column's epoch.
+/// commitments.
 #[derive(Debug, Clone)]
 pub struct KzgVerifier {
     /// BPO schedule `(activation epoch, blob limit)`, ascending; zero-limit
     /// entries — which would reject every column — are dropped at construction.
     blob_schedule: Vec<(u64, NonZeroUsize)>,
-    /// The pre-schedule (Electra) limit, in force when no entry covers the epoch.
     max_blobs_per_block_electra: NonZeroUsize,
 }
 
@@ -70,8 +68,6 @@ impl KzgVerifier {
     /// Mirrors `DataColumnSidecar::verify()`, kept separate to return typed
     /// `ValidationError`s instead of a `bool`.
     fn check_shape(&self, sidecar: &DataColumnSidecar) -> Result<(), ValidationError> {
-        // The limit is taken at the sidecar's own epoch — the header slot is
-        // what the inclusion proof binds the commitments to.
         let epoch = compute_epoch_at_slot(sidecar.signed_block_header.message.slot);
         let max_blobs = self.max_blobs_at(epoch).get();
         let commitments = sidecar.kzg_commitments.len();

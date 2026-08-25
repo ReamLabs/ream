@@ -44,15 +44,6 @@ pub async fn fetch_blob_sidecars(beacon_url: &str, block_id: &str) -> Result<Vec
 
 /// Derive all of a block's data column sidecars from its blob sidecars.
 ///
-/// Everything a `DataColumnSidecar` needs is already in the blob sidecars:
-/// the signed block header, the per-blob KZG commitments, and — the one
-/// non-obvious part — the commitments-list inclusion proof, which is the top
-/// [`DATA_COLUMN_SIDECAR_KZG_PROOF_DEPTH`] nodes of each blob's depth-17
-/// inclusion branch (the segment from the commitments-list root up to the body
-/// root; `BlobSidecar::verify_blob_sidecar_inclusion_proof` splits its branch
-/// at exactly this point). The KZG cells and cell proofs are computed here,
-/// for real, from the blob data.
-///
 /// Returns `(block_root, slot, sidecars)`.
 pub fn build_column_sidecars(
     mut blob_sidecars: Vec<BlobSidecar>,

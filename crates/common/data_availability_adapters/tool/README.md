@@ -82,5 +82,8 @@ The data node's verifier follows the network's **BPO blob schedule** (EIP-7892):
 each column is checked against the blob limit in force at its own epoch, so
 post-Fulu blocks with raised blob counts verify fine.
 
-Startup note: the data node warms up the KZG trusted setup **before** opening its
-HTTP port (several seconds) — wait for `/health` to respond before feeding.
+Startup note: the data node opens its HTTP port immediately and warms the KZG
+trusted setup in the background, so `/health` answering 200 is **not** a signal
+that verification is ready. The first column submitted absorbs whatever is left
+of the warm-up (a few seconds) before it is stored; the default `--wait 30`
+absorbs this comfortably.
