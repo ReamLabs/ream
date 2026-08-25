@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use ream_da::{
+use ream_data_availability::{
     column::CandidateColumn,
     store::{ColumnWriteStore, InsertOutcome},
     verifier::ColumnVerifier,
@@ -155,7 +155,7 @@ mod tests {
     };
 
     use alloy_primitives::B256;
-    use ream_da::{
+    use ream_data_availability::{
         column::{CandidateColumn, ColumnContext, VerifiedColumn},
         error::ValidationError,
         id::ColumnId,

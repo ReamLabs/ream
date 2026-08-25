@@ -5,7 +5,7 @@ use actix_web::{
     web::{Data, Path},
 };
 use ream_api_types_common::{error::ApiError, id::ID};
-use ream_da::{availability::ColumnAvailability, store::ColumnReadStore};
+use ream_data_availability::{availability::ColumnAvailability, store::ColumnReadStore};
 use serde::Serialize;
 
 use crate::handlers::block_root_from_id;

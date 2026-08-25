@@ -11,12 +11,12 @@ use std::{
 
 use actix_web::{App, http::StatusCode, test, web::Data};
 use alloy_primitives::B256;
-use ream_da::{
+use ream_data_availability::{
     column::{ColumnContext, VerifiedColumn},
     id::ColumnId,
     store::{ColumnReadStore, ColumnWriteStore},
 };
-use ream_da_node::{
+use ream_data_availability_node::{
     ingest::{IngestWorkItem, ingest_channel},
     store::FileColumnStore,
 };

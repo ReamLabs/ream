@@ -1,5 +1,5 @@
 [package]
-name = "ream-rpc-da"
+name = "ream-data-availability"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true
@@ -9,20 +9,10 @@ repository.workspace = true
 rust-version.workspace = true
 version.workspace = true
 
-[features]
-default = []
-
 [dependencies]
-actix-web.workspace = true
 alloy-primitives.workspace = true
-ream-api-types-common.workspace = true
-ream-da.workspace = true
-ream-da-node.workspace = true
-ream-rpc-common.workspace = true
 serde.workspace = true
-
-[dev-dependencies]
-serde_json.workspace = true
+thiserror.workspace = true
 
 [lints]
 workspace = true

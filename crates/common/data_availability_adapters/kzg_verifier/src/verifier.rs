@@ -1,7 +1,7 @@
 use std::num::NonZeroUsize;
 
 use ream_consensus_beacon::data_column_sidecar::DataColumnSidecar;
-use ream_da::{
+use ream_data_availability::{
     column::{CandidateColumn, VerifiedColumn},
     error::ValidationError,
     id::ColumnId,
@@ -126,7 +126,7 @@ mod tests {
         constants::beacon::{BLOB_KZG_COMMITMENTS_INDEX, DATA_COLUMN_SIDECAR_KZG_PROOF_DEPTH},
         polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
     };
-    use ream_da::{
+    use ream_data_availability::{
         column::{CandidateColumn, ColumnContext},
         error::ValidationError,
         id::ColumnId,
@@ -333,7 +333,7 @@ mod tests {
     #[test]
     fn das_core_column_count_matches_beacon() {
         assert_eq!(
-            ream_da::id::NUMBER_OF_COLUMNS,
+            ream_data_availability::id::NUMBER_OF_COLUMNS,
             ream_consensus_beacon::data_column_sidecar::NUMBER_OF_COLUMNS,
         );
     }

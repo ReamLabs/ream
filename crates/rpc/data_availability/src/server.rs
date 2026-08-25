@@ -1,7 +1,7 @@
 use std::{io::Result, sync::Arc};
 
-use ream_da::store::ColumnReadStore;
-use ream_da_node::ingest::IngestHandle;
+use ream_data_availability::store::ColumnReadStore;
+use ream_data_availability_node::ingest::IngestHandle;
 use ream_rpc_common::{config::RpcServerConfig, server::RpcServerBuilder};
 
 use crate::routes::register_routers;

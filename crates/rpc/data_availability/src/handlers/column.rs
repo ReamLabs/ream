@@ -6,7 +6,7 @@ use actix_web::{
 };
 use alloy_primitives::B256;
 use ream_api_types_common::{error::ApiError, id::ID};
-use ream_da::{column::VerifiedColumn, id::ColumnId, store::ColumnReadStore};
+use ream_data_availability::{column::VerifiedColumn, id::ColumnId, store::ColumnReadStore};
 use serde::Serialize;
 
 use crate::handlers::block_root_from_id;

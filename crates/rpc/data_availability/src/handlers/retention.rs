@@ -3,7 +3,7 @@ use actix_web::{
     web::{Data, Path},
 };
 use ream_api_types_common::{error::ApiError, id::ID};
-use ream_da_node::{
+use ream_data_availability_node::{
     error::IngestionError,
     ingest::{IngestHandle, RetentionHint},
 };

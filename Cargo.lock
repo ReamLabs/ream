@@ -5991,9 +5991,9 @@ dependencies = [
  "ream-consensus-beacon",
  "ream-consensus-lean",
  "ream-consensus-misc",
- "ream-da",
- "ream-da-node",
- "ream-da-verifier-kzg",
+ "ream-data-availability",
+ "ream-data-availability-node",
+ "ream-data-availability-verifier-kzg",
  "ream-discv5",
  "ream-events-beacon",
  "ream-execution-engine",
@@ -6011,7 +6011,7 @@ dependencies = [
  "ream-post-quantum-crypto",
  "ream-rpc-beacon",
  "ream-rpc-common",
- "ream-rpc-da",
+ "ream-rpc-data-availability",
  "ream-rpc-lean",
  "ream-storage",
  "ream-sync",
@@ -6278,7 +6278,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "ream-da"
+name = "ream-data-availability"
 version = "0.1.0"
 dependencies = [
  "alloy-primitives",
@@ -6287,11 +6287,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "ream-da-node"
+name = "ream-data-availability-node"
 version = "0.1.0"
 dependencies = [
  "alloy-primitives",
- "ream-da",
+ "ream-data-availability",
  "ream-executor",
  "serde",
  "thiserror 2.0.18",
@@ -6300,7 +6300,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "ream-da-verifier-kzg"
+name = "ream-data-availability-verifier-kzg"
 version = "0.1.0"
 dependencies = [
  "alloy-primitives",
@@ -6308,7 +6308,7 @@ dependencies = [
  "ethereum_ssz",
  "ream-consensus-beacon",
  "ream-consensus-misc",
- "ream-da",
+ "ream-data-availability",
  "ream-execution-rpc-types",
  "ream-merkle",
  "ream-polynomial-commitments",
@@ -6832,14 +6832,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "ream-rpc-da"
+name = "ream-rpc-data-availability"
 version = "0.1.0"
 dependencies = [
  "actix-web",
  "alloy-primitives",
  "ream-api-types-common",
- "ream-da",
- "ream-da-node",
+ "ream-data-availability",
+ "ream-data-availability-node",
  "ream-rpc-common",
  "serde",
  "serde_json",

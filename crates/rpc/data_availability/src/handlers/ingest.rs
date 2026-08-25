@@ -4,11 +4,11 @@ use actix_web::{
 };
 use alloy_primitives::B256;
 use ream_api_types_common::error::ApiError;
-use ream_da::{
+use ream_data_availability::{
     column::{CandidateColumn, ColumnContext},
     id::ColumnId,
 };
-use ream_da_node::{error::IngestionError, ingest::IngestHandle};
+use ream_data_availability_node::{error::IngestionError, ingest::IngestHandle};
 use serde::Deserialize;
 
 /// JSON body of `POST /data/v0/ingest`; the payload travels as a hex string.

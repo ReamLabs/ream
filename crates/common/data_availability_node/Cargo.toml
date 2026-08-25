@@ -1,5 +1,5 @@
 [package]
-name = "ream-da"
+name = "ream-data-availability-node"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true
@@ -13,6 +13,12 @@ version.workspace = true
 alloy-primitives.workspace = true
 serde.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
+tracing = { workspace = true, features = ["log"] }
+
+# ream dependencies
+ream-data-availability.workspace = true
+ream-executor.workspace = true
 
 [lints]
 workspace = true

@@ -47,10 +47,10 @@ use ream_consensus_misc::{
     },
     misc::compute_epoch_at_slot,
 };
-use ream_da_node::{
+use ream_data_availability_node::{
     ingest::ingest_channel, service::DataAvailabilityVerificationService, store::FileColumnStore,
 };
-use ream_da_verifier_kzg::KzgVerifier;
+use ream_data_availability_verifier_kzg::KzgVerifier;
 use ream_events_beacon::BeaconEvent;
 use ream_execution_engine::ExecutionEngine;
 use ream_executor::ReamExecutor;
@@ -695,7 +695,7 @@ pub async fn run_data_availability_node(
     let mut service_task = AbortOnDrop(executor.spawn(service.run()));
 
     let mut http_task = AbortOnDrop(executor.spawn(async move {
-        ream_rpc_da::server::start(server_config, ingest_handle, store).await
+        ream_rpc_data_availability::server::start(server_config, ingest_handle, store).await
     }));
 
     // Warm the trusted setup (multi-second) off the async workers before the

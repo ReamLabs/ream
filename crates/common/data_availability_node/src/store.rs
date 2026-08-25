@@ -8,7 +8,7 @@ use std::{
 };
 
 use alloy_primitives::B256;
-use ream_da::{
+use ream_data_availability::{
     availability::ColumnAvailability,
     column::{ColumnContext, VerifiedColumn},
     error::ColumnStoreError,
@@ -281,7 +281,7 @@ mod tests {
     };
 
     use alloy_primitives::B256;
-    use ream_da::{
+    use ream_data_availability::{
         column::{ColumnContext, VerifiedColumn},
         id::ColumnId,
         store::{ColumnReadStore, ColumnWriteStore, InsertOutcome},

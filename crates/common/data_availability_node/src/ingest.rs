@@ -1,4 +1,4 @@
-use ream_da::column::CandidateColumn;
+use ream_data_availability::column::CandidateColumn;
 use tokio::sync::mpsc;
 
 use crate::error::IngestionError;
