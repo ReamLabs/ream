@@ -32,7 +32,6 @@ tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
-serial_test = "3.4.0"
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tracing-subscriber.workspace = true
 

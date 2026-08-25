@@ -2,4 +2,8 @@
 rustflags = ['--cfg', 'getrandom_backend="custom"']
 
 [target.x86_64-unknown-linux-gnu]
-rustflags = ['-C', 'target-cpu=x86-64-v3']
+# `pclmulqdq` is not part of the x86-64-v3 psABI level, but rocksdb's crc32c.cc
+# enables its PCLMUL code path whenever SSE4.2 is on. librocksdb-sys only passes
+# `-mpclmul` when rustc reports the feature, so without this the C++ build fails.
+# Every x86-64-v3 CPU (Haswell+) has PCLMUL (Westmere+), so this is safe.
+rustflags = ['-C', 'target-cpu=x86-64-v3', '-C', 'target-feature=+pclmulqdq']
