@@ -20,6 +20,8 @@ CARGO_TARGET_DIR ?= target
 
 IMAGE ?= ream-local
 TAG ?= dev
+DOCKER_REPOSITORY ?= ghcr.io/reamlabs/ream
+DOCKER_TAGS ?= latest latest-devnet5 devnet5
 
 ##@ Help
 
@@ -156,8 +158,7 @@ docker-build-push:
 
 	docker buildx build --file ./Dockerfile.cross . \
 		--platform linux/amd64,linux/arm64 \
-		--tag ghcr.io/reamlabs/ream:latest \
-		--tag ghcr.io/reamlabs/ream:latest-devnet5 \
+		$(foreach tag,$(DOCKER_TAGS),--tag $(DOCKER_REPOSITORY):$(tag)) \
 		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
 		--build-arg GIT_BRANCH=$(GIT_BRANCH) \
 		--build-arg BUILD_DATE=$(BUILD_DATE) \

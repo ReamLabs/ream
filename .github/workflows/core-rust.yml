@@ -79,6 +79,21 @@ jobs:
       - name: Build
         run: cargo build --verbose
 
+  build-devnet5-leanvm-main:
+    name: build devnet5-leanvm-main
+    runs-on: ubuntu-latest
+    needs: [format, cargo-clippy]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Build LeanVM v0.9 variant
+        run: cargo build --verbose --package ream --bin ream --no-default-features --features optimized-leanvm
+
   test-devnet5:
     name: test devnet5
     needs: [format, cargo-clippy]

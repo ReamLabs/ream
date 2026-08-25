@@ -9,6 +9,14 @@ repository.workspace = true
 rust-version.workspace = true
 version.workspace = true
 
+[features]
+optimized-leanvm = [
+    "ream-network-spec/optimized-leanvm",
+    "ream-consensus-lean/optimized-leanvm",
+    "ream-storage/optimized-leanvm",
+    "ream-sync-committee-pool/optimized-leanvm",
+]
+
 [dependencies]
 alloy-consensus.workspace = true
 alloy-primitives.workspace = true

@@ -19,6 +19,15 @@ devnet5 = [
     "ream-network-spec/devnet5",
     "ream-post-quantum-crypto/devnet5",
 ]
+optimized-leanvm = [
+    "ream-network-spec/optimized-leanvm",
+    "devnet5",
+    "ream-chain-lean/optimized-leanvm",
+    "ream-consensus-lean/optimized-leanvm",
+    "ream-fork-choice-lean/optimized-leanvm",
+    "ream-keystore/optimized-leanvm",
+    "ream-post-quantum-crypto/optimized-leanvm",
+]
 
 [dependencies]
 alloy-primitives.workspace = true

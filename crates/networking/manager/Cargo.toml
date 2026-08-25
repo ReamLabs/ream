@@ -12,6 +12,18 @@ version.workspace = true
 [features]
 default = []
 devnet5 = ["ream-p2p/devnet5", "ream-storage/devnet5"]
+optimized-leanvm = [
+    "ream-network-spec/optimized-leanvm",
+    "devnet5",
+    "ream-chain-beacon/optimized-leanvm",
+    "ream-fork-choice-beacon/optimized-leanvm",
+    "ream-p2p/optimized-leanvm",
+    "ream-req-resp/optimized-leanvm",
+    "ream-storage/optimized-leanvm",
+    "ream-sync-committee-pool/optimized-leanvm",
+    "ream-syncer/optimized-leanvm",
+    "ream-validator-beacon/optimized-leanvm",
+]
 disable_ancestor_validation = []
 
 [dependencies]

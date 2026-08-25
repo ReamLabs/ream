@@ -12,6 +12,14 @@ version.workspace = true
 [features]
 default = []
 devnet5 = ["ream-storage/devnet5", "ream-p2p/devnet5"]
+optimized-leanvm = [
+    "ream-network-spec/optimized-leanvm",
+    "devnet5",
+    "ream-chain-beacon/optimized-leanvm",
+    "ream-p2p/optimized-leanvm",
+    "ream-req-resp/optimized-leanvm",
+    "ream-storage/optimized-leanvm",
+]
 
 [dependencies]
 alloy-primitives.workspace = true

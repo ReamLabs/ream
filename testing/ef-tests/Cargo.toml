@@ -16,6 +16,13 @@ devnet5 = [
     "ream-storage/devnet5",
     "ream-consensus-misc/devnet5",
 ]
+optimized-leanvm = [
+    "ream-network-spec/optimized-leanvm",
+    "devnet5",
+    "ream-consensus-lean/optimized-leanvm",
+    "ream-fork-choice-beacon/optimized-leanvm",
+    "ream-storage/optimized-leanvm",
+]
 ef-tests = []
 
 [dependencies]
