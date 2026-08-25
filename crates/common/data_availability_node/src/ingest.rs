@@ -26,10 +26,15 @@ pub struct IngestHandle {
 impl IngestHandle {
     /// Submit a candidate, awaiting while the queue is full (backpressure).
     pub async fn submit(&self, candidate: CandidateColumn) -> Result<(), IngestionError> {
-        self.sender
+        if self
+            .sender
             .send(IngestWorkItem::Candidate(candidate))
             .await
-            .map_err(|_| IngestionError::Closed)
+            .is_err()
+        {
+            return Err(IngestionError::Closed);
+        }
+        Ok(())
     }
 
     /// Submit a candidate without waiting; a full queue is
@@ -45,10 +50,15 @@ impl IngestHandle {
 
     /// Submit a retention hint, awaiting while the queue is full.
     pub async fn submit_retention(&self, hint: RetentionHint) -> Result<(), IngestionError> {
-        self.sender
+        if self
+            .sender
             .send(IngestWorkItem::Retention(hint))
             .await
-            .map_err(|_| IngestionError::Closed)
+            .is_err()
+        {
+            return Err(IngestionError::Closed);
+        }
+        Ok(())
     }
 
     /// Submit a retention hint without waiting; a full queue is
