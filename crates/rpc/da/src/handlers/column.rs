@@ -6,7 +6,7 @@ use actix_web::{
 };
 use alloy_primitives::B256;
 use ream_api_types_common::{error::ApiError, id::ID};
-use ream_da::{column::VerifiedColumn, id::DaColumnId, store::DaReadStore};
+use ream_da::{column::VerifiedColumn, id::ColumnId, store::ColumnReadStore};
 use serde::Serialize;
 
 use crate::handlers::block_root_from_id;
@@ -35,16 +35,16 @@ impl From<VerifiedColumn> for ColumnResponse {
     }
 }
 
-/// `GET /da/v0/columns/{block_root}/{index}` — serve a single stored column;
+/// `GET /data/v0/columns/{block_root}/{index}` — serve a single stored column;
 /// 400 for an out-of-range index, 404 when not held.
 #[get("/columns/{block_root}/{index}")]
 pub async fn get_column(
-    store: Data<Arc<dyn DaReadStore>>,
+    store: Data<Arc<dyn ColumnReadStore>>,
     path: Path<(ID, u64)>,
 ) -> Result<impl Responder, ApiError> {
     let (block_root, index) = path.into_inner();
     let block_root = block_root_from_id(block_root)?;
-    let id = DaColumnId::new(block_root, index)
+    let id = ColumnId::new(block_root, index)
         .map_err(|err| ApiError::BadRequest(format!("invalid column id: {err}")))?;
 
     let column = store
@@ -55,11 +55,11 @@ pub async fn get_column(
     Ok(HttpResponse::Ok().json(ColumnResponse::from(column)))
 }
 
-/// `GET /da/v0/columns/{block_root}` — serve every column this node holds for
+/// `GET /data/v0/columns/{block_root}` — serve every column this node holds for
 /// a block; an unknown block yields an empty array, not a 404.
 #[get("/columns/{block_root}")]
 pub async fn get_columns(
-    store: Data<Arc<dyn DaReadStore>>,
+    store: Data<Arc<dyn ColumnReadStore>>,
     block_root: Path<ID>,
 ) -> Result<impl Responder, ApiError> {
     let block_root = block_root_from_id(block_root.into_inner())?;
@@ -69,7 +69,7 @@ pub async fn get_columns(
 
     let mut columns = Vec::with_capacity(availability.held_count() as usize);
     for index in availability.held_indices() {
-        let id = DaColumnId::new(block_root, index)
+        let id = ColumnId::new(block_root, index)
             .expect("held index comes from the store and is always in range");
         // A column can be pruned between the snapshot and this read; skip it.
         if let Some(column) = store

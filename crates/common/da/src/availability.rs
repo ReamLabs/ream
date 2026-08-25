@@ -5,12 +5,12 @@ use crate::id::{NUMBER_OF_COLUMNS, column_indices};
 /// set ⇔ column `i`. The full-custody MVP stamps `expected` with
 /// `ALL_COLUMNS_MASK`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DaAvailability {
+pub struct ColumnAvailability {
     held: u128,
     expected: u128,
 }
 
-impl DaAvailability {
+impl ColumnAvailability {
     pub fn new(held: u128, expected: u128) -> Self {
         Self { held, expected }
     }
@@ -43,13 +43,13 @@ impl DaAvailability {
 
 #[cfg(test)]
 mod tests {
-    use super::DaAvailability;
+    use super::ColumnAvailability;
 
     const EXPECTED_FOUR: u128 = 0b1111;
 
     #[test]
     fn holds_probes_single_columns() {
-        let availability = DaAvailability::new(0b0101, EXPECTED_FOUR);
+        let availability = ColumnAvailability::new(0b0101, EXPECTED_FOUR);
         assert!(availability.holds(0));
         assert!(!availability.holds(1));
         assert!(availability.holds(2));
@@ -59,7 +59,7 @@ mod tests {
 
     #[test]
     fn complete_when_every_expected_column_is_held() {
-        let availability = DaAvailability::new(0b1111, EXPECTED_FOUR);
+        let availability = ColumnAvailability::new(0b1111, EXPECTED_FOUR);
         assert!(availability.is_complete());
         assert_eq!(availability.held_count(), 4);
         assert!(availability.missing_indices().is_empty());
@@ -67,7 +67,7 @@ mod tests {
 
     #[test]
     fn empty_holds_nothing() {
-        let availability = DaAvailability::new(0, EXPECTED_FOUR);
+        let availability = ColumnAvailability::new(0, EXPECTED_FOUR);
         assert!(!availability.is_complete());
         assert_eq!(availability.held_count(), 0);
         assert_eq!(availability.missing_indices(), vec![0, 1, 2, 3]);
@@ -75,7 +75,7 @@ mod tests {
 
     #[test]
     fn partial_reports_only_the_gaps() {
-        let availability = DaAvailability::new(0b0101, EXPECTED_FOUR);
+        let availability = ColumnAvailability::new(0b0101, EXPECTED_FOUR);
         assert!(!availability.is_complete());
         assert_eq!(availability.held_count(), 2);
         assert_eq!(availability.missing_indices(), vec![1, 3]);
@@ -83,7 +83,7 @@ mod tests {
 
     #[test]
     fn extra_columns_beyond_custody_still_complete() {
-        let availability = DaAvailability::new(0b11111, EXPECTED_FOUR);
+        let availability = ColumnAvailability::new(0b11111, EXPECTED_FOUR);
         assert!(availability.is_complete());
         assert_eq!(availability.held_count(), 5);
         assert!(availability.missing_indices().is_empty());
@@ -93,7 +93,7 @@ mod tests {
     fn sparse_custody_follows_the_bits_not_the_count() {
         let expected = (1u128 << 5) | (1u128 << 70) | (1u128 << 99);
         let held = (1u128 << 5) | (1u128 << 9);
-        let availability = DaAvailability::new(held, expected);
+        let availability = ColumnAvailability::new(held, expected);
 
         assert!(!availability.is_complete());
         assert_eq!(availability.held_count(), 2);
@@ -102,10 +102,10 @@ mod tests {
 
     #[test]
     fn held_indices_lists_every_stored_column_in_order() {
-        let availability = DaAvailability::new((1 << 0) | (1 << 2) | (1 << 9), EXPECTED_FOUR);
+        let availability = ColumnAvailability::new((1 << 0) | (1 << 2) | (1 << 9), EXPECTED_FOUR);
         assert_eq!(availability.held_indices(), vec![0, 2, 9]);
         assert!(
-            DaAvailability::new(0, EXPECTED_FOUR)
+            ColumnAvailability::new(0, EXPECTED_FOUR)
                 .held_indices()
                 .is_empty()
         );

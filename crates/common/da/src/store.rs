@@ -1,7 +1,7 @@
 use alloy_primitives::B256;
 
 use crate::{
-    availability::DaAvailability, column::VerifiedColumn, error::DaStoreError, id::DaColumnId,
+    availability::ColumnAvailability, column::VerifiedColumn, error::ColumnStoreError, id::ColumnId,
 };
 
 /// Outcome of inserting a verified column.
@@ -15,16 +15,16 @@ pub enum InsertOutcome {
 
 /// Read-only storage handle. Serving never re-verifies on the output path
 /// because the store only ever contains verified data.
-pub trait DaReadStore: Send + Sync {
-    fn get(&self, id: &DaColumnId) -> Result<Option<VerifiedColumn>, DaStoreError>;
-    fn availability(&self, block_root: B256) -> Result<DaAvailability, DaStoreError>;
+pub trait ColumnReadStore: Send + Sync {
+    fn get(&self, id: &ColumnId) -> Result<Option<VerifiedColumn>, ColumnStoreError>;
+    fn availability(&self, block_root: B256) -> Result<ColumnAvailability, ColumnStoreError>;
 }
 
 /// Write-capable storage handle, handed to the verification service only.
 /// Accepting [`VerifiedColumn`] (not candidates) makes "unverified data is
 /// never stored" a type-level rule.
-pub trait DaWriteStore: DaReadStore {
-    fn put(&self, column: VerifiedColumn) -> Result<InsertOutcome, DaStoreError>;
+pub trait ColumnWriteStore: ColumnReadStore {
+    fn put(&self, column: VerifiedColumn) -> Result<InsertOutcome, ColumnStoreError>;
 
-    fn prune_below_slot(&self, slot: u64) -> Result<usize, DaStoreError>;
+    fn prune_below_slot(&self, slot: u64) -> Result<usize, ColumnStoreError>;
 }

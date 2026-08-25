@@ -1,10 +1,10 @@
 use serde::{Deserialize, Serialize};
 
-use crate::id::DaColumnId;
+use crate::id::ColumnId;
 
 /// Consensus-derived context attached to a candidate column.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub struct DaContext {
+pub struct ColumnContext {
     /// Slot of the block the column belongs to; used for retention only.
     pub slot: u64,
 }
@@ -12,22 +12,22 @@ pub struct DaContext {
 /// A candidate column submitted for verification.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CandidateColumn {
-    pub id: DaColumnId,
-    pub context: DaContext,
+    pub id: ColumnId,
+    pub context: ColumnContext,
     pub payload: Vec<u8>,
 }
 
 /// A column that passed verification — the only type accepted by
-/// `DaWriteStore`, and only constructed by `DaVerifier` implementations.
+/// `ColumnWriteStore`, and only constructed by `ColumnVerifier` implementations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VerifiedColumn {
-    id: DaColumnId,
-    context: DaContext,
+    id: ColumnId,
+    context: ColumnContext,
     payload: Vec<u8>,
 }
 
 impl VerifiedColumn {
-    pub fn new_unchecked(id: DaColumnId, context: DaContext, payload: Vec<u8>) -> Self {
+    pub fn new_unchecked(id: ColumnId, context: ColumnContext, payload: Vec<u8>) -> Self {
         Self {
             id,
             context,
@@ -35,11 +35,11 @@ impl VerifiedColumn {
         }
     }
 
-    pub fn id(&self) -> DaColumnId {
+    pub fn id(&self) -> ColumnId {
         self.id
     }
 
-    pub fn context(&self) -> DaContext {
+    pub fn context(&self) -> ColumnContext {
         self.context
     }
 

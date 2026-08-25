@@ -3,6 +3,6 @@ use crate::{
     error::ValidationError,
 };
 
-pub trait DaVerifier: Send + Sync {
+pub trait ColumnVerifier: Send + Sync {
     fn verify(&self, candidate: CandidateColumn) -> Result<VerifiedColumn, ValidationError>;
 }

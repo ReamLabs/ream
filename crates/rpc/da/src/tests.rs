@@ -12,13 +12,13 @@ use std::{
 use actix_web::{App, http::StatusCode, test, web::Data};
 use alloy_primitives::B256;
 use ream_da::{
-    column::{DaContext, VerifiedColumn},
-    id::DaColumnId,
-    store::{DaReadStore, DaWriteStore},
+    column::{ColumnContext, VerifiedColumn},
+    id::ColumnId,
+    store::{ColumnReadStore, ColumnWriteStore},
 };
 use ream_da_node::{
-    ingest::{DaWorkItem, ingest_channel},
-    store::DaFileStore,
+    ingest::{IngestWorkItem, ingest_channel},
+    store::FileColumnStore,
 };
 use serde_json::{Value, json};
 
@@ -26,7 +26,7 @@ use crate::routes::register_routers;
 
 /// A temp-dir-backed store that cleans up on drop.
 struct TempStore {
-    inner: Arc<DaFileStore>,
+    inner: Arc<FileColumnStore>,
     root: PathBuf,
 }
 
@@ -36,22 +36,22 @@ impl TempStore {
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
         let root =
             std::env::temp_dir().join(format!("ream-rpc-da-test-{}-{n}", std::process::id()));
-        let inner = Arc::new(DaFileStore::new(root.clone()).expect("open store"));
+        let inner = Arc::new(FileColumnStore::new(root.clone()).expect("open store"));
         Self { inner, root }
     }
 
     fn put(&self, block_root: B256, index: u64, slot: u64, payload: &[u8]) {
-        let id = DaColumnId::new(block_root, index).expect("valid index");
+        let id = ColumnId::new(block_root, index).expect("valid index");
         self.inner
             .put(VerifiedColumn::new_unchecked(
                 id,
-                DaContext { slot },
+                ColumnContext { slot },
                 payload.to_vec(),
             ))
             .expect("put");
     }
 
-    fn read_handle(&self) -> Arc<dyn DaReadStore> {
+    fn read_handle(&self) -> Arc<dyn ColumnReadStore> {
         self.inner.clone()
     }
 }
@@ -71,13 +71,13 @@ async fn health_reports_ok() {
     // No app_data needed: the probe touches neither store nor ingest handle.
     let app = test::init_service(App::new().configure(register_routers)).await;
 
-    let req = test::TestRequest::get().uri("/da/v0/health").to_request();
+    let req = test::TestRequest::get().uri("/data/v0/health").to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["status"].as_str(), Some("healthy"));
-    assert_eq!(body["service"].as_str(), Some("da-node"));
+    assert_eq!(body["service"].as_str(), Some("data-availability-node"));
 }
 
 // ---------------------------------------------------------------------------
@@ -96,7 +96,7 @@ async fn ingest_accepts_valid_candidate() {
 
     let root = B256::repeat_byte(1);
     let req = test::TestRequest::post()
-        .uri("/da/v0/ingest")
+        .uri("/data/v0/ingest")
         .set_json(json!({
             "block_root": format!("0x{root:x}"),
             "index": 3,
@@ -108,7 +108,7 @@ async fn ingest_accepts_valid_candidate() {
 
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     match rx.try_recv().expect("a candidate was enqueued") {
-        DaWorkItem::Candidate(candidate) => {
+        IngestWorkItem::Candidate(candidate) => {
             assert_eq!(candidate.id.block_root(), root);
             assert_eq!(candidate.id.index(), 3);
             assert_eq!(candidate.context.slot, 42);
@@ -133,7 +133,7 @@ async fn ingest_full_queue_is_503() {
     let root = B256::repeat_byte(1);
     let make_req = || {
         test::TestRequest::post()
-            .uri("/da/v0/ingest")
+            .uri("/data/v0/ingest")
             .set_json(json!({
                 "block_root": format!("0x{root:x}"),
                 "index": 3,
@@ -162,7 +162,7 @@ async fn ingest_rejects_out_of_range_index() {
 
     let root = B256::repeat_byte(1);
     let req = test::TestRequest::post()
-        .uri("/da/v0/ingest")
+        .uri("/data/v0/ingest")
         .set_json(json!({
             "block_root": format!("0x{root:x}"),
             "index": 128, // == NUMBER_OF_COLUMNS, never a valid column
@@ -194,7 +194,7 @@ async fn availability_reports_held_and_missing() {
     .await;
 
     let req = test::TestRequest::get()
-        .uri(&format!("/da/v0/availability/0x{root:x}"))
+        .uri(&format!("/data/v0/availability/0x{root:x}"))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::OK);
@@ -219,7 +219,7 @@ async fn availability_unknown_block_is_empty() {
 
     let unknown = B256::repeat_byte(9);
     let req = test::TestRequest::get()
-        .uri(&format!("/da/v0/availability/0x{unknown:x}"))
+        .uri(&format!("/data/v0/availability/0x{unknown:x}"))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::OK);
@@ -240,7 +240,7 @@ async fn availability_rejects_non_root_id() {
     .await;
 
     let req = test::TestRequest::get()
-        .uri("/da/v0/availability/head")
+        .uri("/data/v0/availability/head")
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
@@ -264,7 +264,7 @@ async fn get_column_returns_stored_payload() {
     .await;
 
     let req = test::TestRequest::get()
-        .uri(&format!("/da/v0/columns/0x{root:x}/5"))
+        .uri(&format!("/data/v0/columns/0x{root:x}/5"))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::OK);
@@ -290,7 +290,7 @@ async fn get_column_absent_is_404() {
 
     // Valid index, just not held for this block.
     let req = test::TestRequest::get()
-        .uri(&format!("/da/v0/columns/0x{root:x}/6"))
+        .uri(&format!("/data/v0/columns/0x{root:x}/6"))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
@@ -308,7 +308,7 @@ async fn get_column_out_of_range_index_is_400() {
 
     let root = B256::repeat_byte(3);
     let req = test::TestRequest::get()
-        .uri(&format!("/da/v0/columns/0x{root:x}/999"))
+        .uri(&format!("/data/v0/columns/0x{root:x}/999"))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
@@ -330,7 +330,7 @@ async fn get_columns_returns_every_held_column() {
     .await;
 
     let req = test::TestRequest::get()
-        .uri(&format!("/da/v0/columns/0x{root:x}"))
+        .uri(&format!("/data/v0/columns/0x{root:x}"))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::OK);
@@ -361,13 +361,13 @@ async fn retention_enqueues_hint() {
     .await;
 
     let req = test::TestRequest::post()
-        .uri("/da/v0/retention/99")
+        .uri("/data/v0/retention/99")
         .to_request();
     let resp = test::call_service(&app, req).await;
 
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     match rx.try_recv().expect("a retention hint was enqueued") {
-        DaWorkItem::Retention(hint) => assert_eq!(hint.slot, 99),
+        IngestWorkItem::Retention(hint) => assert_eq!(hint.slot, 99),
         other => panic!("expected a retention hint, got {other:?}"),
     }
 }
@@ -383,7 +383,7 @@ async fn retention_rejects_non_slot_id() {
     .await;
 
     let req = test::TestRequest::post()
-        .uri("/da/v0/retention/head")
+        .uri("/data/v0/retention/head")
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);

@@ -2,29 +2,29 @@ use std::sync::Arc;
 
 use ream_da::{
     column::CandidateColumn,
-    store::{DaWriteStore, InsertOutcome},
-    verifier::DaVerifier,
+    store::{ColumnWriteStore, InsertOutcome},
+    verifier::ColumnVerifier,
 };
 use ream_executor::ReamExecutor;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
-use crate::ingest::{DaWorkItem, RetentionHint};
+use crate::ingest::{IngestWorkItem, RetentionHint};
 
 /// Drains the ingest queue, verifying each candidate and persisting those
 /// that pass — the single consumer, and the store's only writer.
-pub struct DaVerificationService {
-    receiver: mpsc::Receiver<DaWorkItem>,
-    verifier: Arc<dyn DaVerifier>,
-    store: Arc<dyn DaWriteStore>,
+pub struct DataAvailabilityVerificationService {
+    receiver: mpsc::Receiver<IngestWorkItem>,
+    verifier: Arc<dyn ColumnVerifier>,
+    store: Arc<dyn ColumnWriteStore>,
     executor: ReamExecutor,
 }
 
-impl DaVerificationService {
+impl DataAvailabilityVerificationService {
     pub fn new(
-        receiver: mpsc::Receiver<DaWorkItem>,
-        verifier: Arc<dyn DaVerifier>,
-        store: Arc<dyn DaWriteStore>,
+        receiver: mpsc::Receiver<IngestWorkItem>,
+        verifier: Arc<dyn ColumnVerifier>,
+        store: Arc<dyn ColumnWriteStore>,
         executor: ReamExecutor,
     ) -> Self {
         Self {
@@ -41,8 +41,8 @@ impl DaVerificationService {
         info!("DA verification service started");
         while let Some(item) = self.receiver.recv().await {
             match item {
-                DaWorkItem::Candidate(candidate) => self.process_candidate(candidate).await,
-                DaWorkItem::Retention(hint) => self.process_retention(hint).await,
+                IngestWorkItem::Candidate(candidate) => self.process_candidate(candidate).await,
+                IngestWorkItem::Retention(hint) => self.process_retention(hint).await,
             }
         }
         info!("DA verification service stopped: ingestion queue closed");
@@ -156,25 +156,25 @@ mod tests {
 
     use alloy_primitives::B256;
     use ream_da::{
-        column::{CandidateColumn, DaContext, VerifiedColumn},
+        column::{CandidateColumn, ColumnContext, VerifiedColumn},
         error::ValidationError,
-        id::DaColumnId,
-        store::DaReadStore,
-        verifier::DaVerifier,
+        id::ColumnId,
+        store::ColumnReadStore,
+        verifier::ColumnVerifier,
     };
     use ream_executor::ReamExecutor;
 
-    use super::DaVerificationService;
+    use super::DataAvailabilityVerificationService;
     use crate::{
         ingest::{RetentionHint, ingest_channel},
-        store::DaFileStore,
+        store::FileColumnStore,
     };
 
     /// Pass-through verifier: these tests exercise the queue-to-store
     /// plumbing, not the cryptography (tested in `ream-da-verifier-kzg`).
     struct AcceptAllVerifier;
 
-    impl DaVerifier for AcceptAllVerifier {
+    impl ColumnVerifier for AcceptAllVerifier {
         fn verify(&self, candidate: CandidateColumn) -> Result<VerifiedColumn, ValidationError> {
             Ok(VerifiedColumn::new_unchecked(
                 candidate.id,
@@ -198,8 +198,8 @@ mod tests {
         payload: &[u8],
     ) -> CandidateColumn {
         CandidateColumn {
-            id: DaColumnId::new(block_root, index).expect("index within range"),
-            context: DaContext { slot },
+            id: ColumnId::new(block_root, index).expect("index within range"),
+            context: ColumnContext { slot },
             payload: payload.to_vec(),
         }
     }
@@ -208,10 +208,11 @@ mod tests {
     fn submitted_candidates_are_verified_and_stored() {
         let executor = ReamExecutor::new().expect("create executor");
         let root = temp_root();
-        let store = Arc::new(DaFileStore::new(root.clone()).expect("open store"));
+        let store = Arc::new(FileColumnStore::new(root.clone()).expect("open store"));
         let verifier = Arc::new(AcceptAllVerifier);
         let (handle, rx) = ingest_channel(8);
-        let service = DaVerificationService::new(rx, verifier, store.clone(), executor.clone());
+        let service =
+            DataAvailabilityVerificationService::new(rx, verifier, store.clone(), executor.clone());
 
         let candidates = vec![
             sample_candidate(B256::repeat_byte(1), 0, 10, b"col-0"),
@@ -249,10 +250,11 @@ mod tests {
     fn retention_hint_prunes_columns_below_the_boundary() {
         let executor = ReamExecutor::new().expect("create executor");
         let root = temp_root();
-        let store = Arc::new(DaFileStore::new(root.clone()).expect("open store"));
+        let store = Arc::new(FileColumnStore::new(root.clone()).expect("open store"));
         let verifier = Arc::new(AcceptAllVerifier);
         let (handle, rx) = ingest_channel(8);
-        let service = DaVerificationService::new(rx, verifier, store.clone(), executor.clone());
+        let service =
+            DataAvailabilityVerificationService::new(rx, verifier, store.clone(), executor.clone());
 
         // Two old columns at slot 10, one newer at slot 20.
         let old_a = sample_candidate(B256::repeat_byte(1), 0, 10, b"old-a");

@@ -8,9 +8,9 @@ use crate::handlers::{
     retention::post_retention,
 };
 
-/// Register every DA API route under the versioned `/da/v0` scope.
+/// Register every DA API route under the versioned `/data/v0` scope.
 pub fn register_routers(config: &mut ServiceConfig) {
-    config.service(scope("/da/v0").configure(register_v0_routes));
+    config.service(scope("/data/v0").configure(register_v0_routes));
 }
 
 fn register_v0_routes(config: &mut ServiceConfig) {

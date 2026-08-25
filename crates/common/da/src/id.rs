@@ -24,12 +24,12 @@ pub fn column_indices(mut bitmap: u128) -> Vec<u64> {
 #[derive(
     Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize, Deserialize, Default,
 )]
-pub struct DaColumnId {
+pub struct ColumnId {
     block_root: B256,
     index: u64,
 }
 
-impl DaColumnId {
+impl ColumnId {
     pub fn new(block_root: B256, index: u64) -> Result<Self, ValidationError> {
         if index >= NUMBER_OF_COLUMNS {
             return Err(ValidationError::InvalidColumnIndex {

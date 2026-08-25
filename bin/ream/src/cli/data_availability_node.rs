@@ -9,7 +9,7 @@ use crate::cli::constants::{
 };
 
 #[derive(Debug, Parser)]
-pub struct DaNodeConfig {
+pub struct DataAvailabilityNodeConfig {
     #[arg(
         long,
         help = "Choose mainnet, sepolia, hoodi, dev or provide a path to a YAML config file",

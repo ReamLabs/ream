@@ -5,17 +5,17 @@ use actix_web::{
 use ream_api_types_common::{error::ApiError, id::ID};
 use ream_da_node::{
     error::IngestionError,
-    ingest::{DaIngestHandle, RetentionHint},
+    ingest::{IngestHandle, RetentionHint},
 };
 
 use crate::handlers::slot_from_id;
 
-/// `POST /da/v0/retention/{slot}` — prune every stored column whose slot is
+/// `POST /data/v0/retention/{slot}` — prune every stored column whose slot is
 /// strictly below `{slot}`. The hint rides the verification queue, so pruning
 /// stays serialized with verification and off the request path.
 #[post("/retention/{slot}")]
 pub async fn post_retention(
-    handle: Data<DaIngestHandle>,
+    handle: Data<IngestHandle>,
     slot: Path<ID>,
 ) -> Result<impl Responder, ApiError> {
     let slot = slot_from_id(slot.into_inner())?;

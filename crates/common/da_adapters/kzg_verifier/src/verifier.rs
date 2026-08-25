@@ -4,8 +4,8 @@ use ream_consensus_beacon::data_column_sidecar::DataColumnSidecar;
 use ream_da::{
     column::{CandidateColumn, VerifiedColumn},
     error::ValidationError,
-    id::DaColumnId,
-    verifier::DaVerifier,
+    id::ColumnId,
+    verifier::ColumnVerifier,
 };
 use ream_polynomial_commitments::{handlers::verify_data_column_sidecar_kzg_proofs, trusted_setup};
 use ssz::Decode;
@@ -63,14 +63,14 @@ impl KzgVerifier {
     }
 }
 
-impl DaVerifier for KzgVerifier {
+impl ColumnVerifier for KzgVerifier {
     fn verify(&self, candidate: CandidateColumn) -> Result<VerifiedColumn, ValidationError> {
         let sidecar = self.decode(&candidate.payload)?;
 
         // The id is derived from the payload's own signed header, so a
         // candidate cannot claim a column its payload does not carry.
         let block_root = sidecar.signed_block_header.message.tree_hash_root();
-        let id = DaColumnId::new(block_root, sidecar.index)?;
+        let id = ColumnId::new(block_root, sidecar.index)?;
         if id != candidate.id {
             return Err(ValidationError::IdMismatch {
                 expected: format!("block root {block_root}, column {}", sidecar.index),
@@ -127,10 +127,10 @@ mod tests {
         polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
     };
     use ream_da::{
-        column::{CandidateColumn, DaContext},
+        column::{CandidateColumn, ColumnContext},
         error::ValidationError,
-        id::DaColumnId,
-        verifier::DaVerifier,
+        id::ColumnId,
+        verifier::ColumnVerifier,
     };
     use ream_execution_rpc_types::get_blobs::Blob;
     use ream_merkle::{generate_proof, merkle_tree};
@@ -169,8 +169,8 @@ mod tests {
     fn candidate_of(sidecar: &DataColumnSidecar) -> CandidateColumn {
         let block_root = sidecar.signed_block_header.message.tree_hash_root();
         CandidateColumn {
-            id: DaColumnId::new(block_root, sidecar.index).expect("valid index"),
-            context: DaContext {
+            id: ColumnId::new(block_root, sidecar.index).expect("valid index"),
+            context: ColumnContext {
                 slot: sidecar.signed_block_header.message.slot,
             },
             payload: payload_of(sidecar),
@@ -239,8 +239,8 @@ mod tests {
     #[test]
     fn rejects_malformed_payload() {
         let candidate = CandidateColumn {
-            id: DaColumnId::new(B256::ZERO, 0).expect("valid index"),
-            context: DaContext::default(),
+            id: ColumnId::new(B256::ZERO, 0).expect("valid index"),
+            context: ColumnContext::default(),
             payload: vec![0xde, 0xad, 0xbe, 0xef],
         };
         assert!(matches!(
@@ -253,8 +253,8 @@ mod tests {
     fn rejects_out_of_range_index() {
         // index 128 == NUMBER_OF_COLUMNS, never valid.
         let candidate = CandidateColumn {
-            id: DaColumnId::new(B256::ZERO, 0).expect("valid index"),
-            context: DaContext::default(),
+            id: ColumnId::new(B256::ZERO, 0).expect("valid index"),
+            context: ColumnContext::default(),
             payload: payload_of(&sidecar(128, 1)),
         };
         assert!(matches!(
@@ -268,7 +268,7 @@ mod tests {
         let sidecar = sidecar(3, 1);
         let honest = candidate_of(&sidecar);
         let forged = CandidateColumn {
-            id: DaColumnId::new(honest.id.block_root(), 4).expect("valid index"),
+            id: ColumnId::new(honest.id.block_root(), 4).expect("valid index"),
             ..honest
         };
         assert!(matches!(
@@ -282,7 +282,7 @@ mod tests {
         let sidecar = sidecar(3, 1);
         let honest = candidate_of(&sidecar);
         let forged = CandidateColumn {
-            context: DaContext {
+            context: ColumnContext {
                 slot: honest.context.slot + 1,
             },
             ..honest
@@ -331,7 +331,7 @@ mod tests {
     /// `ream-da` and beacon each define `NUMBER_OF_COLUMNS` and neither may
     /// depend on the other; this adapter sees both, so it pins them equal.
     #[test]
-    fn da_core_column_count_matches_beacon() {
+    fn das_core_column_count_matches_beacon() {
         assert_eq!(
             ream_da::id::NUMBER_OF_COLUMNS,
             ream_consensus_beacon::data_column_sidecar::NUMBER_OF_COLUMNS,

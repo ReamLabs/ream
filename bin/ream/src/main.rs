@@ -17,7 +17,7 @@ use ream::{
         Cli, Commands,
         account_manager::AccountManagerConfig,
         beacon_node::BeaconNodeConfig,
-        da_node::DaNodeConfig,
+        data_availability_node::DataAvailabilityNodeConfig,
         generate_private_key::GeneratePrivateKeyConfig,
         generate_validator_registry::run_generate_validator_registry,
         import_keystores::{load_keystore_directory, load_password_from_config, process_password},
@@ -47,7 +47,9 @@ use ream_consensus_misc::{
     },
     misc::compute_epoch_at_slot,
 };
-use ream_da_node::{ingest::ingest_channel, service::DaVerificationService, store::DaFileStore};
+use ream_da_node::{
+    ingest::ingest_channel, service::DataAvailabilityVerificationService, store::FileColumnStore,
+};
 use ream_da_verifier_kzg::KzgVerifier;
 use ream_events_beacon::BeaconEvent;
 use ream_execution_engine::ExecutionEngine;
@@ -167,7 +169,7 @@ fn main() {
                 ReamDB::new(ream_directory.clone()).expect("unable to init Ream Database");
             executor_clone.spawn(async move { run_beacon_node(*config, executor, ream_db).await })
         }
-        Commands::DaNode(config) => executor_clone.spawn(async move {
+        Commands::DataAvailabilityNode(config) => executor_clone.spawn(async move {
             run_data_availability_node(*config, executor, ream_directory).await
         }),
         Commands::ValidatorNode(config) => {
@@ -646,17 +648,17 @@ async fn run_beacon_node_for_test(
     run_beacon_node_inner(config, executor, ream_db, false).await;
 }
 
-/// Runs the da node.
+/// Runs the DA node.
 pub async fn run_data_availability_node(
-    config: DaNodeConfig,
+    config: DataAvailabilityNodeConfig,
     executor: ReamExecutor,
     ream_directory: PathBuf,
 ) {
     info!(
-        "starting up da node on {}:{}",
+        "starting up Data node on {}:{}",
         config.http_address, config.http_port
     );
-    let data_dir = ream_directory.join("da");
+    let data_dir = ream_directory.join("data");
 
     set_beacon_network_spec(config.network.clone());
 
@@ -677,14 +679,19 @@ pub async fn run_data_availability_node(
         config.http_allow_origin,
     );
 
-    let store = Arc::new(DaFileStore::new(data_dir).expect("failed to open DA store"));
+    let store = Arc::new(FileColumnStore::new(data_dir).expect("failed to open DA store"));
     let max_blobs_per_block =
         NonZeroUsize::new(beacon_network_spec().max_blobs_per_block_electra as usize)
             .expect("network spec max_blobs_per_block must be nonzero");
     let verifier = Arc::new(KzgVerifier::new(max_blobs_per_block));
 
     let (ingest_handle, rx) = ingest_channel(DATA_AVAILABILITY_VERIFICATION_QUEUE_CAPACITY);
-    let service = DaVerificationService::new(rx, verifier.clone(), store.clone(), executor.clone());
+    let service = DataAvailabilityVerificationService::new(
+        rx,
+        verifier.clone(),
+        store.clone(),
+        executor.clone(),
+    );
     let mut service_task = AbortOnDrop(executor.spawn(service.run()));
 
     let mut http_task = AbortOnDrop(executor.spawn(async move {
