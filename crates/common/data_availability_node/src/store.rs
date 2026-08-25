@@ -34,7 +34,7 @@ fn column_bit(column_index: u64) -> u128 {
     1u128 << column_index
 }
 
-/// File-backed DA store: one file per verified column under `root`, plus an
+/// File-backed column store: one file per verified column under `root`, plus an
 /// in-memory metadata index (block root → [`BlockEntry`]) rebuilt from the
 /// directory on startup.
 pub struct FileColumnStore {
@@ -71,7 +71,7 @@ impl FileColumnStore {
             Ok(entries) => entries,
             // No directory yet: nothing has been stored, which is normal.
             Err(err) if err.kind() == io::ErrorKind::NotFound => {
-                debug!("no DA store directory at {root} yet; starting with an empty index");
+                debug!("no column store directory at {root} yet; starting with an empty index");
                 return Ok(());
             }
             Err(err) => return Err(err.into()),
@@ -106,7 +106,7 @@ impl FileColumnStore {
         }
 
         info!(
-            "loaded DA store index from {root}: {column_files} column files across {} blocks",
+            "loaded column store index from {root}: {column_files} column files across {} blocks",
             index.len()
         );
         Ok(())
@@ -293,7 +293,7 @@ mod tests {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
         let pid = std::process::id();
-        std::env::temp_dir().join(format!("ream-da-store-test-{pid}-{n}"))
+        std::env::temp_dir().join(format!("ream-data-store-test-{pid}-{n}"))
     }
 
     fn sample_column(block_root: B256, index: u64, slot: u64, payload: &[u8]) -> VerifiedColumn {

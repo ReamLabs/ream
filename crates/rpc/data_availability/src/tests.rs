@@ -1,4 +1,4 @@
-//! Integration tests for the DA RPC surface.
+//! Integration tests for the data-availability RPC surface.
 
 use std::{
     fs,
@@ -35,7 +35,7 @@ impl TempStore {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
         let root =
-            std::env::temp_dir().join(format!("ream-rpc-da-test-{}-{n}", std::process::id()));
+            std::env::temp_dir().join(format!("ream-rpc-data-test-{}-{n}", std::process::id()));
         let inner = Arc::new(FileColumnStore::new(root.clone()).expect("open store"));
         Self { inner, root }
     }

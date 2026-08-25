@@ -328,7 +328,7 @@ mod tests {
         ));
     }
 
-    /// `ream-da` and beacon each define `NUMBER_OF_COLUMNS` and neither may
+    /// `ream-data-availability` and beacon each define `NUMBER_OF_COLUMNS` and neither may
     /// depend on the other; this adapter sees both, so it pins them equal.
     #[test]
     fn das_core_column_count_matches_beacon() {

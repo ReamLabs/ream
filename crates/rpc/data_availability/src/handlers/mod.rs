@@ -12,7 +12,7 @@ pub(crate) fn block_root_from_id(id: ID) -> Result<B256, ApiError> {
     match id {
         ID::Root(root) => Ok(root),
         other => Err(ApiError::BadRequest(format!(
-            "the DA node identifies blocks by root only; `{other}` is not supported"
+            "the data node identifies blocks by root only; `{other}` is not supported"
         ))),
     }
 }
@@ -22,7 +22,7 @@ pub(crate) fn slot_from_id(id: ID) -> Result<u64, ApiError> {
     match id {
         ID::Slot(slot) => Ok(slot),
         other => Err(ApiError::BadRequest(format!(
-            "the DA node accepts a concrete slot only; `{other}` is not supported"
+            "the data node accepts a concrete slot only; `{other}` is not supported"
         ))),
     }
 }

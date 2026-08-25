@@ -38,14 +38,14 @@ impl DataAvailabilityVerificationService {
     ///
     /// TODO: batching can come once a batchable verifier exists.
     pub async fn run(mut self) {
-        info!("DA verification service started");
+        info!("Data-availability verification service started");
         while let Some(item) = self.receiver.recv().await {
             match item {
                 IngestWorkItem::Candidate(candidate) => self.process_candidate(candidate).await,
                 IngestWorkItem::Retention(hint) => self.process_retention(hint).await,
             }
         }
-        info!("DA verification service stopped: ingestion queue closed");
+        info!("Data-availability verification service stopped: ingestion queue closed");
     }
 
     async fn process_retention(&self, hint: RetentionHint) {
@@ -171,7 +171,7 @@ mod tests {
     };
 
     /// Pass-through verifier: these tests exercise the queue-to-store
-    /// plumbing, not the cryptography (tested in `ream-da-verifier-kzg`).
+    /// plumbing, not the cryptography (tested in `ream-data-availability-verifier-kzg`).
     struct AcceptAllVerifier;
 
     impl ColumnVerifier for AcceptAllVerifier {
@@ -188,7 +188,7 @@ mod tests {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
         let pid = std::process::id();
-        std::env::temp_dir().join(format!("ream-da-pipeline-test-{pid}-{n}"))
+        std::env::temp_dir().join(format!("ream-data-pipeline-test-{pid}-{n}"))
     }
 
     fn sample_candidate(

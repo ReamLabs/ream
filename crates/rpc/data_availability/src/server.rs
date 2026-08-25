@@ -6,7 +6,6 @@ use ream_rpc_common::{config::RpcServerConfig, server::RpcServerBuilder};
 
 use crate::routes::register_routers;
 
-/// Start the DA API server.
 pub async fn start(
     server_config: RpcServerConfig,
     ingest_handle: IngestHandle,

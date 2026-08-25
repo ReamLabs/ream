@@ -230,7 +230,7 @@ mod tests {
                 assert_eq!(config.http_port, 5999);
                 assert!(!config.http_allow_origin);
             }
-            _ => unreachable!("This test should only validate the DA node cli"),
+            _ => unreachable!("This test should only validate the data node cli"),
         }
 
         let cli = Cli::parse_from(["program", "da_node"]);
@@ -239,7 +239,7 @@ mod tests {
             Commands::DataAvailabilityNode(config) => {
                 assert_eq!(config.http_port, DEFAULT_DATA_AVAILABILITY_HTTP_PORT)
             }
-            _ => unreachable!("This test should only validate the DA node cli"),
+            _ => unreachable!("This test should only validate the data node cli"),
         }
     }
 

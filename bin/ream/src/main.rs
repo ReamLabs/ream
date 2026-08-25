@@ -648,7 +648,7 @@ async fn run_beacon_node_for_test(
     run_beacon_node_inner(config, executor, ream_db, false).await;
 }
 
-/// Runs the DA node.
+/// Runs the data node.
 pub async fn run_data_availability_node(
     config: DataAvailabilityNodeConfig,
     executor: ReamExecutor,
@@ -662,12 +662,12 @@ pub async fn run_data_availability_node(
 
     set_beacon_network_spec(config.network.clone());
 
-    // The DA RPC is unauthenticated; it must never be reachable beyond
+    // The data availability RPC is unauthenticated; it must never be reachable beyond
     // localhost.
     if !config.http_address.is_loopback() {
         error!(
-            "refusing to start DA node: http address {} is not loopback; \
-             the DA RPC must not be reachable beyond localhost",
+            "refusing to start data node: http address {} is not loopback; \
+             the data RPC must not be reachable beyond localhost",
             config.http_address
         );
         return;
@@ -679,7 +679,7 @@ pub async fn run_data_availability_node(
         config.http_allow_origin,
     );
 
-    let store = Arc::new(FileColumnStore::new(data_dir).expect("failed to open DA store"));
+    let store = Arc::new(FileColumnStore::new(data_dir).expect("failed to open column store"));
     let max_blobs_per_block =
         NonZeroUsize::new(beacon_network_spec().max_blobs_per_block_electra as usize)
             .expect("network spec max_blobs_per_block must be nonzero");
@@ -709,8 +709,8 @@ pub async fn run_data_availability_node(
     }
 
     tokio::select! {
-        _ = &mut http_task.0 => info!("DA HTTP server stopped"),
-        _ = &mut service_task.0 => info!("DA verification service stopped"),
+        _ = &mut http_task.0 => info!("Data-availability HTTP server stopped"),
+        _ = &mut service_task.0 => info!("Data-availability verification service stopped"),
     }
 }
 
