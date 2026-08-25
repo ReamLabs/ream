@@ -12,6 +12,6 @@ pub struct JustifiabilityTest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JustifiabilityOutput {
-    pub delta: u64,
+    pub delta: i64,
     pub is_justifiable: bool,
 }

@@ -32,7 +32,6 @@ impl Default for LeanGossipsubConfig {
                     * lean_network_spec().seconds_per_slot
                     * 2,
             ))
-            .validate_messages()
             .validation_mode(ValidationMode::Anonymous)
             .allow_self_origin(true)
             .flood_publish(false)

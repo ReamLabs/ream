@@ -1,3 +1,5 @@
+#[cfg(feature = "devnet5")]
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     pin::Pin,
@@ -22,12 +24,17 @@ use ream_consensus_lean::{
     block::{BlockWithSignatures, SignedBlock},
     checkpoint::Checkpoint,
 };
-use ream_consensus_misc::constants::lean::{INTERVALS_PER_SLOT, attestation_committee_count};
+use ream_consensus_misc::constants::lean::{
+    HYSTERESIS_BAND, INTERVALS_PER_SLOT, NETWORK_STALL_THRESHOLD, SYNC_LAG_THRESHOLD,
+    attestation_committee_count,
+};
 use ream_fork_choice_lean::store::LeanStoreWriter;
+#[cfg(feature = "devnet5")]
+use ream_fork_choice_lean::store::prove_aggregation_jobs;
 use ream_metrics::{
     ATTESTATION_COMMITTEE_COUNT as ATTESTATION_COMMITTEE_COUNT_METRIC,
     BLOCK_BUILDING_FAILURES_TOTAL, CURRENT_SLOT, IS_AGGREGATOR, LEAN_AGGREGATOR_SKIPPED_TOTAL,
-    inc_int_counter_vec, set_int_gauge_vec,
+    VALIDATOR_DUTIES_SKIPPED_LAG_TOTAL, inc_int_counter_vec, set_int_gauge_vec,
 };
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::{AggregatorState, NetworkState};
@@ -48,7 +55,10 @@ use ream_reth_engine::{
     handle::RethHandle,
     payload::to_ream_execution_payload,
 };
-use ream_storage::tables::{field::REDBField, table::REDBTable};
+use ream_storage::{
+    errors::StoreError,
+    tables::{field::REDBField, table::REDBTable},
+};
 #[cfg(feature = "devnet5")]
 use ssz_types::VariableList;
 #[cfg(feature = "devnet5")]
@@ -244,9 +254,20 @@ type CallbackFuture = Pin<
     >,
 >;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SyncedForDuties {
+    Yes,
+    No {
+        head_slot: u64,
+        lag: u64,
+        max_seen_slot: u64,
+    },
+}
+
 /// LeanChainService is responsible for updating the [LeanChain] state
 pub struct LeanChainService {
     store: Arc<LeanStoreWriter>,
+    clock_prebuilt_for: Option<u64>,
     receiver: mpsc::UnboundedReceiver<LeanChainServiceMessage>,
     outbound_p2p: mpsc::UnboundedSender<LeanP2PRequest>,
     network_state: Arc<NetworkState>,
@@ -262,10 +283,13 @@ pub struct LeanChainService {
     pending_callbacks: FuturesUnordered<CallbackFuture>,
     aggregator_state: Arc<AggregatorState>,
     telemetry: SyncTelemetry,
+    duties_paused: bool,
     #[cfg(feature = "devnet5")]
     pending_block_aggregates: Arc<Mutex<Vec<SignedAggregatedAttestation>>>,
     #[cfg(feature = "reth")]
     reth_handle: Option<RethHandle>,
+    #[cfg(feature = "devnet5")]
+    aggregation_in_flight: Arc<AtomicBool>,
 }
 
 impl LeanChainService {
@@ -277,6 +301,7 @@ impl LeanChainService {
     ) -> Self {
         let network_state = store.read().await.network_state.clone();
         LeanChainService {
+            clock_prebuilt_for: None,
             network_state,
             store: Arc::new(store),
             receiver,
@@ -293,10 +318,13 @@ impl LeanChainService {
             pending_job_requests: VecDeque::new(),
             aggregator_state,
             telemetry: SyncTelemetry::from_env(),
+            duties_paused: false,
             #[cfg(feature = "devnet5")]
             pending_block_aggregates: Arc::new(Mutex::new(Vec::new())),
             #[cfg(feature = "reth")]
             reth_handle: None,
+            #[cfg(feature = "devnet5")]
+            aggregation_in_flight: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -361,8 +389,61 @@ impl LeanChainService {
                         self.sync_status = self.update_sync_status().await?;
                     }
                     if self.sync_status == SyncStatus::Synced {
-                        self.store.write().await.tick_interval(tick_count.is_multiple_of(INTERVALS_PER_SLOT), self.is_aggregator()).await?;
+                        self.tick_store_from_clock(tick_count).await?;
                         self.step_head_sync(tick_count).await?;
+
+                        #[cfg(feature = "devnet5")]
+                        if self.is_aggregator()
+                            && tick_count % INTERVALS_PER_SLOT == 2
+                            && !self.aggregation_in_flight.swap(true, Ordering::AcqRel)
+                        {
+                            let store = self.store.clone();
+                            let in_flight = self.aggregation_in_flight.clone();
+                            let outbound = self.outbound_p2p.clone();
+                            let agg_start = Instant::now();
+                            const AGG_DEADLINE: Duration = Duration::from_millis(750);
+                            let deadline = agg_start + AGG_DEADLINE;
+                            tokio::spawn(async move {
+                                let result = async {
+                                    let jobs = store.write().await.aggregate_prepare().await?;
+                                    let total = jobs.len();
+                                    let mut produced = 0usize;
+                                    for job in jobs {
+                                        if produced > 0 && Instant::now() >= deadline {
+                                            break;
+                                        }
+                                        let signed = tokio::task::spawn_blocking(move || {
+                                            prove_aggregation_jobs(vec![job])
+                                        })
+                                        .await
+                                        .map_err(|err| anyhow!("aggregation join error: {err:?}"))??;
+                                        store.write().await.aggregate_apply(&signed).await?;
+                                        for aggregate in signed {
+                                            produced += 1;
+                                            if let Err(err) = outbound.send(
+                                                LeanP2PRequest::GossipAggregatedAttestation(Box::new(
+                                                    aggregate,
+                                                )),
+                                            ) {
+                                                warn!("Failed to gossip aggregated attestation: {err:?}");
+                                            }
+                                        }
+                                    }
+                                    let elapsed_ms = agg_start.elapsed().as_millis() as u64;
+                                    if produced < total {
+                                        warn!(elapsed_ms, produced, total, "AGG_TIMING partial batch (deadline)");
+                                    } else {
+                                        info!(elapsed_ms, produced, "AGG_TIMING aggregation complete");
+                                    }
+                                    anyhow::Ok(())
+                                }
+                                .await;
+                                if let Err(err) = result {
+                                    warn!("Off-loop committee aggregation failed: {err:?}");
+                                }
+                                in_flight.store(false, Ordering::Release);
+                            });
+                        }
                     }
 
                     tick_count += 1;
@@ -622,6 +703,21 @@ impl LeanChainService {
         is_aggregator
     }
 
+    async fn tick_store_from_clock(&mut self, tick_count: u64) -> anyhow::Result<()> {
+        let is_slot_start = tick_count.is_multiple_of(INTERVALS_PER_SLOT);
+        let wall_slot = tick_count / INTERVALS_PER_SLOT;
+        if is_slot_start && self.clock_prebuilt_for == Some(wall_slot) {
+            self.clock_prebuilt_for = None;
+        } else {
+            self.store
+                .write()
+                .await
+                .tick_interval(false, self.is_aggregator())
+                .await?;
+        }
+        Ok(())
+    }
+
     async fn step_head_sync(&mut self, tick_count: u64) -> anyhow::Result<()> {
         let interval = tick_count % INTERVALS_PER_SLOT;
         match interval {
@@ -669,6 +765,15 @@ impl LeanChainService {
                 // Second tick: Prune old data.
                 if let Err(err) = self.prune_old_state(tick_count).await {
                     warn!("Pruning cycle failed (non-fatal): {err:?}");
+                }
+                if let Err(err) = self
+                    .store
+                    .write()
+                    .await
+                    .prune_stale_attestation_data()
+                    .await
+                {
+                    warn!("Attestation pruning failed (non-fatal): {err:?}");
                 }
             }
             3 => {
@@ -953,7 +1058,29 @@ impl LeanChainService {
             );
         }
 
-        self.choose_weighted_peer(&fallback_candidates)
+        if let Some(peer_id) = self.choose_weighted_peer(&fallback_candidates) {
+            return Some(peer_id);
+        }
+
+        // Last resort: reuse the avoided peer only when it is genuinely the sole peer we are
+        // connected to. A `Reset` job avoids the peer that just failed it, but if that peer
+        // is now the only connected candidate (e.g. after a pause collapses every other
+        // connection during recovery), refusing it here deadlocks backfill forever.
+        if avoid_peer_id.is_some()
+            && self.network_state.connected_peer_count() <= 1
+            && candidates
+                .iter()
+                .any(|(peer_id, _)| Some(*peer_id) == avoid_peer_id)
+        {
+            debug!(
+                connected = candidates.len(),
+                avoid_peer_id = ?avoid_peer_id,
+                "Only the avoided peer is connected; reusing it to avoid stalling backfill"
+            );
+            return self.choose_weighted_peer(candidates);
+        }
+
+        None
     }
 
     async fn assignable_peer_id(&self, avoid_peer_id: Option<PeerId>) -> Option<PeerId> {
@@ -1976,6 +2103,26 @@ impl LeanChainService {
                     );
                 }
             }
+            ForwardSyncResults::BlockAheadOfWallClock {
+                previous_queue,
+                bad_root,
+                bad_slot,
+                wall_clock_slot,
+            } => {
+                let removed_pending_block = self.remove_pending_block(bad_root).await?;
+                self.backfill_state
+                    .remove_processed_queue(previous_queue.starting_root);
+                self.dropped_backfill_roots.insert(bad_root);
+                warn!(
+                    starting_root = ?previous_queue.starting_root,
+                    starting_slot = previous_queue.starting_slot,
+                    bad_root = ?bad_root,
+                    bad_slot,
+                    wall_clock_slot,
+                    removed_pending_block,
+                    "Forward background sync block slot ahead of wall clock; purged bad pending block and suppressing the root",
+                );
+            }
         }
 
         Ok(())
@@ -2741,6 +2888,7 @@ impl LeanChainService {
     }
 
     async fn queue_pending_job_requests(&mut self) -> anyhow::Result<()> {
+        let mut deferred: Vec<PendingJobRequest> = Vec::new();
         while let Some(pending_job_request) = self.pending_job_requests.pop_front() {
             let avoid_peer_id = match &pending_job_request {
                 PendingJobRequest::Reset { peer_id } => Some(*peer_id),
@@ -2777,8 +2925,11 @@ impl LeanChainService {
                         peers_in_use = self.peers_in_use.len(),
                         "No assignable peer available for pending backfill job request",
                     );
-                    self.pending_job_requests.push_back(pending_job_request);
-                    return Ok(());
+                    // Defer instead of returning: draining the rest of the queue keeps a
+                    // single unplaceable request (e.g. a `Reset` avoiding a peer) from
+                    // head-of-line blocking other placeable requests behind it in the FIFO.
+                    deferred.push(pending_job_request);
+                    continue;
                 }
             };
             match pending_job_request {
@@ -2836,11 +2987,16 @@ impl LeanChainService {
             }
             self.peers_in_use.insert(non_queued_peer_id);
         }
+        // Restore requests that could not be placed this tick, preserving their order, so
+        // they are retried next tick without starving the requests we just drained past.
+        for request in deferred {
+            self.pending_job_requests.push_back(request);
+        }
         Ok(())
     }
 
     async fn prune_old_state(&self, tick_count: u64) -> anyhow::Result<()> {
-        let (head, block_provider, slot_index_provider, state_provider) = {
+        let (slot_index_provider, state_provider, latest_finalized_slot) = {
             let fork_choice = self.store.read().await;
             let store = fork_choice.store.lock().await;
 
@@ -2850,38 +3006,184 @@ impl LeanChainService {
                 warn!("Failed to report storage metrics: {err:?}");
             }
             (
-                store.head_provider().get()?,
-                store.block_provider(),
                 store.slot_index_provider(),
                 store.state_provider(),
+                store.latest_finalized_provider().get()?.slot,
             )
         };
 
-        let head_slot = block_provider
-            .get(head)?
-            .ok_or_else(|| anyhow!("State not found for head: {head}"))?
-            .block
-            .slot;
+        if latest_finalized_slot > STATE_RETENTION_SLOTS {
+            let prune_target_slot = latest_finalized_slot - 1;
+            let mut scan = prune_target_slot;
+            let mut prune_root = None;
+            loop {
+                if let Some(root) = slot_index_provider.get(scan)? {
+                    prune_root = Some((scan, root));
+                    break;
+                }
+                if scan == 0 {
+                    break;
+                }
+                scan -= 1;
+            }
 
-        if head_slot > STATE_RETENTION_SLOTS {
-            let prune_target_slot = head_slot - STATE_RETENTION_SLOTS;
-            let block_root = slot_index_provider
-                .get(prune_target_slot)?
-                .ok_or_else(|| anyhow!("Block root not found for slot: {prune_target_slot}"))?;
+            if let Some((prune_slot, block_root)) = prune_root {
+                info!(
+                    slot = get_current_slot(),
+                    tick = tick_count,
+                    prune_slot,
+                    prune_block_root = ?block_root,
+                    "Pruning old lean state"
+                );
 
-            info!(
-                slot = get_current_slot(),
-                tick = tick_count,
-                prune_slot = prune_target_slot,
-                prune_block_root = ?block_root,
-                "Pruning old lean state"
-            );
-
-            if let Err(err) = state_provider.remove(block_root) {
-                warn!("Failed to prune old lean state: {err:?}");
+                if let Err(err) = state_provider.remove(block_root) {
+                    warn!("Failed to prune old lean state: {err:?}");
+                }
             }
         }
         Ok(())
+    }
+
+    /// Sync-lag gate for attestation duties
+    async fn is_synced_for_duties(
+        &mut self,
+        wall_clock_slot: u64,
+    ) -> anyhow::Result<SyncedForDuties> {
+        // head_slot: the slot of our local head block.
+        // max_seen_slot: the freshest authenticated block we've stored.
+        let (head_slot, max_seen_slot) = {
+            let fork_choice = self.store.read().await;
+            let store = fork_choice.store.lock().await;
+            let head_root = match store.head_provider().get() {
+                Ok(root) => root,
+                Err(StoreError::FieldNotInitilized) => return Ok(SyncedForDuties::Yes),
+                Err(err) => return Err(err.into()),
+            };
+            let Some(head_block) = store.block_provider().get(head_root)? else {
+                return Ok(SyncedForDuties::Yes);
+            };
+            let head_slot = head_block.block.slot;
+            let max_seen_slot = store
+                .slot_index_provider()
+                .get_highest_slot()?
+                .unwrap_or(head_slot);
+            (head_slot, max_seen_slot)
+        };
+        let duty = "attestation";
+
+        // `saturating_sub` so that a head ahead of wall clock returns zero lag instead of panic.
+        let lag = wall_clock_slot.saturating_sub(head_slot);
+        let network_lag = wall_clock_slot.saturating_sub(max_seen_slot);
+
+        // Whole network appears stalled so keep signing to let the chain recover.
+        if network_lag > NETWORK_STALL_THRESHOLD {
+            if self.duties_paused {
+                self.duties_paused = false;
+                info!(
+                    duty,
+                    slot = wall_clock_slot,
+                    head_slot,
+                    lag,
+                    max_seen_slot,
+                    network_lag,
+                    "Validator resuming duties: network stall detected",
+                );
+            }
+            return Ok(SyncedForDuties::Yes);
+        }
+
+        // We're currently pausing duties so check if it's safe to resume.
+        if self.duties_paused {
+            // TODO: Use static_assertions::const_assert! once that crate is a dep.
+            const _: () = assert!(HYSTERESIS_BAND < SYNC_LAG_THRESHOLD);
+            // Lag has dropped well below the threshold so it's safe to resume.
+            if lag <= SYNC_LAG_THRESHOLD - HYSTERESIS_BAND {
+                self.duties_paused = false;
+                info!(
+                    duty,
+                    slot = wall_clock_slot,
+                    head_slot,
+                    lag,
+                    max_seen_slot,
+                    network_lag,
+                    "Validator resuming duties: local view caught up",
+                );
+                return Ok(SyncedForDuties::Yes);
+            }
+            return Ok(SyncedForDuties::No {
+                head_slot,
+                lag,
+                max_seen_slot,
+            });
+        }
+
+        // Local view is fresh so allow duties to proceed.
+        if lag <= SYNC_LAG_THRESHOLD {
+            return Ok(SyncedForDuties::Yes);
+        }
+
+        self.duties_paused = true;
+        info!(
+            duty,
+            slot = wall_clock_slot,
+            head_slot,
+            lag,
+            max_seen_slot,
+            network_lag,
+            "Validator pausing duties: too far behind chain head",
+        );
+        Ok(SyncedForDuties::No {
+            head_slot,
+            lag,
+            max_seen_slot,
+        })
+    }
+
+    /// Run the sync-lag gate before starting validator duties for `slot`.
+    ///
+    /// If the duty must be skipped it sends a `SyncLag` (or error) consuming the oneshot handle.
+    /// Otherwise returns the oneshot handle back to the caller so they can perform duties.
+    async fn skip_for_lag<T: std::fmt::Debug>(
+        &mut self,
+        slot: u64,
+        response: oneshot::Sender<ServiceResponse<T>>,
+    ) -> Option<oneshot::Sender<ServiceResponse<T>>> {
+        let decision = match self.is_synced_for_duties(slot).await {
+            Ok(decision) => decision,
+            Err(err) => {
+                warn!(
+                    duty = "attestation",
+                    slot, "Failed to run sync-lag check: {err}",
+                );
+                if let Err(err) = response.send(ServiceResponse::Err(err)) {
+                    warn!(
+                        duty = "attestation",
+                        "Failed to send error response: {err:?}",
+                    );
+                }
+                return None;
+            }
+        };
+        let SyncedForDuties::No {
+            head_slot,
+            lag,
+            max_seen_slot,
+        } = decision
+        else {
+            return Some(response);
+        };
+        inc_int_counter_vec(&VALIDATOR_DUTIES_SKIPPED_LAG_TOTAL, &["attestation"]);
+        if let Err(err) = response.send(ServiceResponse::SyncLag {
+            head_slot,
+            lag,
+            max_seen_slot,
+        }) {
+            warn!(
+                duty = "attestation",
+                "Failed to send SyncLag response: {err:?}",
+            );
+        }
+        None
     }
 
     async fn handle_produce_block(
@@ -2889,6 +3191,8 @@ impl LeanChainService {
         slot: u64,
         response: oneshot::Sender<ServiceResponse<BlockWithSignatures>>,
     ) -> anyhow::Result<()> {
+        let wall_slot = get_current_slot();
+
         #[cfg(feature = "reth")]
         let execution_payload = match self.build_el_payload(slot).await {
             Ok(payload) => payload,
@@ -2928,6 +3232,10 @@ impl LeanChainService {
             }
         };
 
+        if slot > wall_slot {
+            self.clock_prebuilt_for = Some(slot);
+        }
+
         response
             .send(ServiceResponse::Ok(block_with_signatures))
             .map_err(|err| {
@@ -2945,6 +3253,10 @@ impl LeanChainService {
         slot: u64,
         response: oneshot::Sender<ServiceResponse<AttestationData>>,
     ) -> anyhow::Result<()> {
+        let Some(response) = self.skip_for_lag(get_current_slot(), response).await else {
+            return Ok(());
+        };
+
         let attestation_data = match self.store.read().await.produce_attestation_data(slot).await {
             Ok(data) => data,
             Err(err) => {
@@ -2964,25 +3276,37 @@ impl LeanChainService {
     }
     async fn handle_process_block(&mut self, signed_block: &SignedBlock) -> anyhow::Result<()> {
         let parent_root = signed_block.block.parent_root;
-        let has_parent_state = {
+        let parent_state = {
             let fork_choice = self.store.read().await;
             let store = fork_choice.store.lock().await;
-            store.state_provider().get(parent_root)?.is_some()
+            store.state_provider().get(parent_root)?
         };
-        if !has_parent_state {
+        let Some(_parent_state) = parent_state else {
             warn!(
                 root = ?signed_block.block.tree_hash_root(),
                 parent_root = ?parent_root,
                 "Missing parent state while processing synced block; routing block to backfill path"
             );
             return self.handle_syncing_process_block(signed_block).await;
-        }
+        };
 
-        self.store
-            .write()
+        #[cfg(feature = "devnet5")]
+        {
+            let block_for_verify = signed_block.clone();
+            let verified = tokio::task::spawn_blocking(move || {
+                block_for_verify.verify_signatures(&_parent_state, true)
+            })
             .await
-            .on_block(signed_block, true)
-            .await?;
+            .map_err(|err| anyhow!("block verify join error: {err:?}"))??;
+            if !verified {
+                return Err(anyhow!("Block signature verification failed"));
+            }
+            self.store
+                .write()
+                .await
+                .on_block(signed_block, false)
+                .await?;
+        }
 
         Ok(())
     }
@@ -3074,2032 +3398,102 @@ fn pending_block_parent_root(block: &SignedBlock) -> B256 {
 }
 
 #[cfg(test)]
-#[cfg(feature = "devnet4")]
 mod tests {
-
-    use std::{
-        sync::Arc,
-        time::{Duration, Instant},
-    };
-
-    use alloy_primitives::B256;
-    use libp2p_identity::PeerId;
     use ream_consensus_lean::{
-        block::{BlockSignatures, BlockWithSignatures, SignedBlock},
+        attestation::{AttestationData, SignatureKey, SingleMessageAggregate},
         checkpoint::Checkpoint,
     };
-    use ream_fork_choice_lean::store::Store;
-    use ream_network_state_lean::AggregatorState;
-    use ream_peer::{ConnectionState, Direction};
-    use ream_post_quantum_crypto::leansig::signature::Signature;
-    use ream_req_resp::lean::messages::LeanResponseMessage;
     use ream_storage::tables::{field::REDBField, table::REDBTable};
     use ream_sync::rwlock::Writer;
     use ream_test_utils::store::sample_store;
-    use tokio::{
-        sync::{mpsc, oneshot},
-        time::sleep,
-    };
+    use ssz_types::{BitList, VariableList, typenum::U4096};
     use tree_hash::TreeHash;
 
-    use super::{InflightRootRequest, LeanChainService, SyncBlockSource};
-    use crate::{
-        messages::ServiceResponse,
-        p2p_request::LeanP2PRequest,
-        sync::{
-            SyncStatus,
-            forward_background_syncer::ForwardSyncResults,
-            job::{pending::PendingJobRequest, queue::JobQueue, request::JobRequest},
-        },
-    };
-
-    fn role(enabled: bool) -> Arc<AggregatorState> {
-        Arc::new(AggregatorState::new(enabled))
-    }
-
-    async fn advance_store_to_slot(store: &mut Store, target_slot: u64, validator_count: u64) {
-        for slot in 1..=target_slot {
-            let proposer_index = slot % validator_count;
-            let block = store
-                .produce_block_with_signatures(slot, proposer_index)
-                .await
-                .unwrap();
-            let signed_block = SignedBlock {
-                block: block.block,
-                #[cfg(feature = "devnet4")]
-                signature: BlockSignatures {
-                    attestation_signatures: block.signatures,
-                    proposer_signature: Signature::blank(),
-                },
-                #[cfg(feature = "devnet5")]
-                proof: VariableList::<u8, U524288>::new(proof_bytes)
-                    .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
-            };
-            store.on_block(&signed_block, false).await.unwrap();
-        }
-    }
+    use super::*;
 
     #[tokio::test]
-    async fn test_assignable_peer_id_falls_back_to_connected_peer_when_all_are_in_use() {
-        let store = sample_store(10).await;
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-
-        #[cfg(feature = "devnet4")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-
-        let peer_id = PeerId::random();
-        service.network_state.upsert_peer(
-            peer_id,
-            None,
-            ConnectionState::Connected,
-            Direction::Outbound,
-        );
-        service.peers_in_use.insert(peer_id);
-
-        assert_eq!(service.assignable_peer_id(None).await, Some(peer_id));
-        assert_eq!(service.assignable_peer_id(Some(peer_id)).await, None);
-    }
-
-    #[tokio::test]
-    async fn test_is_aggregator_reads_shared_state() {
-        let store = sample_store(10).await;
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        let aggregator_state = role(false);
-        let service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, aggregator_state.clone())
-                .await;
-
-        assert!(!service.is_aggregator());
-
-        let previous = aggregator_state.set_enabled(true);
-
-        assert!(!previous);
-        assert!(service.is_aggregator());
-    }
-
-    #[tokio::test]
-    async fn test_assignable_peer_id_for_checkpoint_prefers_matching_head_peer() {
-        let store = sample_store(10).await;
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        #[cfg(feature = "devnet4")]
-        let service = LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-
-        let target_checkpoint = Checkpoint {
-            root: B256::repeat_byte(0x44),
-            slot: 7,
-        };
-        let matching_peer = PeerId::random();
-        let lagging_peer = PeerId::random();
-        for peer_id in [matching_peer, lagging_peer] {
-            service.network_state.upsert_peer(
-                peer_id,
-                None,
-                ConnectionState::Connected,
-                Direction::Outbound,
-            );
-        }
-        service.network_state.update_peer_checkpoints(
-            matching_peer,
-            target_checkpoint,
-            Checkpoint {
-                root: B256::repeat_byte(0x01),
-                slot: 2,
-            },
-        );
-        service.network_state.update_peer_checkpoints(
-            lagging_peer,
-            Checkpoint {
-                root: B256::repeat_byte(0x45),
-                slot: 5,
-            },
-            Checkpoint {
-                root: B256::repeat_byte(0x02),
-                slot: 2,
-            },
-        );
-
-        assert_eq!(
-            service
-                .assignable_peer_id_for_checkpoint(target_checkpoint, None)
-                .await,
-            Some(matching_peer)
-        );
-    }
-
-    #[tokio::test]
-    async fn test_backfill_queue_progress_summary_reports_active_and_complete_queues() {
-        let store = sample_store(10).await;
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-
-        let root_active_start = B256::repeat_byte(0x11);
-        let root_active_progress = B256::repeat_byte(0x22);
-        let root_complete = B256::repeat_byte(0x33);
-        let parent_root = B256::repeat_byte(0x44);
-        let peer_id = PeerId::random();
-
-        let mut waiting_on_start = JobQueue::new(root_active_start, 100, 100);
-        waiting_on_start.add_job(JobRequest::new(peer_id, root_active_start));
-
-        let mut in_progress = JobQueue::new(root_active_progress, 80, 80);
-        in_progress.add_job(JobRequest::new(peer_id, parent_root));
-
-        let mut complete = JobQueue::new(root_complete, 60, 57);
-        complete.is_complete = true;
-
-        service.backfill_state.jobs = vec![waiting_on_start, in_progress, complete];
-
-        assert_eq!(
-            service.backfill_queue_progress_summary(),
-            "active(start=100, fetched_through=none, waiting_on=100, jobs=1); \
-active(start=80, fetched_through=80, waiting_on=79, jobs=1); \
-complete(start=60, fetched_through=57, jobs=0)"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_handle_produce_block_stale_slot_responds_with_err() {
-        let mut store = sample_store(10).await;
-        advance_store_to_slot(&mut store, 3, 10).await;
-
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-
-        #[cfg(feature = "devnet4")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        service.sync_status = SyncStatus::Synced;
-
-        // Try to produce a block for slot 2 (behind head slot 3)
-        let (tx, rx) = oneshot::channel::<ServiceResponse<BlockWithSignatures>>();
-        let _ = service.handle_produce_block(2, tx).await;
-
-        assert!(
-            rx.await.is_ok(),
-            "Channel was dropped instead of sending a response"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_update_sync_status_stays_synced_when_only_behind_peer_head() {
-        let mut store = sample_store(10).await;
-        advance_store_to_slot(&mut store, 3, 10).await;
-
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        #[cfg(feature = "devnet4")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        service.sync_status = SyncStatus::Synced;
-
-        let peer_id = PeerId::random();
-        service.network_state.upsert_peer(
-            peer_id,
-            None,
-            ConnectionState::Connected,
-            Direction::Outbound,
-        );
-        service.network_state.update_peer_checkpoints(
-            peer_id,
-            Checkpoint {
-                root: B256::repeat_byte(0x11),
-                slot: 7,
-            },
-            Checkpoint {
-                root: B256::repeat_byte(0x22),
-                slot: 2,
-            },
-        );
-
-        assert_eq!(
-            service.update_sync_status().await.unwrap(),
-            SyncStatus::Synced
-        );
-    }
-
-    #[tokio::test]
-    async fn test_should_run_backfill_sync_waits_for_persistent_peer_gap_when_synced() {
-        let mut store = sample_store(10).await;
-        advance_store_to_slot(&mut store, 3, 10).await;
-
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        #[cfg(feature = "devnet4")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        service.sync_status = SyncStatus::Synced;
-
-        let peer_id = PeerId::random();
-        service.network_state.upsert_peer(
-            peer_id,
-            None,
-            ConnectionState::Connected,
-            Direction::Outbound,
-        );
-        service.network_state.update_peer_checkpoints(
-            peer_id,
-            Checkpoint {
-                root: B256::repeat_byte(0x11),
-                slot: 7,
-            },
-            Checkpoint {
-                root: B256::repeat_byte(0x22),
-                slot: 2,
-            },
-        );
-
-        assert!(!service.should_run_backfill_sync().await);
-
-        sleep(super::SYNCED_BACKFILL_GAP_PERSISTENCE_THRESHOLD + Duration::from_millis(50)).await;
-
-        assert!(service.should_run_backfill_sync().await);
-    }
-
-    #[tokio::test]
-    async fn test_current_peer_gap_slots_uses_small_devnet_fallback_when_two_peers_split_head() {
-        let mut store = sample_store(10).await;
-        advance_store_to_slot(&mut store, 3, 10).await;
-
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        #[cfg(feature = "devnet4")]
-        let service = LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-
-        let peer_a = PeerId::random();
-        let peer_b = PeerId::random();
-        let shared_finalized = Checkpoint {
-            root: B256::repeat_byte(0x22),
-            slot: 2,
-        };
-
-        for peer_id in [peer_a, peer_b] {
-            service.network_state.upsert_peer(
-                peer_id,
-                None,
-                ConnectionState::Connected,
-                Direction::Outbound,
-            );
-        }
-        service.network_state.update_peer_checkpoints(
-            peer_a,
-            Checkpoint {
-                root: B256::repeat_byte(0x11),
-                slot: 5,
-            },
-            shared_finalized,
-        );
-        service.network_state.update_peer_checkpoints(
-            peer_b,
-            Checkpoint {
-                root: B256::repeat_byte(0x12),
-                slot: 7,
-            },
-            shared_finalized,
-        );
-
-        assert_eq!(service.current_peer_gap_slots().await, 4);
-    }
-
-    #[tokio::test]
-    async fn test_step_backfill_sync_starts_queue_while_synced_when_only_behind_peer_head() {
-        let mut store = sample_store(10).await;
-        advance_store_to_slot(&mut store, 3, 10).await;
-
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        #[cfg(feature = "devnet4")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        service.sync_status = SyncStatus::Synced;
-
-        let peer_id = PeerId::random();
-        service.network_state.upsert_peer(
-            peer_id,
-            None,
-            ConnectionState::Connected,
-            Direction::Outbound,
-        );
-        let head_checkpoint = Checkpoint {
-            root: B256::repeat_byte(0x11),
-            slot: 7,
-        };
-        service.network_state.update_peer_checkpoints(
-            peer_id,
-            head_checkpoint,
-            Checkpoint {
-                root: B256::repeat_byte(0x22),
-                slot: 2,
-            },
-        );
-
-        service.step_backfill_sync().await.unwrap();
-
-        assert_eq!(service.sync_status, SyncStatus::Synced);
-        assert_eq!(service.backfill_state.jobs.len(), 1);
-        assert_eq!(
-            service.backfill_state.jobs[0].starting_root,
-            head_checkpoint.root
-        );
-        assert_eq!(
-            service.backfill_state.jobs[0].starting_slot,
-            head_checkpoint.slot
-        );
-    }
-
-    #[tokio::test]
-    async fn test_step_backfill_sync_uses_small_devnet_fallback_when_two_peers_split_head() {
-        let mut store = sample_store(10).await;
-        advance_store_to_slot(&mut store, 3, 10).await;
-
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        #[cfg(feature = "devnet4")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        service.sync_status = SyncStatus::Synced;
-
-        let peer_a = PeerId::random();
-        let peer_b = PeerId::random();
-        let shared_finalized = Checkpoint {
-            root: B256::repeat_byte(0x22),
-            slot: 2,
-        };
-        let fallback_head_checkpoint = Checkpoint {
-            root: B256::repeat_byte(0x12),
-            slot: 7,
-        };
-
-        for peer_id in [peer_a, peer_b] {
-            service.network_state.upsert_peer(
-                peer_id,
-                None,
-                ConnectionState::Connected,
-                Direction::Outbound,
-            );
-        }
-        service.network_state.update_peer_checkpoints(
-            peer_a,
-            Checkpoint {
-                root: B256::repeat_byte(0x11),
-                slot: 5,
-            },
-            shared_finalized,
-        );
-        service.network_state.update_peer_checkpoints(
-            peer_b,
-            fallback_head_checkpoint,
-            shared_finalized,
-        );
-
-        service.step_backfill_sync().await.unwrap();
-
-        assert_eq!(service.sync_status, SyncStatus::Synced);
-        assert_eq!(service.backfill_state.jobs.len(), 1);
-        assert_eq!(
-            service.backfill_state.jobs[0].starting_root,
-            fallback_head_checkpoint.root
-        );
-        assert_eq!(
-            service.backfill_state.jobs[0].starting_slot,
-            fallback_head_checkpoint.slot
-        );
-    }
-
-    #[tokio::test]
-    async fn test_queue_pending_job_requests_initial_prefers_peer_at_or_above_parent_slot() {
-        let store = sample_store(10).await;
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        #[cfg(feature = "devnet4")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-
-        let root = B256::repeat_byte(0x11);
-        let parent_root = B256::repeat_byte(0x22);
-        let old_peer = PeerId::random();
-        let eligible_peer = PeerId::random();
-        let lagging_peer = PeerId::random();
-
-        service.backfill_state.add_new_job_queue(
-            Checkpoint { root, slot: 7 },
-            JobRequest::new(old_peer, root),
-            true,
-        );
-        service
-            .pending_job_requests
-            .push_back(PendingJobRequest::new_initial(root, 7, parent_root));
-
-        for peer_id in [eligible_peer, lagging_peer] {
-            service.network_state.upsert_peer(
-                peer_id,
-                None,
-                ConnectionState::Connected,
-                Direction::Outbound,
-            );
-        }
-        service.network_state.update_peer_checkpoints(
-            eligible_peer,
-            Checkpoint {
-                root: B256::repeat_byte(0x33),
-                slot: 8,
-            },
-            Checkpoint {
-                root: B256::repeat_byte(0x34),
-                slot: 2,
-            },
-        );
-        service.network_state.update_peer_checkpoints(
-            lagging_peer,
-            Checkpoint {
-                root: B256::repeat_byte(0x35),
-                slot: 5,
-            },
-            Checkpoint {
-                root: B256::repeat_byte(0x36),
-                slot: 2,
-            },
-        );
-
-        service.queue_pending_job_requests().await.unwrap();
-
-        assert_eq!(
-            service.backfill_state.peer_for_job_root(parent_root),
-            Some(eligible_peer)
-        );
-    }
-
-    #[tokio::test]
-    async fn test_step_backfill_sync_skips_peer_checkpoint_already_behind_local_head() {
-        let mut store = sample_store(10).await;
-        advance_store_to_slot(&mut store, 8, 10).await;
-
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        #[cfg(feature = "devnet4")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        service.sync_status = SyncStatus::Synced;
-
-        let peer_id = PeerId::random();
-        service.network_state.upsert_peer(
-            peer_id,
-            None,
-            ConnectionState::Connected,
-            Direction::Outbound,
-        );
-        service.network_state.update_peer_checkpoints(
-            peer_id,
-            Checkpoint {
-                root: B256::repeat_byte(0x11),
-                slot: 6,
-            },
-            Checkpoint {
-                root: B256::repeat_byte(0x22),
-                slot: 2,
-            },
-        );
-
-        service.step_backfill_sync().await.unwrap();
-
-        assert!(service.backfill_state.jobs.is_empty());
-        assert!(service.checkpoints_to_queue.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_step_backfill_sync_skips_peer_checkpoint_already_in_canonical_store() {
-        let mut store = sample_store(10).await;
-        advance_store_to_slot(&mut store, 3, 10).await;
-
-        let block = store.produce_block_with_signatures(4, 4).await.unwrap();
-        let signed_block = SignedBlock {
-            block: block.block,
-            #[cfg(feature = "devnet4")]
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures,
-                proposer_signature: Signature::blank(),
-            },
-            #[cfg(feature = "devnet5")]
-            proof: VariableList::<u8, U524288>::new(proof_bytes)
-                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
-        };
-        let checkpoint_root = signed_block.block.tree_hash_root();
-
-        // Insert a newer canonical block without updating the head provider.
-        store.on_block(&signed_block, false).await.unwrap();
-
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        #[cfg(feature = "devnet4")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        service.sync_status = SyncStatus::Syncing;
-
-        let peer_id = PeerId::random();
-        service.network_state.upsert_peer(
-            peer_id,
-            None,
-            ConnectionState::Connected,
-            Direction::Outbound,
-        );
-        service.network_state.update_peer_checkpoints(
-            peer_id,
-            Checkpoint {
-                root: checkpoint_root,
-                slot: 4,
-            },
-            Checkpoint {
-                root: B256::repeat_byte(0x22),
-                slot: 2,
-            },
-        );
-
-        service.step_backfill_sync().await.unwrap();
-
-        assert!(service.backfill_state.jobs.is_empty());
-        assert!(service.checkpoints_to_queue.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_step_backfill_sync_skips_peer_checkpoint_already_pending_while_other_backfill_work_exists()
-     {
-        let mut store = sample_store(10).await;
-        advance_store_to_slot(&mut store, 3, 10).await;
-
-        let block = store.produce_block_with_signatures(4, 4).await.unwrap();
-        let signed_block = SignedBlock {
-            block: block.block,
-            #[cfg(feature = "devnet4")]
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures,
-                proposer_signature: Signature::blank(),
-            },
-            #[cfg(feature = "devnet5")]
-            proof: VariableList::<u8, U524288>::new(proof_bytes)
-                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
-        };
-        let pending_root = signed_block.block.tree_hash_root();
-        store
-            .store
-            .lock()
-            .await
-            .pending_blocks_provider()
-            .insert(pending_root, signed_block)
-            .unwrap();
-
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        #[cfg(feature = "devnet4")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        service.sync_status = SyncStatus::Syncing;
-
-        let old_queue_root = B256::repeat_byte(0x99);
-        let old_peer = PeerId::random();
-        service.backfill_state.add_new_job_queue(
-            Checkpoint {
-                root: old_queue_root,
-                slot: 1,
-            },
-            JobRequest::new(old_peer, old_queue_root),
-            true,
-        );
-
-        let peer_id = PeerId::random();
-        service.network_state.upsert_peer(
-            peer_id,
-            None,
-            ConnectionState::Connected,
-            Direction::Outbound,
-        );
-        service.network_state.update_peer_checkpoints(
-            peer_id,
-            Checkpoint {
-                root: pending_root,
-                slot: 4,
-            },
-            Checkpoint {
-                root: B256::repeat_byte(0x22),
-                slot: 2,
-            },
-        );
-
-        service.step_backfill_sync().await.unwrap();
-
-        assert_eq!(service.backfill_state.jobs.len(), 1);
-        assert_eq!(service.backfill_state.jobs[0].starting_root, old_queue_root);
-        assert!(service.checkpoints_to_queue.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_step_backfill_sync_drops_stale_staged_peer_checkpoint_without_current_common_checkpoint()
-     {
-        let mut store = sample_store(10).await;
-        advance_store_to_slot(&mut store, 3, 10).await;
-
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        #[cfg(feature = "devnet4")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        service.sync_status = SyncStatus::Synced;
-        service.checkpoints_to_queue.push((
-            Checkpoint {
-                root: B256::repeat_byte(0x77),
-                slot: 7,
-            },
-            false,
-        ));
-
-        service.step_backfill_sync().await.unwrap();
-
-        assert!(service.backfill_state.jobs.is_empty());
-        assert!(service.checkpoints_to_queue.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_step_backfill_sync_replaces_stale_staged_peer_checkpoint_with_current_common_checkpoint()
-     {
-        let mut store = sample_store(10).await;
-        advance_store_to_slot(&mut store, 3, 10).await;
-
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        #[cfg(feature = "devnet4")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        service.sync_status = SyncStatus::Syncing;
-        service.checkpoints_to_queue.push((
-            Checkpoint {
-                root: B256::repeat_byte(0x66),
-                slot: 7,
-            },
-            false,
-        ));
-
-        let peer_id = PeerId::random();
-        let current_common_checkpoint = Checkpoint {
-            root: B256::repeat_byte(0x55),
-            slot: 6,
-        };
-        service.network_state.upsert_peer(
-            peer_id,
-            None,
-            ConnectionState::Connected,
-            Direction::Outbound,
-        );
-        service.network_state.update_peer_checkpoints(
-            peer_id,
-            current_common_checkpoint,
-            Checkpoint {
-                root: B256::repeat_byte(0x22),
-                slot: 2,
-            },
-        );
-
-        service.step_backfill_sync().await.unwrap();
-
-        assert_eq!(service.backfill_state.jobs.len(), 1);
-        assert_eq!(
-            service.backfill_state.jobs[0].starting_root,
-            current_common_checkpoint.root
-        );
-        assert_eq!(
-            service.backfill_state.jobs[0].starting_slot,
-            current_common_checkpoint.slot
-        );
-        assert!(service.checkpoints_to_queue.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_step_backfill_sync_skips_peer_checkpoint_with_quarantined_root() {
-        let mut store = sample_store(10).await;
-        advance_store_to_slot(&mut store, 3, 10).await;
-
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        #[cfg(feature = "devnet4")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        service.sync_status = SyncStatus::Synced;
-
-        let quarantined_root = B256::repeat_byte(0x33);
-        service.quarantined_backfill_roots.insert(
-            quarantined_root,
-            super::QuarantinedBackfillRoot {
-                slot: 7,
-                attempts: super::MAX_BACKFILL_RECOVERY_ATTEMPTS + 1,
-            },
-        );
-
-        let peer_id = PeerId::random();
-        service.network_state.upsert_peer(
-            peer_id,
-            None,
-            ConnectionState::Connected,
-            Direction::Outbound,
-        );
-        service.network_state.update_peer_checkpoints(
-            peer_id,
-            Checkpoint {
-                root: quarantined_root,
-                slot: 7,
-            },
-            Checkpoint {
-                root: B256::repeat_byte(0x22),
-                slot: 2,
-            },
-        );
-
-        service.step_backfill_sync().await.unwrap();
-
-        assert!(service.backfill_state.jobs.is_empty());
-        assert!(service.checkpoints_to_queue.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_stage_recovery_checkpoint_quarantines_root_before_finalized() {
-        let mut store = sample_store(10).await;
-        advance_store_to_slot(&mut store, 3, 10).await;
-
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        #[cfg(feature = "devnet4")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        let checkpoint = Checkpoint {
-            root: B256::repeat_byte(0xbb),
-            slot: 5,
-        };
-
-        for attempt in 1..=super::MAX_BACKFILL_RECOVERY_ATTEMPTS {
-            match service.stage_recovery_checkpoint(checkpoint).await.unwrap() {
-                super::RecoveryCheckpointAction::Queued { attempts } => {
-                    assert_eq!(attempts, attempt);
-                }
-                other => panic!("expected queued recovery action, got {other:?}"),
-            }
-            service.checkpoints_to_queue.clear();
-        }
-
-        match service.stage_recovery_checkpoint(checkpoint).await.unwrap() {
-            super::RecoveryCheckpointAction::QuarantinedByBudget {
-                attempts,
-                current_head_slot,
-                network_finalized_slot,
-            } => {
-                assert_eq!(attempts, super::MAX_BACKFILL_RECOVERY_ATTEMPTS + 1);
-                assert_eq!(current_head_slot, 3);
-                assert_eq!(network_finalized_slot, 3);
-            }
-            other => panic!("expected quarantined-by-budget action, got {other:?}"),
-        }
-
-        assert!(service.checkpoints_to_queue.is_empty());
-        assert!(
-            service
-                .quarantined_backfill_roots
-                .contains_key(&checkpoint.root)
-        );
-        assert!(!service.dropped_backfill_roots.contains(&checkpoint.root));
-        assert!(
-            !service
-                .backfill_recovery_attempts
-                .contains_key(&checkpoint.root)
-        );
-        assert!(matches!(
-            service.stage_recovery_checkpoint(checkpoint).await.unwrap(),
-            super::RecoveryCheckpointAction::AlreadyQuarantined { .. }
-        ));
-    }
-
-    #[tokio::test]
-    async fn test_stage_recovery_checkpoint_drops_root_after_retry_budget_once_finalized() {
-        let mut store = sample_store(10).await;
-        advance_store_to_slot(&mut store, 3, 10).await;
-
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        #[cfg(feature = "devnet4")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        let checkpoint = Checkpoint {
-            root: B256::repeat_byte(0xaa),
+    async fn test_non_proposer_clock_tick_does_not_accept_new_attestations_at_slot_start() {
+        let store = sample_store(1).await;
+        let genesis_root = store.store.lock().await.head_provider().get().unwrap();
+        let data = AttestationData {
             slot: 1,
+            head: Checkpoint {
+                root: genesis_root,
+                slot: 0,
+            },
+            target: Checkpoint {
+                root: genesis_root,
+                slot: 0,
+            },
+            source: Checkpoint {
+                root: genesis_root,
+                slot: 0,
+            },
         };
+        let data_root = data.tree_hash_root();
+        let key = SignatureKey::from_parts(0, data_root);
+        let mut participants = BitList::<U4096>::with_capacity(1).unwrap();
+        participants.set(0, true).unwrap();
 
-        for attempt in 1..=super::MAX_BACKFILL_RECOVERY_ATTEMPTS {
-            match service.stage_recovery_checkpoint(checkpoint).await.unwrap() {
-                super::RecoveryCheckpointAction::Queued { attempts } => {
-                    assert_eq!(attempts, attempt);
-                }
-                other => panic!("expected queued recovery action, got {other:?}"),
-            }
-            service.checkpoints_to_queue.clear();
+        {
+            let db = store.store.lock().await;
+            db.time_provider().insert(INTERVALS_PER_SLOT - 1).unwrap();
+            db.attestation_data_by_root_provider()
+                .insert(data_root, data)
+                .unwrap();
+            db.latest_new_aggregated_payloads_provider()
+                .insert(
+                    key.clone(),
+                    vec![SingleMessageAggregate::new(
+                        participants,
+                        VariableList::default(),
+                    )],
+                )
+                .unwrap();
         }
 
-        match service.stage_recovery_checkpoint(checkpoint).await.unwrap() {
-            super::RecoveryCheckpointAction::DroppedByBudget {
-                attempts,
-                current_head_slot,
-                network_finalized_slot,
-            } => {
-                assert_eq!(attempts, super::MAX_BACKFILL_RECOVERY_ATTEMPTS + 1);
-                assert_eq!(current_head_slot, 3);
-                assert_eq!(network_finalized_slot, 3);
-            }
-            other => panic!("expected dropped-by-budget action, got {other:?}"),
+        let (writer, _) = Writer::new(store);
+        let (_chain_tx, chain_rx) = mpsc::unbounded_channel();
+        let (p2p_tx, _p2p_rx) = mpsc::unbounded_channel();
+        let mut service = LeanChainService::new(
+            writer,
+            chain_rx,
+            p2p_tx,
+            Arc::new(AggregatorState::new(false)),
+        )
+        .await;
+
+        service
+            .tick_store_from_clock(INTERVALS_PER_SLOT)
+            .await
+            .unwrap();
+
+        {
+            let store = service.store.read().await;
+            let db = store.store.lock().await;
+            assert!(
+                db.latest_new_aggregated_payloads_provider()
+                    .contains_key(&key),
+                "ordinary slot-start ticks must not drain the new pool"
+            );
         }
 
-        assert!(service.checkpoints_to_queue.is_empty());
-        assert!(service.dropped_backfill_roots.contains(&checkpoint.root));
+        service
+            .store
+            .write()
+            .await
+            .get_proposal_head(1)
+            .await
+            .unwrap();
+        let store = service.store.read().await;
+        let db = store.store.lock().await;
         assert!(
-            !service
-                .backfill_recovery_attempts
-                .contains_key(&checkpoint.root)
+            !db.latest_new_aggregated_payloads_provider()
+                .contains_key(&key)
         );
-        assert!(matches!(
-            service.stage_recovery_checkpoint(checkpoint).await.unwrap(),
-            super::RecoveryCheckpointAction::AlreadyDropped
-        ));
-    }
-
-    #[tokio::test]
-    async fn test_refresh_quarantined_backfill_roots_drops_once_finalized_passes() {
-        let mut store = sample_store(10).await;
-        advance_store_to_slot(&mut store, 3, 10).await;
-
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        #[cfg(feature = "devnet4")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-
-        let peer_id = PeerId::random();
-        service.network_state.upsert_peer(
-            peer_id,
-            None,
-            ConnectionState::Connected,
-            Direction::Outbound,
+        assert!(
+            db.latest_known_aggregated_payloads_provider()
+                .contains_key(&key)
         );
-        service.network_state.update_peer_checkpoints(
-            peer_id,
-            Checkpoint {
-                root: B256::repeat_byte(0x44),
-                slot: 8,
-            },
-            Checkpoint {
-                root: B256::repeat_byte(0x55),
-                slot: 6,
-            },
-        );
-
-        let root = B256::repeat_byte(0xcc);
-        service.backfill_recovery_attempts.insert(root, 9);
-        service.quarantined_backfill_roots.insert(
-            root,
-            super::QuarantinedBackfillRoot {
-                slot: 5,
-                attempts: 9,
-            },
-        );
-
-        service.refresh_quarantined_backfill_roots().await.unwrap();
-
-        assert!(!service.quarantined_backfill_roots.contains_key(&root));
-        assert!(service.dropped_backfill_roots.contains(&root));
-        assert!(!service.backfill_recovery_attempts.contains_key(&root));
-    }
-
-    #[tokio::test]
-    async fn test_update_sync_status_transitions_to_syncing_when_behind_peer_finalized() {
-        let mut store = sample_store(10).await;
-        advance_store_to_slot(&mut store, 3, 10).await;
-
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        #[cfg(feature = "devnet4")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        service.sync_status = SyncStatus::Synced;
-
-        let peer_id = PeerId::random();
-        service.network_state.upsert_peer(
-            peer_id,
-            None,
-            ConnectionState::Connected,
-            Direction::Outbound,
-        );
-        service.network_state.update_peer_checkpoints(
-            peer_id,
-            Checkpoint {
-                root: B256::repeat_byte(0x33),
-                slot: 7,
-            },
-            Checkpoint {
-                root: B256::repeat_byte(0x44),
-                slot: 4,
-            },
-        );
-
-        assert!(matches!(
-            service.update_sync_status().await.unwrap(),
-            SyncStatus::Syncing
-        ));
-    }
-
-    #[tokio::test]
-    async fn test_update_sync_status_stays_syncing_while_orphaned_pending_blocks_exist() {
-        let mut store = sample_store(10).await;
-        let block = store.produce_block_with_signatures(1, 1).await.unwrap();
-        let mut pending_block = SignedBlock {
-            block: block.block,
-            #[cfg(feature = "devnet4")]
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures,
-                proposer_signature: Signature::mock(),
-            },
-            #[cfg(feature = "devnet5")]
-            proof: VariableList::<u8, U524288>::new(proof_bytes)
-                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
-        };
-        let pending_root = {
-            pending_block.block.parent_root = B256::repeat_byte(0x88);
-            pending_block.block.tree_hash_root()
-        };
-        store
-            .store
-            .lock()
-            .await
-            .pending_blocks_provider()
-            .insert(pending_root, pending_block)
-            .unwrap();
-
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        #[cfg(feature = "devnet4")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        service.sync_status = SyncStatus::Syncing;
-
-        assert!(service.has_orphaned_pending_blocks().await);
-        assert!(matches!(
-            service.update_sync_status().await.unwrap(),
-            SyncStatus::Syncing
-        ));
-        assert!(service.should_run_backfill_sync().await);
-    }
-
-    #[tokio::test]
-    async fn test_update_sync_status_stays_synced_with_only_orphaned_pending_blocks() {
-        let mut store = sample_store(10).await;
-        let block = store.produce_block_with_signatures(1, 1).await.unwrap();
-        let mut pending_block = SignedBlock {
-            block: block.block,
-            #[cfg(feature = "devnet4")]
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures,
-                proposer_signature: Signature::mock(),
-            },
-            #[cfg(feature = "devnet5")]
-            proof: VariableList::<u8, U524288>::new(proof_bytes)
-                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
-        };
-        let pending_root = {
-            pending_block.block.parent_root = B256::repeat_byte(0x99);
-            pending_block.block.tree_hash_root()
-        };
-        store
-            .store
-            .lock()
-            .await
-            .pending_blocks_provider()
-            .insert(pending_root, pending_block)
-            .unwrap();
-
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        #[cfg(feature = "devnet4")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        service.sync_status = SyncStatus::Synced;
-
-        assert!(service.has_orphaned_pending_blocks().await);
-        assert_eq!(
-            service.update_sync_status().await.unwrap(),
-            SyncStatus::Synced
-        );
-        assert!(service.should_run_backfill_sync().await);
-    }
-
-    #[tokio::test]
-    async fn test_update_sync_status_stays_synced_with_only_inflight_backfill_requests() {
-        let mut store = sample_store(10).await;
-        advance_store_to_slot(&mut store, 3, 10).await;
-
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        #[cfg(feature = "devnet4")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        service.sync_status = SyncStatus::Synced;
-        service.telemetry.inflight_roots.insert(
-            B256::repeat_byte(0xaa),
-            InflightRootRequest {
-                primary_peer: PeerId::random(),
-                backup_peer: None,
-                requested_at: Instant::now(),
-                backup_sent: false,
-            },
-        );
-
-        assert_eq!(
-            service.update_sync_status().await.unwrap(),
-            SyncStatus::Synced
-        );
-        assert!(service.should_run_backfill_sync().await);
-    }
-
-    #[tokio::test]
-    async fn test_handle_forward_sync_root_mismatch_requeues_before_network_finalized() {
-        let mut store = sample_store(10).await;
-        let block = store.produce_block_with_signatures(1, 1).await.unwrap();
-        let pending_block = SignedBlock {
-            block: block.block,
-            #[cfg(feature = "devnet4")]
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures,
-                proposer_signature: Signature::mock(),
-            },
-            #[cfg(feature = "devnet5")]
-            proof: VariableList::<u8, U524288>::new(proof_bytes)
-                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
-        };
-        let actual_root = pending_block.block.tree_hash_root();
-        let bad_root = B256::repeat_byte(0xab);
-        store
-            .store
-            .lock()
-            .await
-            .pending_blocks_provider()
-            .insert(bad_root, pending_block)
-            .unwrap();
-
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        #[cfg(feature = "devnet4")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        let mut previous_queue = JobQueue::new(bad_root, 1, 1);
-        previous_queue.is_complete = true;
-        service.sync_status = SyncStatus::Syncing;
-        service.backfill_state.jobs.push(previous_queue.clone());
-
-        service
-            .handle_forward_sync_result(ForwardSyncResults::RootMismatch {
-                previous_queue,
-                checkpoint_for_new_queue: Some(Checkpoint {
-                    root: bad_root,
-                    slot: 1,
-                }),
-                bad_root,
-                bad_slot: 1,
-                actual_root,
-                network_finalized_slot: 0,
-            })
-            .await
-            .unwrap();
-
-        assert_eq!(service.sync_status, SyncStatus::Syncing);
-        assert!(service.backfill_state.jobs.is_empty());
-        assert_eq!(
-            service.checkpoints_to_queue,
-            vec![(
-                Checkpoint {
-                    root: bad_root,
-                    slot: 1
-                },
-                true
-            )]
-        );
-        let pending_present = {
-            let fork_choice = service.store.read().await;
-            let store = fork_choice.store.lock().await;
-            store
-                .pending_blocks_provider()
-                .get(bad_root)
-                .unwrap()
-                .is_some()
-        };
-        assert!(!pending_present);
-    }
-
-    #[tokio::test]
-    async fn test_handle_forward_sync_root_mismatch_drops_after_network_finalized() {
-        let mut store = sample_store(10).await;
-        let block = store.produce_block_with_signatures(1, 1).await.unwrap();
-        let pending_block = SignedBlock {
-            block: block.block,
-            #[cfg(feature = "devnet4")]
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures,
-                proposer_signature: Signature::mock(),
-            },
-            #[cfg(feature = "devnet5")]
-            proof: VariableList::<u8, U524288>::new(proof_bytes)
-                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
-        };
-        let actual_root = pending_block.block.tree_hash_root();
-        let bad_root = B256::repeat_byte(0xcd);
-        store
-            .store
-            .lock()
-            .await
-            .pending_blocks_provider()
-            .insert(bad_root, pending_block)
-            .unwrap();
-
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        #[cfg(feature = "devnet4")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        let mut previous_queue = JobQueue::new(bad_root, 1, 1);
-        previous_queue.is_complete = true;
-        service.sync_status = SyncStatus::Syncing;
-        service.backfill_state.jobs.push(previous_queue.clone());
-
-        service
-            .handle_forward_sync_result(ForwardSyncResults::RootMismatch {
-                previous_queue,
-                checkpoint_for_new_queue: None,
-                bad_root,
-                bad_slot: 1,
-                actual_root,
-                network_finalized_slot: 1,
-            })
-            .await
-            .unwrap();
-
-        assert_eq!(service.sync_status, SyncStatus::Syncing);
-        assert!(service.backfill_state.jobs.is_empty());
-        assert!(service.checkpoints_to_queue.is_empty());
-        let pending_present = {
-            let fork_choice = service.store.read().await;
-            let store = fork_choice.store.lock().await;
-            store
-                .pending_blocks_provider()
-                .get(bad_root)
-                .unwrap()
-                .is_some()
-        };
-        assert!(!pending_present);
-        assert!(service.dropped_backfill_roots.contains(&bad_root));
-    }
-
-    #[tokio::test]
-    async fn test_try_advance_job_with_cached_block_skips_suppressed_root() {
-        let mut store = sample_store(10).await;
-        let block = store.produce_block_with_signatures(1, 1).await.unwrap();
-        let pending_block = SignedBlock {
-            block: block.block,
-            #[cfg(feature = "devnet4")]
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures,
-                proposer_signature: Signature::mock(),
-            },
-            #[cfg(feature = "devnet5")]
-            proof: VariableList::<u8, U524288>::new(proof_bytes)
-                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
-        };
-        let pending_root = pending_block.block.tree_hash_root();
-        store
-            .store
-            .lock()
-            .await
-            .pending_blocks_provider()
-            .insert(pending_root, pending_block)
-            .unwrap();
-
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        #[cfg(feature = "devnet4")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        service.dropped_backfill_roots.insert(pending_root);
-
-        let advanced = service
-            .try_advance_job_with_cached_block(pending_root)
-            .await
-            .unwrap();
-
-        assert!(!advanced);
-        let pending_present = {
-            let fork_choice = service.store.read().await;
-            let store = fork_choice.store.lock().await;
-            store
-                .pending_blocks_provider()
-                .get(pending_root)
-                .unwrap()
-                .is_some()
-        };
-        assert!(pending_present);
-    }
-
-    #[tokio::test]
-    async fn test_handle_backfill_block_does_not_complete_queue_through_suppressed_parent_root() {
-        let mut store = sample_store(10).await;
-        advance_store_to_slot(&mut store, 2, 10).await;
-        let suppressed_parent_root = {
-            let db = store.store.lock().await;
-            db.slot_index_provider().get(1).unwrap().unwrap()
-        };
-        let block = store.produce_block_with_signatures(3, 3).await.unwrap();
-        let mut signed_block = SignedBlock {
-            block: block.block,
-            #[cfg(feature = "devnet4")]
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures,
-                proposer_signature: Signature::mock(),
-            },
-            #[cfg(feature = "devnet5")]
-            proof: VariableList::<u8, U524288>::new(proof_bytes)
-                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
-        };
-        {
-            signed_block.block.parent_root = suppressed_parent_root;
-        }
-        let last_root = signed_block.block.tree_hash_root();
-        assert_eq!(signed_block.block.parent_root, suppressed_parent_root);
-
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        #[cfg(feature = "devnet4")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        service
-            .dropped_backfill_roots
-            .insert(suppressed_parent_root);
-
-        let mut queue = JobQueue::new(last_root, 1, 1);
-        queue.add_job(JobRequest::new(PeerId::random(), last_root));
-        service.backfill_state.jobs.push(queue);
-
-        service
-            .handle_backfill_block(None, signed_block, SyncBlockSource::Gossip)
-            .await
-            .unwrap();
-
-        assert_eq!(service.backfill_state.jobs.len(), 1);
-        assert!(!service.backfill_state.jobs[0].is_complete);
-        assert!(matches!(
-            service.pending_job_requests.front(),
-            Some(PendingJobRequest::Initial {
-                root,
-                parent_root,
-                ..
-            }) if *root == last_root && *parent_root == suppressed_parent_root
-        ));
-    }
-
-    #[tokio::test]
-    async fn test_handle_backfill_block_completes_through_pending_chain_to_canonical_root() {
-        let mut store = sample_store(10).await;
-        advance_store_to_slot(&mut store, 2, 10).await;
-        let canonical_completion_root = {
-            let db = store.store.lock().await;
-            db.slot_index_provider().get(1).unwrap().unwrap()
-        };
-
-        let block = store.produce_block_with_signatures(3, 3).await.unwrap();
-        let mut pending_parent = SignedBlock {
-            block: block.block.clone(),
-            #[cfg(feature = "devnet4")]
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures.clone(),
-                proposer_signature: Signature::mock(),
-            },
-            #[cfg(feature = "devnet5")]
-            proof: VariableList::<u8, U524288>::new(proof_bytes)
-                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
-        };
-        {
-            pending_parent.block.parent_root = canonical_completion_root;
-        }
-        let pending_parent_root = pending_parent.block.tree_hash_root();
-        store
-            .store
-            .lock()
-            .await
-            .pending_blocks_provider()
-            .insert(pending_parent_root, pending_parent)
-            .unwrap();
-
-        let mut signed_block = SignedBlock {
-            block: block.block,
-            #[cfg(feature = "devnet4")]
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures,
-                proposer_signature: Signature::mock(),
-            },
-            #[cfg(feature = "devnet5")]
-            proof: VariableList::<u8, U524288>::new(proof_bytes)
-                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
-        };
-        {
-            signed_block.block.slot = 4;
-            signed_block.block.parent_root = pending_parent_root;
-        }
-        let last_root = signed_block.block.tree_hash_root();
-
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        #[cfg(feature = "devnet4")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-
-        let mut queue = JobQueue::new(last_root, 4, 4);
-        queue.add_job(JobRequest::new(PeerId::random(), last_root));
-        service.backfill_state.jobs.push(queue);
-
-        service
-            .handle_backfill_block(None, signed_block, SyncBlockSource::Gossip)
-            .await
-            .unwrap();
-
-        assert_eq!(service.backfill_state.jobs.len(), 1);
-        assert!(service.backfill_state.jobs[0].is_complete);
-        assert_eq!(
-            service.backfill_state.jobs[0].completion_root,
-            Some(canonical_completion_root)
-        );
-        assert!(service.pending_job_requests.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_handle_backfill_block_requeues_first_missing_root_beyond_pending_chain() {
-        let mut store = sample_store(10).await;
-        let missing_root = B256::repeat_byte(0x66);
-
-        let block = store.produce_block_with_signatures(3, 3).await.unwrap();
-        let mut pending_parent = SignedBlock {
-            block: block.block.clone(),
-            #[cfg(feature = "devnet4")]
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures.clone(),
-                proposer_signature: Signature::mock(),
-            },
-            #[cfg(feature = "devnet5")]
-            proof: VariableList::<u8, U524288>::new(proof_bytes)
-                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
-        };
-        {
-            pending_parent.block.parent_root = missing_root;
-        }
-        let pending_parent_root = pending_parent.block.tree_hash_root();
-        store
-            .store
-            .lock()
-            .await
-            .pending_blocks_provider()
-            .insert(pending_parent_root, pending_parent)
-            .unwrap();
-
-        let mut signed_block = SignedBlock {
-            block: block.block,
-            #[cfg(feature = "devnet4")]
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures,
-                proposer_signature: Signature::mock(),
-            },
-            #[cfg(feature = "devnet5")]
-            proof: VariableList::<u8, U524288>::new(proof_bytes)
-                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
-        };
-        {
-            signed_block.block.slot = 4;
-            signed_block.block.parent_root = pending_parent_root;
-        }
-        let last_root = signed_block.block.tree_hash_root();
-
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-
-        let mut queue = JobQueue::new(last_root, 4, 4);
-        queue.add_job(JobRequest::new(PeerId::random(), last_root));
-        service.backfill_state.jobs.push(queue);
-
-        service
-            .handle_backfill_block(None, signed_block, SyncBlockSource::Gossip)
-            .await
-            .unwrap();
-
-        assert_eq!(service.backfill_state.jobs.len(), 1);
-        assert!(!service.backfill_state.jobs[0].is_complete);
-        assert_eq!(service.backfill_state.jobs[0].completion_root, None);
-        assert!(matches!(
-            service.pending_job_requests.front(),
-            Some(PendingJobRequest::Initial {
-                root,
-                slot,
-                parent_root,
-            }) if *root == last_root && *slot == 3 && *parent_root == missing_root
-        ));
-    }
-
-    #[tokio::test]
-    async fn test_prune_stale_pending_blocks_removes_finalized_orphans() {
-        let mut store = sample_store(10).await;
-        let block = store.produce_block_with_signatures(1, 1).await.unwrap();
-        let mut pending_block = SignedBlock {
-            block: block.block,
-            #[cfg(feature = "devnet4")]
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures,
-                proposer_signature: Signature::mock(),
-            },
-            #[cfg(feature = "devnet5")]
-            proof: VariableList::<u8, U524288>::new(proof_bytes)
-                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
-        };
-        {
-            pending_block.block.parent_root = B256::repeat_byte(0x77);
-        }
-        let pending_root = pending_block.block.tree_hash_root();
-        store
-            .store
-            .lock()
-            .await
-            .pending_blocks_provider()
-            .insert(pending_root, pending_block)
-            .unwrap();
-        store
-            .store
-            .lock()
-            .await
-            .latest_finalized_provider()
-            .insert(Checkpoint {
-                root: B256::repeat_byte(0x55),
-                slot: 1,
-            })
-            .unwrap();
-
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        #[cfg(feature = "devnet4")]
-        let service = LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-
-        assert!(service.has_orphaned_pending_blocks().await);
-        service.prune_stale_pending_blocks().await.unwrap();
-        assert!(!service.has_orphaned_pending_blocks().await);
-    }
-
-    #[tokio::test]
-    async fn test_handle_process_block_routes_missing_parent_to_backfill_path() {
-        let mut target_store = sample_store(10).await;
-
-        let block = target_store
-            .produce_block_with_signatures(1, 1)
-            .await
-            .unwrap();
-        let mut signed_block = SignedBlock {
-            block: block.block,
-            #[cfg(feature = "devnet4")]
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures,
-                proposer_signature: Signature::mock(),
-            },
-            #[cfg(feature = "devnet5")]
-            proof: VariableList::<u8, U524288>::new(proof_bytes)
-                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
-        };
-        {
-            signed_block.block.parent_root = B256::repeat_byte(0x99);
-        }
-        let block_root = signed_block.block.tree_hash_root();
-        let (writer, _reader) = Writer::new(target_store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        service.sync_status = SyncStatus::Synced;
-
-        service.handle_process_block(&signed_block).await.unwrap();
-
-        let pending_block_exists = {
-            let fork_choice = service.store.read().await;
-            let store = fork_choice.store.lock().await;
-            store
-                .pending_blocks_provider()
-                .get(block_root)
-                .unwrap()
-                .is_some()
-        };
-        assert!(pending_block_exists);
-    }
-
-    #[tokio::test]
-    async fn test_queue_pending_initial_rebuilds_fresh_queue_when_replace_fails() {
-        let store = sample_store(10).await;
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-
-        #[cfg(feature = "devnet4")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-
-        let peer_id = PeerId::random();
-        service.network_state.upsert_peer(
-            peer_id,
-            None,
-            ConnectionState::Connected,
-            Direction::Outbound,
-        );
-
-        let root = B256::repeat_byte(1);
-        let parent_root = B256::repeat_byte(2);
-        service
-            .pending_job_requests
-            .push_back(PendingJobRequest::new_initial(root, 99, parent_root));
-
-        service.queue_pending_job_requests().await.unwrap();
-
-        assert!(service.peers_in_use.contains(&peer_id));
-        assert!(matches!(
-            &service.backfill_state.jobs,
-            jobs if jobs.iter().any(|queue|
-                queue.starting_root == parent_root
-                    && queue.starting_slot == 98
-                    && queue.jobs.contains_key(&parent_root)
-            )
-        ));
-    }
-
-    #[tokio::test]
-    async fn test_handle_backfill_block_absorbs_older_queue_frontier() {
-        let mut store = sample_store(10).await;
-        let old_root = B256::repeat_byte(0x11);
-        let old_frontier = B256::repeat_byte(0x12);
-        let new_root = B256::repeat_byte(0x21);
-
-        let signed_block = {
-            let block = store.produce_block_with_signatures(1, 1).await.unwrap();
-            let mut signed_block = SignedBlock {
-                block: block.block,
-                #[cfg(feature = "devnet4")]
-                signature: BlockSignatures {
-                    attestation_signatures: block.signatures,
-                    proposer_signature: Signature::mock(),
-                },
-                #[cfg(feature = "devnet5")]
-                proof: VariableList::<u8, U524288>::new(proof_bytes)
-                    .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
-            };
-            signed_block.block.slot = 101;
-            signed_block.block.parent_root = old_root;
-            signed_block
-        };
-
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-
-        #[cfg(feature = "devnet4")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        let peer_old = PeerId::random();
-        let peer_new = PeerId::random();
-
-        service.backfill_state.add_new_job_queue(
-            Checkpoint {
-                root: old_root,
-                slot: 120,
-            },
-            JobRequest::new(peer_old, old_root),
-            false,
-        );
-        service.backfill_state.replace_job_with_next_job(
-            old_root,
-            61,
-            JobRequest::new(peer_old, old_frontier),
-        );
-        service.peers_in_use.insert(peer_old);
-
-        service.backfill_state.add_new_job_queue(
-            Checkpoint {
-                root: new_root,
-                slot: 140,
-            },
-            JobRequest::new(peer_new, new_root),
-            false,
-        );
-        let new_frontier = signed_block.block.tree_hash_root();
-        service.backfill_state.replace_job_with_next_job(
-            new_root,
-            101,
-            JobRequest::new(peer_new, new_frontier),
-        );
-
-        service
-            .handle_backfill_block(None, signed_block, SyncBlockSource::ReqResp)
-            .await
-            .unwrap();
-
-        assert_eq!(service.backfill_state.jobs.len(), 1);
-        let surviving_queue = &service.backfill_state.jobs[0];
-        assert_eq!(surviving_queue.starting_root, new_root);
-        assert!(surviving_queue.jobs.contains_key(&old_frontier));
-        assert!(!surviving_queue.jobs.contains_key(&new_frontier));
-        assert_eq!(surviving_queue.last_fetched_slot, 61);
-        assert!(service.peers_in_use.contains(&peer_old));
-    }
-
-    #[tokio::test]
-    async fn test_handle_backfill_block_clears_quarantine_for_arrived_root_but_preserves_attempts()
-    {
-        let mut store = sample_store(10).await;
-        let block = store.produce_block_with_signatures(1, 1).await.unwrap();
-        let signed_block = SignedBlock {
-            block: block.block,
-            #[cfg(feature = "devnet4")]
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures,
-                proposer_signature: Signature::mock(),
-            },
-            #[cfg(feature = "devnet5")]
-            proof: VariableList::<u8, U524288>::new(proof_bytes)
-                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
-        };
-        let root = signed_block.block.tree_hash_root();
-
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        #[cfg(feature = "devnet4")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        service.backfill_recovery_attempts.insert(root, 3);
-        service.quarantined_backfill_roots.insert(
-            root,
-            super::QuarantinedBackfillRoot {
-                slot: 1,
-                attempts: 3,
-            },
-        );
-        service.dropped_backfill_roots.insert(root);
-
-        service
-            .handle_backfill_block(None, signed_block, SyncBlockSource::Gossip)
-            .await
-            .unwrap();
-
-        assert_eq!(service.backfill_recovery_attempts.get(&root), Some(&3));
-        assert!(!service.quarantined_backfill_roots.contains_key(&root));
-        assert!(!service.dropped_backfill_roots.contains(&root));
-    }
-
-    #[tokio::test]
-    async fn test_handle_forward_sync_completed_clears_recovery_state_for_ending_root() {
-        let mut store = sample_store(10).await;
-        advance_store_to_slot(&mut store, 3, 10).await;
-
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        #[cfg(feature = "devnet4")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        let root = B256::repeat_byte(0xaa);
-        let mut previous_queue = JobQueue::new(root, 1, 1);
-        previous_queue.is_complete = true;
-        service.backfill_state.jobs.push(previous_queue);
-        service.backfill_recovery_attempts.insert(root, 3);
-        service.quarantined_backfill_roots.insert(
-            root,
-            super::QuarantinedBackfillRoot {
-                slot: 1,
-                attempts: 3,
-            },
-        );
-        service.dropped_backfill_roots.insert(root);
-
-        service
-            .handle_forward_sync_result(ForwardSyncResults::Completed {
-                starting_root: B256::repeat_byte(0x11),
-                ending_root: root,
-                imported_start_slot: Some(1),
-                imported_end_slot: Some(1),
-                blocks_synced: 1,
-                processing_time_seconds: 0.1,
-            })
-            .await
-            .unwrap();
-
-        assert!(!service.backfill_recovery_attempts.contains_key(&root));
-        assert!(!service.quarantined_backfill_roots.contains_key(&root));
-        assert!(!service.dropped_backfill_roots.contains(&root));
-        assert!(service.backfill_state.jobs.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_prune_stale_pending_blocks_preserves_roots_still_referenced_by_backfill() {
-        let mut store = sample_store(10).await;
-        let block = store.produce_block_with_signatures(1, 1).await.unwrap();
-        let mut pending_block = SignedBlock {
-            block: block.block,
-            #[cfg(feature = "devnet4")]
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures,
-                proposer_signature: Signature::mock(),
-            },
-            #[cfg(feature = "devnet5")]
-            proof: VariableList::<u8, U524288>::new(proof_bytes)
-                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
-        };
-        {
-            pending_block.block.slot = 0;
-            pending_block.block.parent_root = B256::ZERO;
-        }
-        let pending_root = pending_block.block.tree_hash_root();
-        store
-            .store
-            .lock()
-            .await
-            .pending_blocks_provider()
-            .insert(pending_root, pending_block)
-            .unwrap();
-
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        #[cfg(feature = "devnet4")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        service.backfill_state.add_new_job_queue(
-            Checkpoint {
-                root: pending_root,
-                slot: 1,
-            },
-            JobRequest::new(PeerId::random(), pending_root),
-            true,
-        );
-
-        service.prune_stale_pending_blocks().await.unwrap();
-
-        let pending_present = {
-            let fork_choice = service.store.read().await;
-            let store = fork_choice.store.lock().await;
-            store
-                .pending_blocks_provider()
-                .get(pending_root)
-                .unwrap()
-                .is_some()
-        };
-        assert!(pending_present);
-    }
-
-    #[tokio::test]
-    async fn test_handle_callback_response_accepts_late_reassigned_peer_callback() {
-        let mut store = sample_store(10).await;
-
-        let signed_block = {
-            let block = store.produce_block_with_signatures(1, 1).await.unwrap();
-            SignedBlock {
-                block: block.block,
-                #[cfg(feature = "devnet4")]
-                signature: BlockSignatures {
-                    attestation_signatures: block.signatures,
-                    proposer_signature: Signature::mock(),
-                },
-                #[cfg(feature = "devnet5")]
-                proof: VariableList::<u8, U524288>::new(proof_bytes)
-                    .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
-            }
-        };
-
-        let block_root = signed_block.block.tree_hash_root();
-
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-
-        #[cfg(feature = "devnet4")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        #[cfg(feature = "devnet5")]
-        let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
-        let old_peer = PeerId::random();
-        let new_peer = PeerId::random();
-        service.backfill_state.add_new_job_queue(
-            Checkpoint {
-                root: block_root,
-                slot: 1,
-            },
-            JobRequest::new(new_peer, block_root),
-            false,
-        );
-        service.peers_in_use.insert(new_peer);
-
-        service
-            .handle_callback_response_message(
-                old_peer,
-                Arc::new(LeanResponseMessage::BlocksByRoot(Arc::new(signed_block))),
-            )
-            .await
-            .unwrap();
-
-        assert!(!service.peers_in_use.contains(&new_peer));
-        assert_eq!(service.telemetry.backfill_telemetry.callbacks_processed, 1);
-        assert!(!service.backfill_state.contains_job_root(block_root));
-
-        let pending_block_exists = {
-            let fork_choice = service.store.read().await;
-            let store = fork_choice.store.lock().await;
-            store
-                .pending_blocks_provider()
-                .get(block_root)
-                .unwrap()
-                .is_some()
-        };
-        assert!(pending_block_exists);
     }
 }

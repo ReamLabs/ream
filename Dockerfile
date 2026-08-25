@@ -30,12 +30,29 @@ ENV RUSTFLAGS="$RUSTFLAGS"
 ARG FEATURES=""
 ENV FEATURES=$FEATURES
 
+# Disable default features (e.g. for `shadow-integration`, which must drop the
+# default `jemalloc` and `devnet4` features). Empty for a normal build.
+ARG NO_DEFAULT_FEATURES=""
+ENV NO_DEFAULT_FEATURES=$NO_DEFAULT_FEATURES
+
+# `--locked` by default; the Shadow build injects an uncommitted `[patch]` and so
+# must build unlocked (pass LOCKED= empty).
+ARG LOCKED="--locked"
+ENV LOCKED=$LOCKED
+
 # Build dependencies
-RUN cargo chef cook --profile $BUILD_PROFILE --features "$FEATURES" --recipe-path recipe.json
+RUN cargo chef cook --profile $BUILD_PROFILE $NO_DEFAULT_FEATURES --features "$FEATURES" --recipe-path recipe.json
 
 # Build application
 COPY --exclude=.git --exclude=dist . .
-RUN cargo build --profile $BUILD_PROFILE --features "$FEATURES" --locked --bin ream
+
+# Shadow simulator compatibility: the quinn-udp fallback is a Cargo `[patch]`,
+# which cannot be feature-gated and is therefore not committed. Set SHADOW=1 to
+# inject it into the manifest before building.
+ARG SHADOW=""
+RUN if [ -n "$SHADOW" ]; then bash shadow/inject-patch.sh; fi
+
+RUN cargo build --profile $BUILD_PROFILE $NO_DEFAULT_FEATURES --features "$FEATURES" $LOCKED --bin ream
 
 # ARG is not resolved in COPY so we have to hack around it by copying the
 # binary to a temporary location

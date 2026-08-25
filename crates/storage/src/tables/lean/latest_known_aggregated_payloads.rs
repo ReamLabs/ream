@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-#[cfg(feature = "devnet4")]
-use ream_consensus_lean::attestation::AggregatedSignatureProof as PayloadProof;
 use ream_consensus_lean::attestation::SignatureKey;
 #[cfg(feature = "devnet5")]
 use ream_consensus_lean::attestation::SingleMessageAggregate as PayloadProof;
-use redb::{Database, Durability, ReadableDatabase, ReadableTable, TableDefinition};
+use redb::{
+    Database, Durability, ReadableDatabase, ReadableTable, ReadableTableMetadata, TableDefinition,
+};
 
 use crate::{
     errors::StoreError,
@@ -19,8 +19,7 @@ pub struct LeanLatestKnownAggregatedPayloadsTable {
 /// Table definition for the Lean Latest Known Aggregated Payloads table
 ///
 /// Key: SignatureKey
-/// Value: [PayloadProof] (Maps to AggregatedSignatureProof on devnet4, SingleMessageAggregate on
-/// devnet5)
+/// Value: [PayloadProof] (a SingleMessageAggregate on devnet5)
 impl REDBTable for LeanLatestKnownAggregatedPayloadsTable {
     const TABLE_DEFINITION: TableDefinition<
         'static,
@@ -74,6 +73,24 @@ impl LeanLatestKnownAggregatedPayloadsTable {
             entries.push((key, value));
         }
         Ok(entries)
+    }
+
+    pub fn iter_keys(&self) -> Result<Vec<SignatureKey>, StoreError> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(Self::TABLE_DEFINITION)?;
+
+        let mut keys = Vec::new();
+        for result in table.iter()? {
+            let (key_guard, _value_guard) = result?;
+            keys.push(key_guard.value());
+        }
+        Ok(keys)
+    }
+
+    pub fn entry_count(&self) -> Result<u64, StoreError> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(Self::TABLE_DEFINITION)?;
+        Ok(table.len()?)
     }
 
     pub fn retain<F>(&self, mut f: F) -> Result<(), StoreError>

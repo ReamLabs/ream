@@ -2,6 +2,7 @@ use std::{net::IpAddr, path::PathBuf};
 
 use alloy_primitives::B256;
 use clap::{Parser, error::ErrorKind};
+use ream_fork_choice_lean::store::BlockProductionStrategy;
 use ream_network_spec::{cli::lean_network_parser, networks::LeanNetworkSpec};
 use ream_p2p::bootnodes::Bootnodes;
 use url::Url;
@@ -97,6 +98,14 @@ pub struct LeanNodeConfig {
 
     #[arg(
         long,
+        default_value = "round-based",
+        value_parser = block_production_parser,
+        help = "Attestation selection strategy for block production: round-based or tiered."
+    )]
+    pub block_production: BlockProductionStrategy,
+
+    #[arg(
+        long,
         default_value = "./reth-data",
         help = "Set reth data directory (needs `--features reth`)"
     )]
@@ -137,6 +146,32 @@ pub struct LeanNodeConfig {
         requires = "reth_p2p_port"
     )]
     pub reth_trusted_peers: Vec<String>,
+
+    /// Shadow sim only: replace the XMSS aggregation prover/verifier with a
+    /// deterministic stub (no leanVM proving/verifying). Off by default.
+    #[cfg(feature = "shadow-integration")]
+    #[arg(long, default_value_t = false)]
+    pub shadow_xmss_fake: bool,
+
+    /// Shadow sim only: signatures aggregated per second. Injects a sleep of
+    /// n/rate seconds into aggregation so its CPU cost shows up on Shadow's
+    /// virtual clock. Unset or <= 0 disables.
+    #[cfg(feature = "shadow-integration")]
+    #[arg(long)]
+    pub shadow_xmss_aggregate_signatures_rate: Option<f64>,
+
+    /// Shadow sim only: signatures verified per aggregate per second; injects a
+    /// sleep of n/rate seconds into verification. Unset or <= 0 disables.
+    #[cfg(feature = "shadow-integration")]
+    #[arg(long)]
+    pub shadow_xmss_verify_aggregated_signatures_rate: Option<f64>,
+
+    /// Shadow sim only: Type-1 components merged into a Type-2 per second;
+    /// injects a sleep of n/rate seconds into the proposal Type-2 merge.
+    /// Unset or <= 0 disables.
+    #[cfg(feature = "shadow-integration")]
+    #[arg(long)]
+    pub shadow_xmss_merge_rate: Option<f64>,
 }
 
 impl LeanNodeConfig {
@@ -154,5 +189,13 @@ impl LeanNodeConfig {
         }
 
         Ok(())
+    }
+}
+
+fn block_production_parser(value: &str) -> Result<BlockProductionStrategy, String> {
+    match value {
+        "round-based" => Ok(BlockProductionStrategy::RoundBased),
+        "tiered" => Ok(BlockProductionStrategy::Tiered),
+        other => Err(format!("expected 'round-based' or 'tiered', got '{other}'")),
     }
 }

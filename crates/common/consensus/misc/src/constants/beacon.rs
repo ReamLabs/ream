@@ -14,6 +14,7 @@ pub const BYTES_PER_COMMITMENT: usize = 48;
 pub const BYTES_PER_FIELD_ELEMENT: usize = 32;
 pub const BYTES_PER_PROOF: usize = 48;
 pub const CAPELLA_FORK_VERSION: B32 = fixed_bytes!("0x03000000");
+pub const FULU_FORK_VERSION: B32 = fixed_bytes!("0x06000000");
 pub const CHURN_LIMIT_QUOTIENT: u64 = 65536;
 pub const CURRENT_SYNC_COMMITTEE_INDEX: u64 = 22;
 pub const CUSTODY_REQUIREMENT: u64 = 4;

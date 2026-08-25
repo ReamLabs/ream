@@ -6,8 +6,6 @@ use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 #[cfg(feature = "devnet5")]
 use ssz_types::typenum::U524288;
-#[cfg(feature = "devnet4")]
-use ssz_types::typenum::U1048576;
 use ssz_types::{BitList, VariableList, typenum::U4096};
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
@@ -40,32 +38,6 @@ impl SignatureKey {
     }
 }
 
-#[cfg(feature = "devnet4")]
-#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize, Encode, Decode, TreeHash)]
-pub struct AggregatedSignatureProof {
-    pub participants: BitList<U4096>,
-    pub proof_data: VariableList<u8, U1048576>,
-}
-
-#[cfg(feature = "devnet4")]
-impl AggregatedSignatureProof {
-    pub fn new(participants: BitList<U4096>, proof_data: VariableList<u8, U1048576>) -> Self {
-        Self {
-            participants,
-            proof_data,
-        }
-    }
-
-    pub fn to_validator_indices(&self) -> Vec<u64> {
-        self.participants
-            .iter()
-            .enumerate()
-            .filter(|(_, bit)| *bit)
-            .map(|(index, _)| index as u64)
-            .collect()
-    }
-}
-
 #[cfg(feature = "devnet5")]
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct SingleMessageAggregate {
@@ -93,7 +65,9 @@ impl SingleMessageAggregate {
 }
 
 #[cfg(feature = "devnet5")]
-#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize, Encode, Decode, TreeHash)]
+#[derive(
+    Debug, PartialEq, Eq, Clone, Hash, Default, Serialize, Deserialize, Encode, Decode, TreeHash,
+)]
 pub struct MultiMessageAggregate {
     pub proof: VariableList<u8, U524288>,
 }
@@ -102,15 +76,6 @@ pub struct MultiMessageAggregate {
 impl MultiMessageAggregate {
     pub fn new(proof: VariableList<u8, U524288>) -> Self {
         Self { proof }
-    }
-}
-
-#[cfg(feature = "devnet5")]
-impl Default for MultiMessageAggregate {
-    fn default() -> Self {
-        Self {
-            proof: VariableList::default(),
-        }
     }
 }
 
@@ -179,9 +144,6 @@ pub struct AggregatedAttestation {
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct SignedAggregatedAttestation {
     pub data: AttestationData,
-
-    #[cfg(feature = "devnet4")]
-    pub proof: AggregatedSignatureProof,
 
     #[cfg(feature = "devnet5")]
     pub proof: SingleMessageAggregate,

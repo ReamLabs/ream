@@ -61,7 +61,7 @@ pub async fn on_block(
         store.db.finalized_checkpoint_provider().get()?.epoch,
     )?;
     ensure!(store.db.finalized_checkpoint_provider().get()?.root == finalized_checkpoint_block);
-    if verify_blob_availability {
+    if verify_blob_availability && !block.body.blob_kzg_commitments.is_empty() {
         // Check if data is available (Fulu: uses column sidecars instead of blobs)
         // If not, this block MAY be queued and subsequently considered when data becomes
         // available *Note*: Extraneous or invalid data (in addition to the

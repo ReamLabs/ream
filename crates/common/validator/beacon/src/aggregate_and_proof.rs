@@ -1,7 +1,7 @@
 use ream_bls::{BLSSignature, PrivateKey, traits::Signable};
 use ream_consensus_beacon::{attestation::Attestation, electra::beacon_state::BeaconState};
 use ream_consensus_misc::{
-    constants::beacon::DOMAIN_AGGREGATE_AND_PROOF,
+    constants::beacon::{DOMAIN_AGGREGATE_AND_PROOF, genesis_validators_root},
     misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
 };
 use ream_network_spec::networks::beacon_network_spec;
@@ -59,7 +59,7 @@ pub fn sign_aggregate_and_proof(
     let domain = compute_domain(
         DOMAIN_AGGREGATE_AND_PROOF,
         Some(beacon_network_spec().electra_fork_version),
-        None,
+        Some(genesis_validators_root()),
     );
     let signing_root = compute_signing_root(aggregate_and_proof, domain);
     Ok(private_key.sign(signing_root.as_ref())?)

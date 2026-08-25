@@ -19,13 +19,22 @@ fn main() -> Result<(), Box<dyn Error>> {
         .add_instructions(&rustc)?
         .emit_and_set()?;
 
-    // Set short SHA
-    let sha = env::var("VERGEN_GIT_SHA")?;
-    let short_sha = &sha[0..7];
+    let sha = match env::var("VERGEN_GIT_SHA") {
+        Ok(sha) => sha,
+        Err(_) => "unknown".to_string(),
+    };
+    let short_sha = match sha.get(0..7) {
+        Some(short_sha) => short_sha,
+        None => &sha,
+    };
+    println!("cargo:rustc-env=VERGEN_GIT_SHA={sha}");
     println!("cargo:rustc-env=VERGEN_GIT_SHA_SHORT={short_sha}");
 
-    // Ream's version is the same as the git tag.
-    let git_describe = env::var("VERGEN_GIT_DESCRIBE")?;
+    let git_describe = match env::var("VERGEN_GIT_DESCRIBE") {
+        Ok(git_describe) => git_describe,
+        Err(_) => format!("v{}", env!("CARGO_PKG_VERSION")),
+    };
+    println!("cargo:rustc-env=VERGEN_GIT_DESCRIBE={git_describe}");
     let ream_version = git_describe.split('-').collect::<Vec<&str>>()[0];
     println!("cargo:rustc-env=REAM_VERSION={ream_version}");
 

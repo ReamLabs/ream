@@ -1,4 +1,5 @@
 use std::{
+    cmp::Reverse,
     collections::{HashMap, HashSet},
     sync::Arc,
     time::{Duration, Instant},
@@ -6,8 +7,6 @@ use std::{
 
 use alloy_primitives::B256;
 use anyhow::{anyhow, ensure};
-#[cfg(feature = "devnet4")]
-use ream_consensus_lean::attestation::AggregatedSignatureProof as PayloadProof;
 #[cfg(feature = "devnet5")]
 use ream_consensus_lean::attestation::SingleMessageAggregate as PayloadProof;
 use ream_consensus_lean::{
@@ -17,13 +16,13 @@ use ream_consensus_lean::{
     },
     block::{Block, BlockBody, BlockWithSignatures, SignedBlock},
     checkpoint::Checkpoint,
-    slot::is_justifiable_after,
+    slot::{is_justifiable_after, justified_index_after},
     state::{LeanState, attestation_data_matches_chain},
-    validator::{Validator, is_proposer},
+    validator::is_proposer,
 };
 use ream_consensus_misc::constants::lean::{
     GOSSIP_DISPARITY_INTERVALS, INTERVALS_PER_SLOT, MAX_ATTESTATIONS_DATA,
-    attestation_committee_count,
+    MAX_HISTORICAL_BLOCK_HASHES, attestation_committee_count,
 };
 #[cfg(feature = "reth")]
 use ream_execution_rpc_types::electra::execution_payload::ExecutionPayload;
@@ -46,10 +45,6 @@ use ream_metrics::{
 };
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
-#[cfg(feature = "devnet4")]
-use ream_post_quantum_crypto::lean_multisig::aggregate::{
-    ChildProof, aggregate_signatures, aggregate_signatures_recursive, verify_aggregate_signature,
-};
 #[cfg(feature = "devnet5")]
 use ream_post_quantum_crypto::lean_multisig::type_2::{
     type_1_aggregate, type_1_from_wire, type_1_to_wire, type_1_verify,
@@ -63,17 +58,125 @@ use ream_reth_engine::{
 };
 use ream_storage::{
     db::lean::LeanDB,
-    tables::{field::REDBField, lean::gossip_signatures::GossipSignaturesTable, table::REDBTable},
+    tables::{
+        field::REDBField,
+        lean::{
+            block::LeanBlockTable, gossip_signatures::GossipSignaturesTable,
+            latest_known_aggregated_payloads::LeanLatestKnownAggregatedPayloadsTable,
+        },
+        table::REDBTable,
+    },
 };
 use ream_sync::rwlock::{Reader, Writer};
-use ssz_types::{BitList, VariableList, typenum::U4096};
+use ssz_types::{
+    BitList, VariableList,
+    typenum::{U4096, U262144},
+};
 use tokio::sync::Mutex;
 use tree_hash::TreeHash;
 
-use crate::constants::JUSTIFICATION_LOOKBACK_SLOTS;
+use crate::constants::{ATTESTATION_RETENTION_SLOTS, JUSTIFICATION_LOOKBACK_SLOTS};
 
 pub type LeanStoreWriter = Writer<Store>;
 pub type LeanStoreReader = Reader<Store>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum AttestationScoreTier {
+    Finalize = 1,
+    Justify = 2,
+    Build = 3,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct AttestationEntryScore {
+    tier: AttestationScoreTier,
+    new_voter_count: usize,
+    target_slot: u64,
+    attestation_slot: u64,
+}
+
+impl AttestationEntryScore {
+    fn ordering_key(&self, data_root: B256) -> AttestationEntryOrderingKey {
+        AttestationEntryOrderingKey {
+            tier: self.tier,
+            new_voter_count: Reverse(self.new_voter_count),
+            target_slot: self.target_slot,
+            attestation_slot: self.attestation_slot,
+            data_root,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct AttestationEntryOrderingKey {
+    tier: AttestationScoreTier,
+    new_voter_count: Reverse<usize>,
+    target_slot: u64,
+    attestation_slot: u64,
+    data_root: B256,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum BlockProductionStrategy {
+    #[default]
+    RoundBased,
+    Tiered,
+}
+
+struct BuildContext {
+    head_state: LeanState,
+    available_signed_attestations: HashMap<u64, SignedAttestation>,
+    block_provider: LeanBlockTable,
+    latest_known_aggregated_payloads_provider: LeanLatestKnownAggregatedPayloadsTable,
+}
+
+#[cfg(feature = "devnet5")]
+pub struct AggregationJob {
+    data: AttestationData,
+    data_root: B256,
+    child_wires: Vec<(Vec<u8>, Vec<PublicKey>)>,
+    raw_xmss: Vec<(PublicKey, Signature)>,
+    bits: BitList<U4096>,
+    raw_count: u64,
+}
+
+#[cfg(feature = "devnet5")]
+pub fn prove_aggregation_jobs(
+    jobs: Vec<AggregationJob>,
+) -> anyhow::Result<Vec<SignedAggregatedAttestation>> {
+    let mut results = Vec::with_capacity(jobs.len());
+    for job in jobs {
+        let building_timer = start_timer(&PQ_SIG_AGGREGATED_SIGNATURES_BUILDING_TIME, &[]);
+        let children = job
+            .child_wires
+            .iter()
+            .map(|(wire, public_keys)| type_1_from_wire(wire, public_keys))
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        let type_one = type_1_aggregate(
+            &children,
+            &job.raw_xmss,
+            &job.data_root.0,
+            job.data.slot as u32,
+        )?;
+        let proof = PayloadProof {
+            participants: job.bits.clone(),
+            proof: VariableList::new(type_1_to_wire(&type_one))
+                .map_err(|err| anyhow!("Failed to create proof_data: {err:?}"))?,
+        };
+        stop_timer(building_timer);
+        inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_TOTAL, &[]);
+        inc_int_counter_vec_by(
+            &PQ_SIG_ATTESTATIONS_IN_AGGREGATED_SIGNATURES_TOTAL,
+            job.raw_count,
+            &[],
+        );
+        results.push(SignedAggregatedAttestation {
+            data: job.data.clone(),
+            proof,
+        });
+    }
+    Ok(results)
+}
 
 /// [Store] represents the state that the Lean node should maintain.
 #[derive(Debug, Clone)]
@@ -85,6 +188,7 @@ pub struct Store {
     /// canonicalize the execution payload carried by each imported block.
     #[cfg(feature = "reth")]
     pub reth_handle: Option<RethHandle>,
+    pub block_production_strategy: BlockProductionStrategy,
 }
 
 impl Store {
@@ -152,6 +256,7 @@ impl Store {
             tick_interval_duration: None,
             #[cfg(feature = "reth")]
             reth_handle: None,
+            block_production_strategy: BlockProductionStrategy::default(),
         })
     }
 
@@ -160,6 +265,12 @@ impl Store {
     #[cfg(feature = "reth")]
     pub fn set_reth_handle(&mut self, reth_handle: RethHandle) {
         self.reth_handle = Some(reth_handle);
+    }
+
+    /// Override the block-production strategy. Defaults to round-based.
+    pub fn with_block_production_strategy(mut self, strategy: BlockProductionStrategy) -> Self {
+        self.block_production_strategy = strategy;
+        self
     }
 
     /// Use LMD GHOST to get the head, given a particular root (usually the
@@ -172,22 +283,33 @@ impl Store {
     ) -> anyhow::Result<(B256, u64)> {
         let mut root = provided_root;
 
-        let (slot_index_table, block_provider) = {
+        let (slot_index_table, block_provider, children_index_provider) = {
             let db = self.store.lock().await;
-            (db.slot_index_provider(), db.block_provider())
+            (
+                db.slot_index_provider(),
+                db.block_provider(),
+                db.children_index_provider(),
+            )
         };
 
+        let index_map = children_index_provider.get_index_map()?;
+
         // Start at genesis by default
-        if root == B256::ZERO || block_provider.get(root)?.is_none() {
+        if root == B256::ZERO || !index_map.contains_key(&root) {
             root = slot_index_table
                 .get_oldest_root()?
                 .ok_or(anyhow!("No blocks found to calculate fork choice"))?;
         }
-        let start_slot = block_provider
-            .get(root)?
-            .ok_or(anyhow!("Failed to get block for root {root:?}"))?
-            .block
-            .slot;
+        let start_slot = match index_map.get(&root) {
+            Some(&(_, slot)) => slot,
+            None => {
+                block_provider
+                    .get(root)?
+                    .ok_or(anyhow!("Failed to get block for root {root:?}"))?
+                    .block
+                    .slot
+            }
+        };
         // For each block, count the number of votes for that block. A vote
         // for any descendant of a block also counts as a vote for that block
         let mut weights = HashMap::<B256, u64>::new();
@@ -196,21 +318,31 @@ impl Store {
             let attestation = attestation?;
             let mut current_root = attestation.message.head.root;
 
-            while let Some(block) = block_provider.get(current_root)? {
-                let block = block.block;
-
-                if block.slot <= start_slot {
+            while let Some(&(parent_root, slot)) = index_map.get(&current_root) {
+                if slot <= start_slot {
                     break;
                 }
 
                 *weights.entry(current_root).or_insert(0) += 1;
 
-                current_root = block.parent_root;
+                current_root = parent_root;
             }
         }
 
         // Identify the children of each block
-        let children_map = block_provider.get_children_map(min_score, &weights)?;
+        let mut children_map = HashMap::<B256, Vec<B256>>::new();
+        for (&block_root, &(parent_root, _)) in &index_map {
+            if parent_root == B256::ZERO {
+                continue;
+            }
+            if min_score > 0 && *weights.get(&block_root).unwrap_or(&0) < min_score {
+                continue;
+            }
+            children_map
+                .entry(parent_root)
+                .or_default()
+                .push(block_root);
+        }
 
         // Start at the root (latest justified hash or genesis) and repeatedly
         // choose the child with the most latest votes, tiebreaking by slot then hash
@@ -222,11 +354,9 @@ impl Store {
                 .iter()
                 .map(|child_hash| {
                     let vote_weight = *weights.get(child_hash).unwrap_or(&0);
-                    let slot = block_provider
-                        .get(*child_hash)
-                        .ok()
-                        .flatten()
-                        .map(|block| block.block.slot)
+                    let slot = index_map
+                        .get(child_hash)
+                        .map(|&(_, slot)| slot)
                         .unwrap_or(0);
                     (*child_hash, slot, (vote_weight, *child_hash))
                 })
@@ -288,12 +418,13 @@ impl Store {
         let latest_justified_root = latest_justified_provider.get()?.root;
 
         let attestations = {
-            let new_payloads = latest_new_aggregated_payloads_provider
+            let new_payload_keys = latest_new_aggregated_payloads_provider
                 .iter()?
                 .into_iter()
-                .collect();
+                .map(|(signature_key, _proofs)| signature_key)
+                .collect::<Vec<_>>();
 
-            self.extract_attestations_from_aggregated_payloads(&new_payloads)
+            self.extract_attestations_from_aggregated_payloads(&new_payload_keys)
                 .await?
         };
 
@@ -320,11 +451,16 @@ impl Store {
     }
 
     pub async fn accept_new_attestations(&mut self) -> anyhow::Result<()> {
-        let (latest_new_aggregated_payloads_provider, latest_known_aggregated_payloads_provider) = {
+        let (
+            latest_new_aggregated_payloads_provider,
+            latest_known_aggregated_payloads_provider,
+            attestation_data_by_root_provider,
+        ) = {
             let db = self.store.lock().await;
             (
                 db.latest_new_aggregated_payloads_provider(),
                 db.latest_known_aggregated_payloads_provider(),
+                db.attestation_data_by_root_provider(),
             )
         };
 
@@ -341,9 +477,32 @@ impl Store {
             latest_known_aggregated_payloads_provider.insert(signature_key, existing_proofs)?;
         }
 
+        let known = latest_known_aggregated_payloads_provider.iter()?;
+        let mut validator_max_slot: HashMap<u64, u64> = HashMap::new();
+        let mut key_slots: Vec<(SignatureKey, u64)> = Vec::with_capacity(known.len());
+        for (key, _) in &known {
+            let slot = attestation_data_by_root_provider
+                .get(key.data_root)?
+                .map(|data| data.slot)
+                .unwrap_or(0);
+            key_slots.push((key.clone(), slot));
+            validator_max_slot
+                .entry(key.validator_id)
+                .and_modify(|max| *max = (*max).max(slot))
+                .or_insert(slot);
+        }
+        let superseded: HashSet<SignatureKey> = key_slots
+            .into_iter()
+            .filter(|(key, slot)| *slot < validator_max_slot[&key.validator_id])
+            .map(|(key, _)| key)
+            .collect();
+        if !superseded.is_empty() {
+            latest_known_aggregated_payloads_provider.retain(|key, _| !superseded.contains(key))?;
+        }
+
         set_int_gauge_vec(
             &LATEST_KNOWN_AGGREGATED_PAYLOADS,
-            latest_known_aggregated_payloads_provider.iter()?.len() as i64,
+            latest_known_aggregated_payloads_provider.entry_count()? as i64,
             &[],
         );
 
@@ -369,10 +528,8 @@ impl Store {
                 self.accept_new_attestations().await?;
             }
         } else if current_interval == 2 {
-            // Interval 2: Only aggregate signatures if aggregator
-            if is_aggregator {
-                self.aggregate().await?;
-            }
+            #[cfg(feature = "devnet5")]
+            let _ = is_aggregator;
         } else if current_interval == 3 {
             // Interval 3: Update safe target
             self.update_safe_target().await?;
@@ -440,20 +597,19 @@ impl Store {
         };
 
         let latest_finalized_checkpoint = latest_finalized_provider.get()?;
+        let old_head = head_provider.get()?;
         let finalized_slot = latest_finalized_checkpoint.slot;
         let attestations = {
-            let entries = latest_known_aggregated_payloads_provider.iter()?;
-            let mut all_payloads: HashMap<SignatureKey, Vec<PayloadProof>> = HashMap::new();
-
-            for (key, proofs) in entries {
+            let mut relevant_keys = Vec::new();
+            for key in latest_known_aggregated_payloads_provider.iter_keys()? {
                 if let Some(data) = attestation_data_by_root_provider.get(key.data_root)?
                     && data.head.slot > finalized_slot
                 {
-                    all_payloads.insert(key, proofs);
+                    relevant_keys.push(key);
                 }
             }
 
-            self.extract_attestations_from_aggregated_payloads(&all_payloads)
+            self.extract_attestations_from_aggregated_payloads(&relevant_keys)
                 .await?
         };
 
@@ -478,25 +634,35 @@ impl Store {
             .slot;
         let mut finalized_root = new_head;
 
-        while let Some(block) = block_provider.get(finalized_root)? {
-            if block.block.slot <= target_finalized_slot {
+        let index_map = {
+            let db = self.store.lock().await;
+            db.children_index_provider().get_index_map()?
+        };
+        let lookup_slot = |root: B256| -> anyhow::Result<Option<(B256, u64)>> {
+            if let Some(&(parent_root, slot)) = index_map.get(&root) {
+                return Ok(Some((parent_root, slot)));
+            }
+            Ok(block_provider
+                .get(root)?
+                .map(|block| (block.block.parent_root, block.block.slot)))
+        };
+
+        while let Some((parent_root, slot)) = lookup_slot(finalized_root)? {
+            if slot <= target_finalized_slot {
                 break;
             }
-            finalized_root = block.block.parent_root;
+            finalized_root = parent_root;
         }
 
-        let final_finalized_checkpoint = if block_provider
-            .get(finalized_root)?
-            .map(|block| block.block.slot)
-            == Some(target_finalized_slot)
-        {
-            Checkpoint {
-                root: finalized_root,
-                slot: target_finalized_slot,
-            }
-        } else {
-            latest_finalized_checkpoint
-        };
+        let final_finalized_checkpoint =
+            if lookup_slot(finalized_root)?.map(|(_, slot)| slot) == Some(target_finalized_slot) {
+                Checkpoint {
+                    root: finalized_root,
+                    slot: target_finalized_slot,
+                }
+            } else {
+                latest_finalized_checkpoint
+            };
 
         set_int_gauge_vec(&HEAD_SLOT, new_head_slot as i64, &[]);
         set_int_gauge_vec(&FINALIZED_SLOT, final_finalized_checkpoint.slot as i64, &[]);
@@ -511,24 +677,86 @@ impl Store {
         };
         *self.network_state.finalized_checkpoint.write() = final_finalized_checkpoint;
 
-        head_provider.insert(new_head)?;
+        self.update_canonical_head(old_head, new_head).await?;
         latest_finalized_provider.insert(final_finalized_checkpoint)?;
 
         Ok(())
     }
 
+    /// Align the slot index with the canonical chain after a fork-choice head change.
+    ///
+    /// Imported blocks are retained in the block and children tables regardless of
+    /// whether they are canonical.  Consequently the slot index must be updated from
+    /// the old and new heads, rather than from block-import order.
+    async fn update_canonical_head(&self, old_head: B256, new_head: B256) -> anyhow::Result<()> {
+        if old_head == new_head {
+            return Ok(());
+        }
+
+        let block_provider = {
+            let db = self.store.lock().await;
+            db.block_provider()
+        };
+        let mut new_entries = HashMap::<u64, B256>::new();
+        let mut stale_slots = HashSet::<u64>::new();
+        let mut old_root = old_head;
+        let mut new_root = new_head;
+
+        while old_root != new_root {
+            let new_block = block_provider.get(new_root)?;
+            let old_block = block_provider.get(old_root)?;
+
+            match (new_block, old_block) {
+                (Some(block), old)
+                    if old
+                        .as_ref()
+                        .is_none_or(|old| block.block.slot >= old.block.slot) =>
+                {
+                    new_entries.insert(block.block.slot, new_root);
+                    new_root = block.block.parent_root;
+                }
+                (_, Some(block)) => {
+                    stale_slots.insert(block.block.slot);
+                    old_root = block.block.parent_root;
+                }
+                _ => break,
+            }
+        }
+
+        let mut new_slots: Vec<_> = new_entries.into_iter().collect();
+        new_slots.sort_unstable_by_key(|(slot, _)| *slot);
+        let new_slot_numbers: HashSet<_> = new_slots.iter().map(|(slot, _)| *slot).collect();
+        let mut stale_slots: Vec<_> = stale_slots.difference(&new_slot_numbers).copied().collect();
+        stale_slots.sort_unstable();
+
+        self.store
+            .lock()
+            .await
+            .update_canonical_head(new_head, &new_slots, &stale_slots)?;
+
+        Ok(())
+    }
+
     pub async fn get_attestation_target(&self) -> anyhow::Result<Checkpoint> {
-        let (head_provider, block_provider, safe_target_provider, latest_finalized_provider) = {
+        let (head_provider, block_provider, safe_target_provider, state_provider) = {
             let db = self.store.lock().await;
             (
                 db.head_provider(),
                 db.block_provider(),
                 db.safe_target_provider(),
-                db.latest_finalized_provider(),
+                db.state_provider(),
             )
         };
 
-        let mut target_block_root = head_provider.get()?;
+        let head_root = head_provider.get()?;
+
+        let head_state = state_provider
+            .get(head_root)?
+            .ok_or(anyhow!("Head state not found for attestation target"))?;
+        let head_finalized_slot = head_state.latest_finalized.slot;
+        let head_justified = head_state.latest_justified;
+
+        let mut target_block_root = head_root;
 
         for _ in 0..JUSTIFICATION_LOOKBACK_SLOTS {
             if block_provider
@@ -552,15 +780,14 @@ impl Store {
             }
         }
 
-        let latest_finalized_slot = latest_finalized_provider.get()?.slot;
         while !is_justifiable_after(
             block_provider
                 .get(target_block_root)?
                 .ok_or(anyhow!("Block not found for target block root"))?
                 .block
                 .slot,
-            latest_finalized_slot,
-        )? {
+            head_finalized_slot,
+        ) {
             target_block_root = block_provider
                 .get(target_block_root)?
                 .ok_or(anyhow!("Block not found for target block root"))?
@@ -571,6 +798,10 @@ impl Store {
         let target_block = block_provider
             .get(target_block_root)?
             .ok_or(anyhow!("Block not found for target block root"))?;
+
+        if target_block.block.slot < head_justified.slot {
+            return Ok(head_justified);
+        }
 
         Ok(Checkpoint {
             root: target_block_root,
@@ -674,6 +905,10 @@ impl Store {
                 if raw_entries.is_empty() && child_proofs.len() < 2 {
                     continue;
                 }
+
+                if child_proofs.is_empty() && raw_entries.len() <= 1 {
+                    continue;
+                }
             } else if raw_entries.is_empty() {
                 continue;
             }
@@ -696,23 +931,6 @@ impl Store {
             }
 
             let building_timer = start_timer(&PQ_SIG_AGGREGATED_SIGNATURES_BUILDING_TIME, &[]);
-
-            #[cfg(feature = "devnet4")]
-            let proof = {
-                let xmss_keys: Vec<_> = raw_entries.iter().map(|err| err.1).collect();
-                let xmss_signatures: Vec<_> = raw_entries.iter().map(|err| err.2).collect();
-                let aggregated_signature = aggregate_signatures(
-                    &xmss_keys,
-                    &xmss_signatures,
-                    &data_root.0,
-                    data.slot as u32,
-                )?;
-                PayloadProof {
-                    participants: bits.clone(),
-                    proof_data: VariableList::new(aggregated_signature)
-                        .map_err(|err| anyhow!("Failed to create proof_data: {err:?}"))?,
-                }
-            };
 
             #[cfg(feature = "devnet5")]
             let proof = {
@@ -845,14 +1063,55 @@ impl Store {
         Ok((attestations, proofs))
     }
 
-    pub async fn build_block(
+    async fn build_block(
         &self,
+        strategy: BlockProductionStrategy,
         slot: u64,
         proposer_index: u64,
         parent_root: B256,
         attestations: Option<VariableList<AggregatedAttestations, U4096>>,
         #[cfg(feature = "reth")] execution_payload: ExecutionPayload,
     ) -> anyhow::Result<(Block, Vec<PayloadProof>, LeanState)> {
+        let ctx = self.load_build_context(parent_root).await?;
+        let extended_historical_block_hashes =
+            Self::extended_historical_block_hashes(&ctx.head_state, parent_root, slot);
+        let (selected_attestations, child_payloads_consumed) = match strategy {
+            BlockProductionStrategy::RoundBased => Self::select_round_based(
+                &ctx,
+                &extended_historical_block_hashes,
+                attestations,
+                slot,
+                proposer_index,
+                parent_root,
+                #[cfg(feature = "reth")]
+                &execution_payload,
+            )?,
+            BlockProductionStrategy::Tiered => {
+                let selected = Self::select_tiered(
+                    &ctx,
+                    &extended_historical_block_hashes,
+                    attestations,
+                    slot,
+                )?;
+                let child_payloads_consumed = selected.len() as u64;
+                (selected, child_payloads_consumed)
+            }
+        };
+
+        self.seal_block(
+            &ctx.head_state,
+            &selected_attestations,
+            child_payloads_consumed,
+            slot,
+            proposer_index,
+            parent_root,
+            #[cfg(feature = "reth")]
+            execution_payload,
+        )
+        .await
+    }
+
+    async fn load_build_context(&self, parent_root: B256) -> anyhow::Result<BuildContext> {
         let (
             state_provider,
             latest_known_attestation_provider,
@@ -873,6 +1132,40 @@ impl Store {
         let head_state = state_provider
             .get(parent_root)?
             .ok_or(anyhow!("State not found for head root"))?;
+
+        Ok(BuildContext {
+            head_state,
+            available_signed_attestations,
+            block_provider,
+            latest_known_aggregated_payloads_provider,
+        })
+    }
+
+    fn extended_historical_block_hashes(
+        head_state: &LeanState,
+        parent_root: B256,
+        slot: u64,
+    ) -> Vec<B256> {
+        let num_empty_slots = slot
+            .saturating_sub(head_state.latest_block_header.slot)
+            .saturating_sub(1);
+        let mut extended_historical_block_hashes = head_state.historical_block_hashes.to_vec();
+        extended_historical_block_hashes.push(parent_root);
+        extended_historical_block_hashes.extend(vec![B256::ZERO; num_empty_slots as usize]);
+
+        extended_historical_block_hashes
+    }
+
+    fn select_round_based(
+        ctx: &BuildContext,
+        extended_historical_block_hashes: &[B256],
+        attestations: Option<VariableList<AggregatedAttestations, U4096>>,
+        slot: u64,
+        proposer_index: u64,
+        parent_root: B256,
+        #[cfg(feature = "reth")] execution_payload: &ExecutionPayload,
+    ) -> anyhow::Result<(Vec<AggregatedAttestations>, u64)> {
+        let head_state = &ctx.head_state;
         let mut attestations: VariableList<AggregatedAttestations, U4096> =
             attestations.unwrap_or_else(VariableList::empty);
 
@@ -888,17 +1181,15 @@ impl Store {
 
         let mut current_justified_slots = head_state.justified_slots.clone();
 
-        let num_empty_slots = slot
-            .saturating_sub(head_state.latest_block_header.slot)
-            .saturating_sub(1);
-        let mut extended_historical_block_hashes = head_state.historical_block_hashes.to_vec();
-        extended_historical_block_hashes.push(parent_root);
-        extended_historical_block_hashes.extend(vec![B256::ZERO; num_empty_slots as usize]);
-
         let mut processed_attestation_data: HashSet<AttestationData> = HashSet::new();
 
-        let mut sorted_candidates: Vec<_> = available_signed_attestations.values().collect();
-        sorted_candidates.sort_by_key(|signed_attestation| signed_attestation.message.target.slot);
+        let mut sorted_candidates: Vec<_> = ctx.available_signed_attestations.values().collect();
+        sorted_candidates.sort_by_cached_key(|signed_attestation| {
+            (
+                signed_attestation.message.target.slot,
+                signed_attestation.message.tree_hash_root(),
+            )
+        });
 
         let select_start = Instant::now();
         let mut child_payloads_consumed = 0;
@@ -916,12 +1207,12 @@ impl Store {
                     break;
                 }
 
-                if !block_provider.contains_key(data.head.root) {
+                if !ctx.block_provider.contains_key(data.head.root) {
                     continue;
                 }
 
                 if !(attestation_data_matches_chain(
-                    &extended_historical_block_hashes,
+                    extended_historical_block_hashes,
                     data.clone(),
                 )?) {
                     continue;
@@ -961,6 +1252,12 @@ impl Store {
                     continue;
                 }
 
+                if !is_genesis_self_vote
+                    && !is_justifiable_after(data.target.slot, current_finalized_slot)
+                {
+                    continue;
+                }
+
                 let validator_id = signed_attestation.validator_id;
                 let attestation = AggregatedAttestations {
                     validator_id,
@@ -973,8 +1270,9 @@ impl Store {
 
                 let data_root = data.tree_hash_root();
                 let signature_key = SignatureKey::from_parts(validator_id, data_root);
-                let has_proof =
-                    latest_known_aggregated_payloads_provider.contains_key(&signature_key);
+                let has_proof = ctx
+                    .latest_known_aggregated_payloads_provider
+                    .contains_key(&signature_key);
 
                 if has_proof {
                     new_attestations
@@ -1059,18 +1357,236 @@ impl Store {
         }
         observe_block_proposal_phase("stf_simulate", total_stf_duration);
         observe_block_proposal_phase("select_payloads", select_start.elapsed());
-        let attestations_vec: Vec<_> = attestations.to_vec();
 
+        Ok((attestations.to_vec(), child_payloads_consumed))
+    }
+
+    fn select_tiered(
+        ctx: &BuildContext,
+        extended_historical_block_hashes: &[B256],
+        attestations: Option<VariableList<AggregatedAttestations, U4096>>,
+        slot: u64,
+    ) -> anyhow::Result<Vec<AggregatedAttestations>> {
+        let head_state = &ctx.head_state;
+        let mut candidates_by_data: HashMap<AttestationData, HashSet<u64>> = HashMap::new();
+        for signed_attestation in ctx.available_signed_attestations.values() {
+            candidates_by_data
+                .entry(signed_attestation.message.clone())
+                .or_default()
+                .insert(signed_attestation.validator_id);
+        }
+        if let Some(attestations) = attestations {
+            for attestation in attestations {
+                candidates_by_data
+                    .entry(attestation.data)
+                    .or_default()
+                    .insert(attestation.validator_id);
+            }
+        }
+
+        // Ream stores payloads by validator/data root, so rebuild the per-data
+        // proof pool that leanSpec receives directly.
+        let mut aggregated_payloads: HashMap<B256, (AttestationData, Vec<PayloadProof>)> =
+            HashMap::new();
+        for (data, validator_ids) in candidates_by_data {
+            if !ctx.block_provider.contains_key(data.head.root) {
+                continue;
+            }
+
+            let data_root = data.tree_hash_root();
+            let mut proofs = HashSet::new();
+            for validator_id in validator_ids {
+                if let Some(validator_proofs) = ctx
+                    .latest_known_aggregated_payloads_provider
+                    .get(SignatureKey::from_parts(validator_id, data_root))?
+                {
+                    proofs.extend(validator_proofs);
+                }
+            }
+
+            if !proofs.is_empty() {
+                aggregated_payloads.insert(data_root, (data, proofs.into_iter().collect()));
+            }
+        }
+
+        let validator_count = head_state.validators.len();
+        let mut finalized_slot = head_state.latest_finalized.slot;
+        let mut justified_slots = head_state.justified_slots.clone();
+        extend_projected_justified_slots(
+            &mut justified_slots,
+            finalized_slot,
+            slot.saturating_sub(1),
+        )?;
+
+        let mut votes_by_target_root = build_running_votes_by_target_root(head_state)?;
+        let mut processed_data_roots = HashSet::new();
+        let mut selected_attestations = Vec::new();
+
+        for _ in 0..MAX_ATTESTATIONS_DATA {
+            let mut best_candidate: Option<(B256, AttestationEntryScore, HashSet<u64>)> = None;
+            let mut best_candidate_key = None;
+
+            for (data_root, (candidate_data, proofs)) in &aggregated_payloads {
+                if processed_data_roots.contains(data_root) {
+                    continue;
+                }
+
+                if !ctx.block_provider.contains_key(candidate_data.head.root) {
+                    continue;
+                }
+
+                if !attestation_data_matches_chain(
+                    extended_historical_block_hashes,
+                    candidate_data.clone(),
+                )? {
+                    continue;
+                }
+
+                if !is_projected_slot_justified(
+                    &justified_slots,
+                    finalized_slot,
+                    candidate_data.source.slot,
+                ) {
+                    continue;
+                }
+
+                let is_genesis_self_vote =
+                    candidate_data.source.slot == 0 && candidate_data.target.slot == 0;
+
+                if !is_genesis_self_vote {
+                    if candidate_data.target.slot <= candidate_data.source.slot {
+                        continue;
+                    }
+
+                    if !is_justifiable_after(candidate_data.target.slot, finalized_slot) {
+                        continue;
+                    }
+                }
+
+                let prior_voters = votes_by_target_root
+                    .get(&candidate_data.target.root)
+                    .cloned()
+                    .unwrap_or_default();
+                let mut new_voters = HashSet::new();
+                for proof in proofs {
+                    for validator_index in proof.to_validator_indices() {
+                        if !prior_voters.contains(&validator_index) {
+                            new_voters.insert(validator_index);
+                        }
+                    }
+                }
+
+                if new_voters.is_empty() {
+                    continue;
+                }
+
+                let total_voters = prior_voters.len() + new_voters.len();
+                let crosses_two_thirds = 3 * total_voters >= 2 * validator_count;
+                // finalizes_source: source finalizes only if no slot strictly between
+                // source and target is still justifiable (3SF-mini).
+                let finalizes_source =
+                    if crosses_two_thirds && candidate_data.source.slot > finalized_slot {
+                        let mut no_intermediate_justifiable = true;
+                        for intermediate_slot in
+                            candidate_data.source.slot + 1..candidate_data.target.slot
+                        {
+                            if is_justifiable_after(intermediate_slot, finalized_slot) {
+                                no_intermediate_justifiable = false;
+                                break;
+                            }
+                        }
+                        no_intermediate_justifiable
+                    } else {
+                        false
+                    };
+
+                let tier = if is_genesis_self_vote || !crosses_two_thirds {
+                    AttestationScoreTier::Build
+                } else if finalizes_source {
+                    AttestationScoreTier::Finalize
+                } else {
+                    AttestationScoreTier::Justify
+                };
+
+                let score = AttestationEntryScore {
+                    tier,
+                    new_voter_count: new_voters.len(),
+                    target_slot: candidate_data.target.slot,
+                    attestation_slot: candidate_data.slot,
+                };
+                let candidate_key = score.ordering_key(*data_root);
+
+                if best_candidate_key
+                    .as_ref()
+                    .is_none_or(|key| candidate_key < *key)
+                {
+                    best_candidate = Some((*data_root, score, new_voters));
+                    best_candidate_key = Some(candidate_key);
+                }
+            }
+
+            let Some((data_root, score, selected_new_voters)) = best_candidate else {
+                break;
+            };
+            let (attestation_data, proofs) = aggregated_payloads
+                .get(&data_root)
+                .ok_or_else(|| anyhow!("Selected missing attestation data root {data_root:?}"))?;
+
+            processed_data_roots.insert(data_root);
+            let selected_participants = proofs
+                .iter()
+                .flat_map(|proof| proof.to_validator_indices())
+                .collect::<HashSet<_>>();
+            for validator_id in selected_participants {
+                selected_attestations.push(AggregatedAttestations {
+                    validator_id,
+                    data: attestation_data.clone(),
+                });
+            }
+
+            if score.tier <= AttestationScoreTier::Justify {
+                set_projected_justified_slot(
+                    &mut justified_slots,
+                    finalized_slot,
+                    attestation_data.target.slot,
+                )?;
+                votes_by_target_root.remove(&attestation_data.target.root);
+            } else {
+                votes_by_target_root
+                    .entry(attestation_data.target.root)
+                    .or_default()
+                    .extend(selected_new_voters);
+            }
+
+            if score.tier == AttestationScoreTier::Finalize {
+                shift_projected_finalized_slot(
+                    &mut justified_slots,
+                    finalized_slot,
+                    attestation_data.source.slot,
+                )?;
+                finalized_slot = attestation_data.source.slot;
+            }
+        }
+
+        // Emission covers the full proof-union for the data, like leanSpec's
+        // select_proofs_for_coverage. Projection above still uses new voters only.
+        Ok(selected_attestations)
+    }
+
+    async fn seal_block(
+        &self,
+        head_state: &LeanState,
+        attestations: &[AggregatedAttestations],
+        child_payloads_consumed: u64,
+        slot: u64,
+        proposer_index: u64,
+        parent_root: B256,
+        #[cfg(feature = "reth")] execution_payload: ExecutionPayload,
+    ) -> anyhow::Result<(Block, Vec<PayloadProof>, LeanState)> {
         let payload_aggregation_timer = start_timer(&BLOCK_BUILDING_PAYLOAD_AGGREGATION_TIME, &[]);
         let aggregator_start = Instant::now();
         let (aggregated_attestations, aggregated_proofs) =
-            self.select_aggregated_proofs(&attestations_vec).await?;
-
-        let (aggregated_attestations, aggregated_proofs) = compact_aggregated_proofs(
-            aggregated_attestations,
-            aggregated_proofs,
-            &head_state.validators,
-        )?;
+            self.select_aggregated_proofs(attestations).await?;
         observe_block_proposal_phase("proof_aggregation", aggregator_start.elapsed());
         stop_timer(payload_aggregation_timer);
         observe_histogram_vec(
@@ -1178,12 +1694,9 @@ impl Store {
             start_timer(&PROPOSE_BLOCK_TIME, &["add_valid_attestations_to_block"]);
 
         let attestation_data_map = {
-            let entries = latest_known_aggregated_payloads_provider.iter()?;
+            let signature_keys = latest_known_aggregated_payloads_provider.iter_keys()?;
 
-            let all_payloads: HashMap<SignatureKey, Vec<PayloadProof>> =
-                entries.into_iter().collect();
-
-            self.extract_attestations_from_aggregated_payloads(&all_payloads)
+            self.extract_attestations_from_aggregated_payloads(&signature_keys)
                 .await?
         };
 
@@ -1200,6 +1713,7 @@ impl Store {
 
         let (mut candidate_block, proofs, post_state) = self
             .build_block(
+                self.block_production_strategy,
                 slot,
                 validator_index,
                 head_root,
@@ -1261,7 +1775,7 @@ impl Store {
         let block_provider = db.block_provider();
         let latest_justified_provider = db.latest_justified_provider();
         let attestation_data_by_root_provider = db.attestation_data_by_root_provider();
-        #[cfg(feature = "devnet4")]
+        let time_provider = db.time_provider();
         let latest_known_aggregated_payloads_provider =
             db.latest_known_aggregated_payloads_provider();
         drop(db);
@@ -1279,6 +1793,16 @@ impl Store {
             .get(block.parent_root)?
             .ok_or(anyhow!("State not found for parent root"))?;
 
+        // A block far in the future, would unboundly spin the empty-slot loop that
+        // is present in the state_transition -> process_slots. These checks reject
+        // such blocks before they are processed.
+        ensure!(
+            block.slot.saturating_sub(parent_state.slot) <= MAX_HISTORICAL_BLOCK_HASHES,
+            "Block slot is too far beyond its parent"
+        );
+        let current_slot = time_provider.get()? / INTERVALS_PER_SLOT;
+        ensure!(block.slot <= current_slot + 1, "Block too far in future");
+
         signed_block.verify_signatures(&parent_state, verify_signatures)?;
         parent_state.state_transition(block, true)?;
 
@@ -1293,7 +1817,7 @@ impl Store {
 
         set_int_gauge_vec(&JUSTIFIED_SLOT, latest_justified.slot as i64, &[]);
         set_int_gauge_vec(&LATEST_JUSTIFIED_SLOT, latest_justified.slot as i64, &[]);
-        block_provider.insert(block_root, signed_block.clone())?;
+        block_provider.insert_ref(block_root, signed_block)?;
         state_provider.insert(block_root, parent_state)?;
         latest_justified_provider.insert(latest_justified)?;
         let aggregated_attestations = &block.body.attestations;
@@ -1308,42 +1832,27 @@ impl Store {
             );
         }
 
-        #[cfg(feature = "devnet4")]
-        {
-            let attestation_signatures = &signed_block.signature.attestation_signatures;
-            ensure!(
-                aggregated_attestations.len() == attestation_signatures.len(),
-                "Attestation signature groups must match aggregated attestations"
-            );
-
-            for (attestation, proof) in aggregated_attestations
-                .iter()
-                .zip(attestation_signatures.iter())
-            {
-                let validator_ids = proof.to_validator_indices();
-                let data_root = attestation.message.tree_hash_root();
-
-                attestation_data_by_root_provider.insert(data_root, attestation.message.clone())?;
-
-                for validator_id in validator_ids {
-                    let key = SignatureKey::from_parts(validator_id, data_root);
-
-                    let mut existing_proofs = latest_known_aggregated_payloads_provider
-                        .get(key.clone())?
-                        .unwrap_or_default();
-
-                    existing_proofs.push(proof.clone());
-
-                    latest_known_aggregated_payloads_provider.insert(key, existing_proofs)?;
-                }
-            }
-        }
-
         #[cfg(feature = "devnet5")]
         {
             for attestation in aggregated_attestations.iter() {
                 let data_root = attestation.message.tree_hash_root();
                 attestation_data_by_root_provider.insert(data_root, attestation.message.clone())?;
+
+                let payload =
+                    PayloadProof::new(attestation.aggregation_bits.clone(), VariableList::empty());
+
+                for (validator_id, participated) in attestation.aggregation_bits.iter().enumerate()
+                {
+                    if !participated {
+                        continue;
+                    }
+                    let key = SignatureKey::from_parts(validator_id as u64, data_root);
+                    let mut existing_proofs = latest_known_aggregated_payloads_provider
+                        .get(key.clone())?
+                        .unwrap_or_default();
+                    existing_proofs.push(payload.clone());
+                    latest_known_aggregated_payloads_provider.insert(key, existing_proofs)?;
+                }
             }
         }
 
@@ -1431,9 +1940,13 @@ impl Store {
         let timer = start_timer(&ATTESTATION_VALIDATION_TIME, &[]);
         let data = &signed_attestation.message;
 
-        let (block_provider, time_provider) = {
+        let (block_provider, time_provider, latest_finalized_provider) = {
             let db = self.store.lock().await;
-            (db.block_provider(), db.time_provider())
+            (
+                db.block_provider(),
+                db.time_provider(),
+                db.latest_finalized_provider(),
+            )
         };
 
         // Validate attestation targets exist in store
@@ -1502,6 +2015,13 @@ impl Store {
             );
         }
 
+        // Fork choice only ever descends from the finalized block.
+        ensure!(
+            self.checkpoint_is_ancestor(&latest_finalized_provider.get()?, &data.head)
+                .await?,
+            "Head checkpoint must descend from the finalized block"
+        );
+
         ensure!(
             data.slot >= head_block.block.slot,
             "Attestation slot precedes head"
@@ -1522,6 +2042,28 @@ impl Store {
     pub async fn on_gossip_aggregated_attestation(
         &mut self,
         signed_attestation: SignedAggregatedAttestation,
+    ) -> anyhow::Result<()> {
+        self.on_gossip_aggregated_attestation_core(signed_attestation, true)
+            .await
+    }
+
+    /// Process a gossiped aggregated attestation WITHOUT verifying its
+    /// cryptographic proof.
+    ///
+    /// Only for spec-test fixtures whose proofs are mocked placeholders
+    /// (`proofSetting == 0`, carrying leanSpec's `MOCK_PROOF_PREFIX`);
+    pub async fn on_gossip_aggregated_attestation_without_verification(
+        &mut self,
+        signed_attestation: SignedAggregatedAttestation,
+    ) -> anyhow::Result<()> {
+        self.on_gossip_aggregated_attestation_core(signed_attestation, false)
+            .await
+    }
+
+    async fn on_gossip_aggregated_attestation_core(
+        &mut self,
+        signed_attestation: SignedAggregatedAttestation,
+        verify: bool,
     ) -> anyhow::Result<()> {
         match self
             .validate_attestation(&SignedAttestation {
@@ -1557,8 +2099,11 @@ impl Store {
 
             let data_root = data.tree_hash_root();
             let validator_ids = proof.to_validator_indices();
-            #[cfg(feature = "devnet4")]
-            let attestation_slot = data.slot;
+
+            ensure!(
+                !validator_ids.is_empty(),
+                "Aggregated attestation has no participants"
+            );
 
             let state = self
                 .store
@@ -1579,36 +2124,31 @@ impl Store {
                 })
                 .collect::<anyhow::Result<Vec<_>>>()?;
 
-            let verification_timer =
-                start_timer(&PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME, &[]);
+            // Mocked spec-test proofs (`verify == false`) cannot be checked
+            if verify {
+                let verification_timer =
+                    start_timer(&PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME, &[]);
 
-            #[cfg(feature = "devnet4")]
-            let verification_result = verify_aggregate_signature(
-                &public_keys,
-                &data_root.0,
-                proof.proof_data.as_ref(),
-                attestation_slot as u32,
-            );
+                #[cfg(feature = "devnet5")]
+                let verification_result = type_1_from_wire(proof.proof.as_ref(), &public_keys)
+                    .and_then(|type_one| type_1_verify(&type_one));
 
-            #[cfg(feature = "devnet5")]
-            let verification_result = type_1_from_wire(proof.proof.as_ref(), &public_keys)
-                .and_then(|type_one| type_1_verify(&type_one));
-
-            match verification_result {
-                Ok(()) => {
-                    stop_timer(verification_timer);
-                    inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_VALID_TOTAL, &[]);
-                    for _ in &validator_ids {
-                        inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL, &[]);
+                match verification_result {
+                    Ok(()) => {
+                        stop_timer(verification_timer);
+                        inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_VALID_TOTAL, &[]);
+                        for _ in &validator_ids {
+                            inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL, &[]);
+                        }
                     }
-                }
-                Err(err) => {
-                    stop_timer(verification_timer);
-                    inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_INVALID_TOTAL, &[]);
-                    for _ in &validator_ids {
-                        inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL, &[]);
+                    Err(err) => {
+                        stop_timer(verification_timer);
+                        inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_INVALID_TOTAL, &[]);
+                        for _ in &validator_ids {
+                            inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL, &[]);
+                        }
+                        return Err(anyhow!("Aggregated signature verification failed: {err}"));
                     }
-                    return Err(anyhow!("Aggregated signature verification failed: {err}"));
                 }
             }
 
@@ -1654,31 +2194,28 @@ impl Store {
 
     pub async fn extract_attestations_from_aggregated_payloads(
         &self,
-        aggregated_payloads: &HashMap<SignatureKey, Vec<PayloadProof>>,
+        signature_keys: &[SignatureKey],
     ) -> anyhow::Result<HashMap<u64, AttestationData>> {
-        let mut attestations: HashMap<u64, AttestationData> = HashMap::new();
         let attestation_data_by_root_provider =
             self.store.lock().await.attestation_data_by_root_provider();
+        let mut resolved_attestations = Vec::with_capacity(signature_keys.len());
 
-        for (signature_key, proofs) in aggregated_payloads {
+        for signature_key in signature_keys {
             let data_root = signature_key.data_root;
-            let attestation_data = match attestation_data_by_root_provider.get(data_root)? {
-                Some(data) => data,
-                None => continue,
+            let Some(attestation_data) = attestation_data_by_root_provider.get(data_root)? else {
+                continue;
             };
 
-            if proofs.is_empty() {
-                continue;
-            }
+            resolved_attestations.push((signature_key.validator_id, data_root, attestation_data));
+        }
 
-            let validator = signature_key.validator_id;
-            let is_newer = attestations
-                .get(&validator)
-                .is_none_or(|existing| existing.slot < attestation_data.slot);
+        resolved_attestations.sort_by_key(|(_validator_id, data_root, data)| {
+            std::cmp::Reverse((data.slot, *data_root))
+        });
 
-            if is_newer {
-                attestations.insert(validator, attestation_data.clone());
-            }
+        let mut attestations: HashMap<u64, AttestationData> = HashMap::new();
+        for (validator_id, _data_root, attestation_data) in resolved_attestations {
+            attestations.entry(validator_id).or_insert(attestation_data);
         }
         Ok(attestations)
     }
@@ -1783,6 +2320,211 @@ impl Store {
         Ok(signed_attestations)
     }
 
+    #[cfg(feature = "devnet5")]
+    pub async fn aggregate_prepare(&self) -> anyhow::Result<Vec<AggregationJob>> {
+        let (
+            state_provider,
+            attestation_signatures_provider,
+            head_root,
+            latest_new_aggregated_payloads_provider,
+            latest_known_aggregated_payloads_provider,
+            attestation_data_by_root_provider,
+        ) = {
+            let db = self.store.lock().await;
+            (
+                db.state_provider(),
+                db.attestation_signatures_provider(),
+                db.head_provider().get()?,
+                db.latest_new_aggregated_payloads_provider(),
+                db.latest_known_aggregated_payloads_provider(),
+                db.attestation_data_by_root_provider(),
+            )
+        };
+
+        let head_state = state_provider
+            .get(head_root)?
+            .ok_or_else(|| anyhow!("Head state not found"))?;
+
+        let signature_keys = attestation_signatures_provider.get_keys()?;
+        set_int_gauge_vec(&GOSSIP_SIGNATURES, signature_keys.len() as i64, &[]);
+
+        let mut groups: HashMap<AttestationData, Vec<u64>> = HashMap::new();
+        for signature_key in &signature_keys {
+            if let Some(attestation_data) =
+                attestation_data_by_root_provider.get(signature_key.data_root)?
+            {
+                groups
+                    .entry(attestation_data)
+                    .or_default()
+                    .push(signature_key.validator_id);
+            }
+        }
+
+        let mut new_payloads: HashMap<AttestationData, HashSet<PayloadProof>> = HashMap::new();
+        for (signature_key, proofs) in latest_new_aggregated_payloads_provider.iter()? {
+            if let Some(attestation_data) =
+                attestation_data_by_root_provider.get(signature_key.data_root)?
+            {
+                new_payloads
+                    .entry(attestation_data)
+                    .or_default()
+                    .extend(proofs);
+            }
+        }
+
+        let mut known_payloads: HashMap<AttestationData, HashSet<PayloadProof>> = HashMap::new();
+        for (signature_key, proofs) in latest_known_aggregated_payloads_provider.iter()? {
+            if let Some(attestation_data) =
+                attestation_data_by_root_provider.get(signature_key.data_root)?
+            {
+                known_payloads
+                    .entry(attestation_data)
+                    .or_default()
+                    .extend(proofs);
+            }
+        }
+
+        let mut keys: HashSet<AttestationData> = groups.keys().cloned().collect();
+        keys.extend(new_payloads.keys().cloned());
+
+        const AGG_RECENT_SLOTS: u64 = 16;
+        let head_slot = head_state.slot;
+        keys.retain(|data| data.slot + AGG_RECENT_SLOTS >= head_slot);
+
+        let mut jobs = Vec::new();
+        for data in keys {
+            let data_root = data.tree_hash_root();
+            let mut child_proofs = Vec::new();
+            let mut covered_validators = HashSet::new();
+
+            head_state.extend_proofs_greedily(
+                new_payloads.get(&data),
+                &mut child_proofs,
+                &mut covered_validators,
+            );
+            head_state.extend_proofs_greedily(
+                known_payloads.get(&data),
+                &mut child_proofs,
+                &mut covered_validators,
+            );
+
+            let mut raw_entries = Vec::new();
+            if let Some(validator_ids) = groups.get(&data) {
+                let mut sorted_ids = validator_ids.clone();
+                sorted_ids.sort();
+                for &validator_id in &sorted_ids {
+                    if covered_validators.contains(&validator_id) {
+                        continue;
+                    }
+                    if let Ok(Some(signature)) = attestation_signatures_provider
+                        .get(SignatureKey::from_parts(validator_id, data_root))
+                        && let Some(validator) = head_state.validators.get(validator_id as usize)
+                    {
+                        raw_entries.push((
+                            validator_id,
+                            validator.attestation_public_key,
+                            signature,
+                        ));
+                        covered_validators.insert(validator_id);
+                    }
+                }
+            }
+
+            if raw_entries.is_empty() && child_proofs.len() < 2 {
+                continue;
+            }
+            raw_entries.sort_by_key(|entry| entry.0);
+
+            let mut bits = BitList::<U4096>::with_capacity(head_state.validators.len())
+                .map_err(|err| anyhow!("BitList error: {err:?}"))?;
+            for id in &covered_validators {
+                bits.set(*id as usize, true)
+                    .map_err(|err| anyhow!("Failed to set bits: {err:?}"))?;
+            }
+
+            let mut child_wires = Vec::with_capacity(child_proofs.len());
+            for child in &child_proofs {
+                let public_keys = child
+                    .to_validator_indices()
+                    .into_iter()
+                    .map(|validator_id| {
+                        head_state
+                            .validators
+                            .get(validator_id as usize)
+                            .map(|validator| validator.attestation_public_key)
+                            .ok_or_else(|| {
+                                anyhow!(
+                                    "Validator index {validator_id} out of range during aggregation"
+                                )
+                            })
+                    })
+                    .collect::<anyhow::Result<Vec<_>>>()?;
+                child_wires.push((child.proof.to_vec(), public_keys));
+            }
+
+            let raw_xmss = raw_entries
+                .iter()
+                .map(|(_, public_key, signature)| (*public_key, *signature))
+                .collect();
+            let raw_count = raw_entries.len() as u64;
+
+            jobs.push(AggregationJob {
+                data,
+                data_root,
+                child_wires,
+                raw_xmss,
+                bits,
+                raw_count,
+            });
+        }
+        jobs.sort_by_key(|job| Reverse(job.data.slot));
+        Ok(jobs)
+    }
+
+    #[cfg(feature = "devnet5")]
+    pub async fn aggregate_apply(
+        &self,
+        signed_attestations: &[SignedAggregatedAttestation],
+    ) -> anyhow::Result<()> {
+        let (latest_new_aggregated_payloads_provider, attestation_signatures_provider) = {
+            let db = self.store.lock().await;
+            (
+                db.latest_new_aggregated_payloads_provider(),
+                db.attestation_signatures_provider(),
+            )
+        };
+
+        let mut aggregated_data_roots = HashSet::new();
+        let mut next_new_payloads: HashMap<SignatureKey, Vec<PayloadProof>> = HashMap::new();
+        for signed_attestation in signed_attestations {
+            let data_root = signed_attestation.data.tree_hash_root();
+            aggregated_data_roots.insert(data_root);
+            for validator_id in signed_attestation.proof.to_validator_indices() {
+                next_new_payloads
+                    .entry(SignatureKey::from_parts(validator_id, data_root))
+                    .or_default()
+                    .push(signed_attestation.proof.clone());
+            }
+        }
+
+        for (key, proofs) in next_new_payloads {
+            let mut existing = latest_new_aggregated_payloads_provider
+                .get(key.clone())?
+                .unwrap_or_default();
+            for proof in proofs {
+                if !existing.contains(&proof) {
+                    existing.push(proof);
+                }
+            }
+            latest_new_aggregated_payloads_provider.insert(key, existing)?;
+        }
+
+        attestation_signatures_provider
+            .retain(|key| !aggregated_data_roots.contains(&key.data_root))?;
+
+        Ok(())
+    }
+
     pub async fn compute_block_weights(&self) -> anyhow::Result<HashMap<B256, u64>> {
         let (latest_known_aggregated_payloads_provider, latest_finalized_provider, block_provider) = {
             let db = self.store.lock().await;
@@ -1793,13 +2535,10 @@ impl Store {
             )
         };
 
-        let aggregated_payloads = latest_known_aggregated_payloads_provider
-            .iter()?
-            .into_iter()
-            .collect();
+        let signature_keys = latest_known_aggregated_payloads_provider.iter_keys()?;
 
         let attestations = self
-            .extract_attestations_from_aggregated_payloads(&aggregated_payloads)
+            .extract_attestations_from_aggregated_payloads(&signature_keys)
             .await?;
 
         let start_slot = latest_finalized_provider.get()?.slot;
@@ -1920,6 +2659,12 @@ impl Store {
         if head_state.latest_block_header.slot == 0 {
             source.root = head_root;
         }
+
+        let target = self.get_attestation_target().await?;
+        ensure!(
+            source.slot <= target.slot,
+            "Source must be older or equal to the target"
+        );
         Ok(AttestationData {
             slot,
             head: Checkpoint {
@@ -1930,11 +2675,14 @@ impl Store {
                     .block
                     .slot,
             },
-            target: self.get_attestation_target().await?,
+            target,
             source,
         })
     }
 
+    /// Fork choice only ever descends from the latest finalized block. This is sound only
+    /// because the finalized checkpoint is re-derived from the head each update; pruning
+    /// against a finalized checkpoint that drifted off the head chain would be unsound.
     pub async fn prune_stale_attestation_data(&mut self) -> anyhow::Result<()> {
         let (
             latest_finalized_provider,
@@ -1959,10 +2707,28 @@ impl Store {
 
         children_index_provider.prune_finalized(finalized_slot)?;
 
+        let head_slot = self.network_state.head_checkpoint.read().slot;
+        let cutoff_slot = finalized_slot.max(head_slot.saturating_sub(ATTESTATION_RETENTION_SLOTS));
+
+        let protected_roots: HashSet<B256> = latest_known_aggregated_payloads_provider
+            .iter_keys()?
+            .into_iter()
+            .map(|key| key.data_root)
+            .chain(
+                latest_new_aggregated_payloads_provider
+                    .iter()?
+                    .into_iter()
+                    .map(|(key, _)| key.data_root),
+            )
+            .collect();
+
         let stale_roots: HashSet<B256> = attestation_data_by_root_provider
             .iter()?
             .into_iter()
-            .filter(|(_, data)| data.target.slot <= finalized_slot)
+            .filter(|(root, data)| {
+                (data.target.slot <= finalized_slot || data.slot < cutoff_slot)
+                    && !protected_roots.contains(root)
+            })
             .map(|(root, _)| root)
             .collect();
 
@@ -1988,224 +2754,119 @@ pub fn compute_subnet_id(validator_id: u64, num_committees: u64) -> u64 {
     validator_id % num_committees
 }
 
-fn compact_aggregated_proofs(
-    attestations: Vec<AggregatedAttestation>,
-    proofs: Vec<PayloadProof>,
-    validators: &VariableList<Validator, U4096>,
-) -> anyhow::Result<(Vec<AggregatedAttestation>, Vec<PayloadProof>)> {
-    ensure!(
-        attestations.len() == proofs.len(),
-        "Mismatched attestations ({}) and proofs ({}) lengths",
-        attestations.len(),
-        proofs.len(),
-    );
+fn build_running_votes_by_target_root(
+    head_state: &LeanState,
+) -> anyhow::Result<HashMap<B256, HashSet<u64>>> {
+    let validator_count = head_state.validators.len();
+    let mut votes_by_target_root = HashMap::new();
 
-    if attestations.len() <= 1 {
-        return Ok((attestations, proofs));
-    }
-
-    let mut order = Vec::new();
-    let mut group_index: HashMap<AttestationData, usize> = HashMap::new();
-    let mut groups: Vec<Vec<usize>> = Vec::new();
-    for (attestation_index, attestation) in attestations.iter().enumerate() {
-        match group_index.get(&attestation.message) {
-            Some(&index) => groups
-                .get_mut(index)
-                .ok_or_else(|| anyhow!("group_index pointed to missing group at {index}"))?
-                .push(attestation_index),
-            None => {
-                group_index.insert(attestation.message.clone(), groups.len());
-                order.push(attestation.message.clone());
-                groups.push(vec![attestation_index]);
+    for (root_index, target_root) in head_state.justifications_roots.iter().enumerate() {
+        let mut voters = HashSet::new();
+        for validator_index in 0..validator_count {
+            let bit_index = root_index * validator_count + validator_index;
+            if head_state
+                .justifications_validators
+                .get(bit_index)
+                .map_err(|err| anyhow!("Failed to get justification vote bit: {err:?}"))?
+            {
+                voters.insert(validator_index as u64);
             }
         }
+        votes_by_target_root.insert(*target_root, voters);
     }
 
-    if order.len() == attestations.len() {
-        return Ok((attestations, proofs));
+    Ok(votes_by_target_root)
+}
+
+fn is_projected_slot_justified(
+    justified_slots: &BitList<U262144>,
+    finalized_slot: u64,
+    candidate_slot: u64,
+) -> bool {
+    let Some(index) = justified_index_after(candidate_slot, finalized_slot) else {
+        return candidate_slot <= finalized_slot;
+    };
+
+    index < justified_slots.len() as u64 && justified_slots.get(index as usize).unwrap_or(false)
+}
+
+fn extend_projected_justified_slots(
+    justified_slots: &mut BitList<U262144>,
+    finalized_slot: u64,
+    target_slot: u64,
+) -> anyhow::Result<()> {
+    let Some(target_index) = justified_index_after(target_slot, finalized_slot) else {
+        return Ok(());
+    };
+    let length = (target_index + 1) as usize;
+
+    if justified_slots.len() < length {
+        let new_bitlist = BitList::with_capacity(length)
+            .map_err(|err| anyhow!("Failed to extend projected justified slots: {err:?}"))?;
+        *justified_slots = new_bitlist.union(justified_slots);
     }
 
-    let mut remaining_attestations: Vec<_> = attestations.into_iter().map(Some).collect();
-    let mut remaining_proofs: Vec<_> = proofs.into_iter().map(Some).collect();
+    Ok(())
+}
 
-    let mut out_attestations = Vec::with_capacity(order.len());
-    let mut out_proofs = Vec::with_capacity(order.len());
+fn set_projected_justified_slot(
+    justified_slots: &mut BitList<U262144>,
+    finalized_slot: u64,
+    target_slot: u64,
+) -> anyhow::Result<()> {
+    extend_projected_justified_slots(justified_slots, finalized_slot, target_slot)?;
 
-    for (data, indices) in order.into_iter().zip(groups) {
-        if let [single_index] = indices.as_slice() {
-            out_attestations.push(
-                remaining_attestations
-                    .get_mut(*single_index)
-                    .and_then(Option::take)
-                    .ok_or_else(|| {
-                        anyhow!("attestation slot {single_index} missing or already taken")
-                    })?,
-            );
-            out_proofs.push(
-                remaining_proofs
-                    .get_mut(*single_index)
-                    .and_then(Option::take)
-                    .ok_or_else(|| anyhow!("proof slot {single_index} missing or already taken"))?,
-            );
-            continue;
-        }
-
-        let mut group_proofs = indices
-            .iter()
-            .map(|&index| {
-                remaining_proofs
-                    .get_mut(index)
-                    .and_then(Option::take)
-                    .ok_or_else(|| anyhow!("proof slot {index} missing or already taken"))
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
-        group_proofs.sort_by_key(|proof| proof.to_validator_indices());
-
-        for &index in &indices {
-            if let Some(slot) = remaining_attestations.get_mut(index) {
-                slot.take();
-            }
-        }
-
-        let mut merged_bits = BitList::<U4096>::with_capacity(validators.len())
-            .map_err(|err| anyhow!("BitList error: {err:?}"))?;
-        for proof in &group_proofs {
-            for (index, bit) in proof.participants.iter().enumerate() {
-                if bit {
-                    merged_bits
-                        .set(index, true)
-                        .map_err(|err| anyhow!("BitList error: {err:?}"))?;
-                }
-            }
-        }
-
-        let children_public_keys = group_proofs
-            .iter()
-            .map(|proof| {
-                proof
-                    .to_validator_indices()
-                    .into_iter()
-                    .map(|validator_index| {
-                        validators
-                            .get(validator_index as usize)
-                            .map(|validator| validator.attestation_public_key)
-                            .ok_or_else(|| {
-                                anyhow!(
-                                    "Validator index {validator_index} out of range during compaction"
-                                )
-                            })
-                    })
-                    .collect::<anyhow::Result<Vec<_>>>()
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
-
-        let data_root = data.tree_hash_root();
-        let building_timer = start_timer(&PQ_SIG_AGGREGATED_SIGNATURES_BUILDING_TIME, &[]);
-
-        #[cfg(feature = "devnet4")]
-        let merged_proof_data = {
-            let children = group_proofs
-                .iter()
-                .zip(children_public_keys.iter())
-                .map(|(proof, public_keys)| ChildProof {
-                    public_keys: public_keys.clone(),
-                    proof_data: proof.proof_data.to_vec(),
-                })
-                .collect::<Vec<_>>();
-            aggregate_signatures_recursive(&children, &[], &[], &data_root.0, data.slot as u32)?
-        };
-
-        #[cfg(feature = "devnet5")]
-        let merged_proof_data = {
-            let children = group_proofs
-                .iter()
-                .zip(children_public_keys.iter())
-                .map(|(proof, public_keys)| type_1_from_wire(&proof.proof, public_keys))
-                .collect::<anyhow::Result<Vec<_>>>()?;
-            let merged = type_1_aggregate(&children, &[], &data_root.0, data.slot as u32)?;
-            type_1_to_wire(&merged)
-        };
-
-        stop_timer(building_timer);
-        inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_TOTAL, &[]);
-
-        let merged_proof = PayloadProof::new(
-            merged_bits.clone(),
-            VariableList::new(merged_proof_data)
-                .map_err(|err| anyhow!("Merged proof exceeds size limit: {err:?}"))?,
-        );
-
-        out_attestations.push(AggregatedAttestation {
-            aggregation_bits: merged_bits,
-            message: data,
-        });
-        out_proofs.push(merged_proof);
+    if let Some(index) = justified_index_after(target_slot, finalized_slot) {
+        justified_slots
+            .set(index as usize, true)
+            .map_err(|err| anyhow!("Failed to set projected justified slot: {err:?}"))?;
     }
 
-    Ok((out_attestations, out_proofs))
+    Ok(())
+}
+
+fn shift_projected_finalized_slot(
+    justified_slots: &mut BitList<U262144>,
+    finalized_slot: u64,
+    new_finalized_slot: u64,
+) -> anyhow::Result<()> {
+    let delta = new_finalized_slot.saturating_sub(finalized_slot) as usize;
+    if delta == 0 {
+        return Ok(());
+    }
+
+    let new_len = justified_slots.len().saturating_sub(delta);
+    let mut shifted = BitList::with_capacity(new_len)
+        .map_err(|err| anyhow!("Failed to shift projected justified slots: {err:?}"))?;
+
+    for index in delta..justified_slots.len() {
+        if justified_slots.get(index).unwrap_or(false) {
+            shifted
+                .set(index - delta, true)
+                .map_err(|err| anyhow!("Failed to set shifted justified slot: {err:?}"))?;
+        }
+    }
+
+    *justified_slots = shifted;
+    Ok(())
 }
 
 #[cfg(test)]
-#[cfg(feature = "devnet4")]
+#[cfg(feature = "devnet5")]
 mod tests {
-
-    use std::{
-        collections::{HashMap, HashSet},
-        sync::OnceLock,
-        vec,
-    };
-
-    use alloy_primitives::{B256, FixedBytes};
-    use anyhow::ensure;
+    use alloy_primitives::B256;
     use ream_consensus_lean::{
-        attestation::{
-            AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof,
-            AttestationData, SignatureKey, SignedAggregatedAttestation, SignedAttestation,
-        },
-        block::{BlockSignatures, BlockWithSignatures, SignedBlock},
+        attestation::{AttestationData, MultiMessageAggregate, SignedAttestation},
+        block::{Block, BlockBody, SignedBlock},
         checkpoint::Checkpoint,
-        slot::is_justifiable_after,
-        validator::{Validator, is_proposer},
     };
-    use ream_consensus_misc::constants::lean::{
-        INTERVALS_PER_SLOT, set_attestation_committee_count,
-    };
-    use ream_network_spec::networks::{LeanNetworkSpec, lean_network_spec, set_lean_network_spec};
-    use ream_post_quantum_crypto::{
-        lean_multisig::aggregate::{aggregate_signatures, verify_aggregate_signature},
-        leansig::{private_key::PrivateKey, public_key::PublicKey, signature::Signature},
-    };
+    use ream_post_quantum_crypto::leansig::signature::Signature;
     use ream_storage::tables::{field::REDBField, table::REDBTable};
     use ream_test_utils::store::sample_store;
-    use ssz_types::{BitList, VariableList, typenum::U4096};
-    use tokio::sync::Mutex as AsyncMutex;
+    use ssz_types::VariableList;
     use tree_hash::TreeHash;
 
-    use super::{Store, compute_subnet_id};
-    use crate::constants::JUSTIFICATION_LOOKBACK_SLOTS;
-
-    static TEST_GLOBAL_LOCK: OnceLock<AsyncMutex<()>> = OnceLock::new();
-
-    fn test_global_lock() -> &'static AsyncMutex<()> {
-        TEST_GLOBAL_LOCK.get_or_init(|| AsyncMutex::new(()))
-    }
-
-    const CACHED_KEY_COUNT: usize = 10;
-
-    type CachedKeyPair = (PublicKey, Vec<u8>);
-
-    static CACHED_KEYS: OnceLock<Vec<CachedKeyPair>> = OnceLock::new();
-
-    fn cached_key_pairs() -> &'static Vec<CachedKeyPair> {
-        CACHED_KEYS.get_or_init(|| {
-            (0..CACHED_KEY_COUNT)
-                .map(|_| {
-                    let (public_key, private_key) = PrivateKey::generate_key_pair(0, 10);
-                    (public_key, private_key.to_bytes())
-                })
-                .collect()
-        })
-    }
+    use super::{BlockProductionStrategy, Store};
 
     async fn sample_store_as_store(no_of_validators: usize) -> Store {
         let test_store = sample_store(no_of_validators).await;
@@ -2215,3140 +2876,187 @@ mod tests {
             tick_interval_duration: None,
             #[cfg(feature = "reth")]
             reth_handle: None,
+            block_production_strategy: BlockProductionStrategy::default(),
         }
     }
 
-    struct CommitteeCountOverride {
-        previous: u64,
-    }
-
-    impl CommitteeCountOverride {
-        fn new(value: u64) -> Self {
-            let previous = set_attestation_committee_count(value);
-            Self { previous }
-        }
-    }
-
-    impl Drop for CommitteeCountOverride {
-        fn drop(&mut self) {
-            set_attestation_committee_count(self.previous);
-        }
-    }
-
-    fn build_signed_block(block_with_signatures: BlockWithSignatures) -> SignedBlock {
+    fn fake_signed_block(slot: u64, proposer_index: u64, parent_root: B256) -> SignedBlock {
         SignedBlock {
-            block: block_with_signatures.block,
-            signature: BlockSignatures {
-                attestation_signatures: block_with_signatures.signatures,
-                proposer_signature: Signature::blank(),
+            block: Block {
+                slot,
+                proposer_index,
+                parent_root,
+                state_root: B256::ZERO,
+                body: BlockBody {
+                    attestations: VariableList::empty(),
+                },
+            },
+            proof: MultiMessageAggregate {
+                proof: VariableList::default(),
             },
         }
     }
 
-    async fn set_validator_id(store: &Store, validator_id: Option<u64>) {
-        let provider = { store.store.lock().await.validator_id_provider() };
-        provider.insert(validator_id).unwrap();
-    }
+    async fn store_with_finalized_orphaned_branch() -> (Store, B256, B256, B256, B256) {
+        let store = sample_store_as_store(10).await;
 
-    async fn install_validator_keys(
-        store: &Store,
-        validator_ids: &[u64],
-    ) -> HashMap<u64, (PublicKey, PrivateKey)> {
-        let cache = cached_key_pairs();
-        let mut key_pairs = HashMap::new();
-        for validator_id in validator_ids {
-            let validator_index = *validator_id as usize;
-            assert!(
-                validator_index < CACHED_KEY_COUNT,
-                "validator_id {validator_index} exceeds cached key count {CACHED_KEY_COUNT}"
-            );
-            let (public_key, private_key_bytes) = &cache[validator_index];
-            let private_key = PrivateKey::from_bytes(private_key_bytes)
-                .expect("cached key bytes should be valid");
-            key_pairs.insert(*validator_id, (*public_key, private_key));
-        }
+        let genesis_root = { store.store.lock().await.head_provider().get().unwrap() };
 
-        let (head_provider, latest_justified_provider, latest_finalized_provider, state_provider) = {
+        let canonical_1 = fake_signed_block(1, 0, genesis_root);
+        let canonical_1_root = canonical_1.block.tree_hash_root();
+        let canonical_2 = fake_signed_block(2, 0, canonical_1_root);
+        let canonical_2_root = canonical_2.block.tree_hash_root();
+
+        let orphan_1 = fake_signed_block(1, 1, genesis_root);
+        let orphan_1_root = orphan_1.block.tree_hash_root();
+        let orphan_2 = fake_signed_block(2, 1, orphan_1_root);
+        let orphan_2_root = orphan_2.block.tree_hash_root();
+
+        {
             let db = store.store.lock().await;
-            (
-                db.head_provider(),
-                db.latest_justified_provider(),
-                db.latest_finalized_provider(),
-                db.state_provider(),
-            )
-        };
+            let block_provider = db.block_provider();
+            block_provider
+                .insert(canonical_1_root, canonical_1)
+                .unwrap();
+            block_provider
+                .insert(canonical_2_root, canonical_2)
+                .unwrap();
+            block_provider.insert(orphan_1_root, orphan_1).unwrap();
+            block_provider.insert(orphan_2_root, orphan_2).unwrap();
 
-        let mut state_roots = HashSet::new();
-        state_roots.insert(head_provider.get().unwrap());
-        state_roots.insert(latest_justified_provider.get().unwrap().root);
-        state_roots.insert(latest_finalized_provider.get().unwrap().root);
-
-        for state_root in state_roots {
-            let Some(mut state) = state_provider.get(state_root).unwrap() else {
-                continue;
-            };
-
-            let mut validators: Vec<Validator> = state.validators.iter().cloned().collect();
-            for (validator_id, (public_key, _)) in &key_pairs {
-                {
-                    validators[*validator_id as usize].attestation_public_key = *public_key;
-                    validators[*validator_id as usize].proposal_public_key = *public_key;
-                }
-            }
-            state.validators = VariableList::new(validators).unwrap();
-            state_provider.insert(state_root, state).unwrap();
+            db.latest_finalized_provider()
+                .insert(Checkpoint {
+                    root: canonical_2_root,
+                    slot: 2,
+                })
+                .unwrap();
+            db.time_provider().insert(1_000).unwrap();
         }
 
-        key_pairs
+        (
+            store,
+            canonical_1_root,
+            canonical_2_root,
+            orphan_1_root,
+            orphan_2_root,
+        )
     }
 
-    fn make_aggregated_proof(
-        participants: &[u64],
-        key_pairs: &HashMap<u64, (PublicKey, PrivateKey)>,
-        attestation_data: &AttestationData,
-    ) -> AggregatedSignatureProof {
-        let data_root = attestation_data.tree_hash_root();
-        let mut aggregation_bits = BitList::<U4096>::with_capacity(
-            participants.iter().max().map_or(0, |m| *m as usize + 1),
-        )
-        .unwrap();
+    #[tokio::test]
+    async fn side_branch_import_does_not_overwrite_slot_index() {
+        let store = sample_store_as_store(10).await;
+        let db = store.store.lock().await;
+        let genesis_root = db.head_provider().get().unwrap();
+        let side_block = fake_signed_block(1, 1, genesis_root);
+        let side_root = side_block.block.tree_hash_root();
 
-        let mut public_keys = Vec::new();
-        let mut signatures = Vec::new();
+        db.block_provider().insert(side_root, side_block).unwrap();
 
-        for validator_id in participants {
-            aggregation_bits.set(*validator_id as usize, true).unwrap();
-            let (public_key, private_key) = key_pairs.get(validator_id).unwrap();
-            public_keys.push(*public_key);
-            signatures.push(
-                private_key
-                    .sign(&data_root.0, attestation_data.slot as u32)
-                    .unwrap(),
-            );
+        assert_eq!(db.slot_index_provider().get(1).unwrap(), None);
+        assert_eq!(db.head_provider().get().unwrap(), genesis_root);
+    }
+
+    #[tokio::test]
+    async fn canonical_reindex_rewrites_and_deletes_reorged_slots() {
+        let store = sample_store_as_store(10).await;
+        let genesis_root = { store.store.lock().await.head_provider().get().unwrap() };
+        let old_1 = fake_signed_block(1, 0, genesis_root);
+        let old_1_root = old_1.block.tree_hash_root();
+        let old_2 = fake_signed_block(2, 0, old_1_root);
+        let old_2_root = old_2.block.tree_hash_root();
+        let new_2 = fake_signed_block(2, 1, genesis_root);
+        let new_2_root = new_2.block.tree_hash_root();
+
+        {
+            let db = store.store.lock().await;
+            db.block_provider().insert(old_1_root, old_1).unwrap();
+            db.block_provider().insert(old_2_root, old_2).unwrap();
+            db.block_provider().insert(new_2_root, new_2).unwrap();
+            db.slot_index_provider().insert(1, old_1_root).unwrap();
+            db.slot_index_provider().insert(2, old_2_root).unwrap();
+            db.head_provider().insert(old_2_root).unwrap();
         }
 
-        let proof_data = VariableList::new(
-            aggregate_signatures(
-                &public_keys,
-                &signatures,
-                &data_root.0,
-                attestation_data.slot as u32,
-            )
-            .unwrap(),
-        )
-        .unwrap();
-
-        AggregatedSignatureProof::new(aggregation_bits, proof_data)
-    }
-
-    fn make_test_aggregated_proof(participants: &[u64]) -> AggregatedSignatureProof {
-        let mut aggregation_bits = BitList::<U4096>::with_capacity(
-            participants.iter().max().map_or(0, |m| *m as usize + 1),
-        )
-        .unwrap();
-
-        for validator_id in participants {
-            aggregation_bits.set(*validator_id as usize, true).unwrap();
-        }
-
-        AggregatedSignatureProof::new(aggregation_bits, VariableList::new(vec![0u8]).unwrap())
-    }
-
-    async fn set_time_for_slot(store: &Store, slot: u64) {
-        let time_provider = { store.store.lock().await.time_provider() };
-        time_provider
-            .insert(lean_network_spec().seconds_per_slot * slot)
+        store
+            .update_canonical_head(old_2_root, new_2_root)
+            .await
             .unwrap();
+
+        let db = store.store.lock().await;
+        assert_eq!(db.slot_index_provider().get(1).unwrap(), None);
+        assert_eq!(db.slot_index_provider().get(2).unwrap(), Some(new_2_root));
+        assert_eq!(db.head_provider().get().unwrap(), new_2_root);
     }
 
-    async fn produce_and_import_block(
-        store: &mut Store,
-        slot: u64,
-        proposer_index: u64,
-    ) -> anyhow::Result<()> {
-        let block_with_signatures = store
-            .produce_block_with_signatures(slot, proposer_index)
-            .await?;
-        let signed_block = build_signed_block(block_with_signatures);
-        store.on_block(&signed_block, false).await?;
-        Ok(())
-    }
+    #[tokio::test]
+    async fn test_validate_attestation_rejects_head_on_finalized_orphaned_branch() {
+        let (store, _, _, orphan_1_root, orphan_2_root) =
+            store_with_finalized_orphaned_branch().await;
 
-    fn _make_attestation_data(slot: u64, target_slot: u64) -> AttestationData {
-        let mut root = B256::ZERO;
-        root[24..32].copy_from_slice(&target_slot.to_be_bytes());
+        let genesis_root = { store.store.lock().await.head_provider().get().unwrap() };
 
-        AttestationData {
-            slot,
+        let attestation_data = AttestationData {
+            slot: 2,
             head: Checkpoint {
-                root,
-                slot: target_slot,
+                root: orphan_2_root,
+                slot: 2,
             },
             target: Checkpoint {
-                root,
-                slot: target_slot,
-            },
-            source: Checkpoint {
-                root: B256::ZERO,
-                slot: 0,
-            },
-        }
-    }
-
-    #[tokio::test]
-    async fn test_prunes_entries_with_target_at_finalized() -> anyhow::Result<()> {
-        let mut store = sample_store(10).await;
-        let attestation_data = _make_attestation_data(5, 5);
-        let data_root = attestation_data.tree_hash_root();
-        let sig_key = SignatureKey::new(1, &attestation_data);
-        let attestation_data_by_root_provider =
-            store.store.lock().await.attestation_data_by_root_provider();
-
-        {
-            attestation_data_by_root_provider.insert(data_root, attestation_data)?;
-            let db = store.store.lock().await;
-            db.latest_finalized_provider()
-                .insert(Checkpoint {
-                    root: B256::repeat_byte(0xff),
-                    slot: 5,
-                })
-                .unwrap();
-            db.attestation_signatures_provider()
-                .insert(sig_key.clone(), Signature::blank())
-                .unwrap();
-        }
-
-        ensure!(attestation_data_by_root_provider.contains_key(&data_root));
-        {
-            let db = store.store.lock().await;
-            ensure!(
-                db.attestation_signatures_provider()
-                    .get(sig_key.clone())
-                    .unwrap()
-                    .is_some()
-            );
-        }
-
-        store.prune_stale_attestation_data().await?;
-
-        ensure!(!attestation_data_by_root_provider.contains_key(&data_root));
-        let db = store.store.lock().await;
-        ensure!(
-            db.attestation_signatures_provider()
-                .get(sig_key)
-                .unwrap()
-                .is_none()
-        );
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_prunes_entries_with_target_before_finalized() -> anyhow::Result<()> {
-        let mut store = sample_store(10).await;
-        let attestation_data = _make_attestation_data(3, 3);
-        let data_root = attestation_data.tree_hash_root();
-        let sig_key = SignatureKey::new(1, &attestation_data);
-        let attestation_data_by_root_provider =
-            store.store.lock().await.attestation_data_by_root_provider();
-
-        {
-            attestation_data_by_root_provider.insert(data_root, attestation_data)?;
-            let db = store.store.lock().await;
-            db.latest_finalized_provider()
-                .insert(Checkpoint {
-                    root: B256::repeat_byte(0xff),
-                    slot: 5,
-                })
-                .unwrap();
-            db.attestation_signatures_provider()
-                .insert(sig_key.clone(), Signature::blank())
-                .unwrap();
-        }
-
-        ensure!(attestation_data_by_root_provider.contains_key(&data_root));
-        store.prune_stale_attestation_data().await?;
-
-        ensure!(!attestation_data_by_root_provider.contains_key(&data_root));
-        let db = store.store.lock().await;
-        ensure!(
-            db.attestation_signatures_provider()
-                .get(sig_key)
-                .unwrap()
-                .is_none()
-        );
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_keeps_entries_with_target_after_finalized() -> anyhow::Result<()> {
-        let mut store = sample_store(10).await;
-        let attestation_data = _make_attestation_data(10, 10);
-        let data_root = attestation_data.tree_hash_root();
-        let sig_key = SignatureKey::new(1, &attestation_data);
-        let attestation_data_by_root_provider =
-            store.store.lock().await.attestation_data_by_root_provider();
-
-        {
-            attestation_data_by_root_provider.insert(data_root, attestation_data.clone())?;
-            let db = store.store.lock().await;
-            db.latest_finalized_provider()
-                .insert(Checkpoint {
-                    root: B256::repeat_byte(0xff),
-                    slot: 5,
-                })
-                .unwrap();
-            db.attestation_signatures_provider()
-                .insert(sig_key.clone(), Signature::blank())
-                .unwrap();
-        }
-
-        ensure!(attestation_data_by_root_provider.contains_key(&data_root));
-        store.prune_stale_attestation_data().await?;
-
-        ensure!(attestation_data_by_root_provider.contains_key(&data_root));
-        ensure!(attestation_data_by_root_provider.get(data_root)?.unwrap() == attestation_data);
-        let db = store.store.lock().await;
-        ensure!(
-            db.attestation_signatures_provider()
-                .get(sig_key)
-                .unwrap()
-                .is_some()
-        );
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_prunes_related_structures_together() -> anyhow::Result<()> {
-        let mut store = sample_store(10).await;
-
-        let stale_attestation = _make_attestation_data(3, 3);
-        let stale_root = stale_attestation.tree_hash_root();
-        let stale_key = SignatureKey::new(1, &stale_attestation);
-
-        let fresh_attestation = _make_attestation_data(10, 10);
-        let fresh_root = fresh_attestation.tree_hash_root();
-        let fresh_key = SignatureKey::new(2, &fresh_attestation);
-
-        let mock_proof = AggregatedSignatureProof::new(
-            ssz_types::BitList::with_capacity(4096).unwrap(),
-            ssz_types::VariableList::empty(),
-        );
-        let attestation_data_by_root_provider =
-            store.store.lock().await.attestation_data_by_root_provider();
-        let latest_new_aggregated_payloads_provider = store
-            .store
-            .lock()
-            .await
-            .latest_new_aggregated_payloads_provider();
-        let latest_known_aggregated_payloads_provider = store
-            .store
-            .lock()
-            .await
-            .latest_known_aggregated_payloads_provider();
-
-        {
-            attestation_data_by_root_provider.insert(stale_root, stale_attestation)?;
-            attestation_data_by_root_provider.insert(fresh_root, fresh_attestation)?;
-
-            latest_new_aggregated_payloads_provider
-                .insert(stale_key.clone(), vec![mock_proof.clone()])?;
-            latest_new_aggregated_payloads_provider
-                .insert(fresh_key.clone(), vec![mock_proof.clone()])?;
-
-            latest_known_aggregated_payloads_provider
-                .insert(stale_key.clone(), vec![mock_proof.clone()])?;
-
-            latest_known_aggregated_payloads_provider
-                .insert(fresh_key.clone(), vec![mock_proof])?;
-
-            let db = store.store.lock().await;
-            db.latest_finalized_provider()
-                .insert(Checkpoint {
-                    root: B256::ZERO,
-                    slot: 5,
-                })
-                .unwrap();
-            db.attestation_signatures_provider()
-                .insert(stale_key.clone(), Signature::blank())
-                .unwrap();
-            db.attestation_signatures_provider()
-                .insert(fresh_key.clone(), Signature::blank())
-                .unwrap();
-        }
-
-        ensure!(attestation_data_by_root_provider.contains_key(&stale_root));
-        ensure!(latest_new_aggregated_payloads_provider.contains_key(&stale_key));
-        ensure!(latest_known_aggregated_payloads_provider.contains_key(&stale_key));
-
-        store.prune_stale_attestation_data().await?;
-
-        ensure!(!attestation_data_by_root_provider.contains_key(&stale_root));
-        ensure!(!latest_new_aggregated_payloads_provider.contains_key(&stale_key));
-        ensure!(!latest_known_aggregated_payloads_provider.contains_key(&stale_key));
-
-        ensure!(attestation_data_by_root_provider.contains_key(&fresh_root));
-        ensure!(latest_new_aggregated_payloads_provider.contains_key(&fresh_key));
-
-        let db = store.store.lock().await;
-        ensure!(
-            db.attestation_signatures_provider()
-                .get(stale_key)
-                .unwrap()
-                .is_none()
-        );
-        ensure!(
-            db.attestation_signatures_provider()
-                .get(fresh_key)
-                .unwrap()
-                .is_some()
-        );
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_returns_self_when_nothing_to_prune() -> anyhow::Result<()> {
-        let mut store = sample_store(10).await;
-        let fresh_attestation = _make_attestation_data(10, 10);
-        let data_root = fresh_attestation.tree_hash_root();
-        let attestation_data_by_root_provider =
-            store.store.lock().await.attestation_data_by_root_provider();
-
-        {
-            attestation_data_by_root_provider.insert(data_root, fresh_attestation)?;
-            let db = store.store.lock().await;
-            db.latest_finalized_provider()
-                .insert(Checkpoint {
-                    root: B256::ZERO,
-                    slot: 5,
-                })
-                .unwrap();
-        }
-
-        let initial_len = attestation_data_by_root_provider.len();
-        store.prune_stale_attestation_data().await?;
-
-        ensure!(attestation_data_by_root_provider.len() == initial_len);
-        ensure!(attestation_data_by_root_provider.contains_key(&data_root));
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_handles_empty_attestation_data() -> anyhow::Result<()> {
-        let mut store = sample_store(10).await;
-        let attestation_data_by_root_provider =
-            store.store.lock().await.attestation_data_by_root_provider();
-
-        ensure!(
-            attestation_data_by_root_provider.is_empty(),
-            "Store should start empty"
-        );
-
-        store.prune_stale_attestation_data().await?;
-
-        ensure!(
-            attestation_data_by_root_provider.is_empty(),
-            "Store should remain empty"
-        );
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_prunes_multiple_validators_same_data_root() -> anyhow::Result<()> {
-        let mut store = sample_store(10).await;
-        let stale_data = _make_attestation_data(3, 3);
-        let data_root = stale_data.tree_hash_root();
-        let sig_key_1 = SignatureKey::new(1, &stale_data);
-        let sig_key_2 = SignatureKey::new(2, &stale_data);
-        let attestation_data_by_root_provider =
-            store.store.lock().await.attestation_data_by_root_provider();
-
-        {
-            attestation_data_by_root_provider.insert(data_root, stale_data)?;
-            let db = store.store.lock().await;
-            db.latest_finalized_provider()
-                .insert(Checkpoint {
-                    root: B256::ZERO,
-                    slot: 5,
-                })
-                .unwrap();
-
-            let gossip = db.attestation_signatures_provider();
-            gossip
-                .insert(sig_key_1.clone(), Signature::blank())
-                .unwrap();
-            gossip
-                .insert(sig_key_2.clone(), Signature::blank())
-                .unwrap();
-        }
-
-        ensure!(attestation_data_by_root_provider.contains_key(&data_root));
-        store.prune_stale_attestation_data().await?;
-
-        ensure!(!attestation_data_by_root_provider.contains_key(&data_root));
-        let db = store.store.lock().await;
-        ensure!(
-            db.attestation_signatures_provider()
-                .get(sig_key_1)
-                .unwrap()
-                .is_none()
-        );
-        ensure!(
-            db.attestation_signatures_provider()
-                .get(sig_key_2)
-                .unwrap()
-                .is_none()
-        );
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_mixed_stale_and_fresh_entries() -> anyhow::Result<()> {
-        let mut store = sample_store(10).await;
-        let mut roots = vec![];
-
-        {
-            let db = store.store.lock().await;
-            db.latest_finalized_provider()
-                .insert(Checkpoint {
-                    root: B256::ZERO,
-                    slot: 5,
-                })
-                .unwrap();
-            let gossip = db.attestation_signatures_provider();
-
-            for i in 1..=10 {
-                let data = _make_attestation_data(i, i);
-                let root = data.tree_hash_root();
-                let key = SignatureKey::new(i, &data);
-
-                db.attestation_data_by_root_provider().insert(root, data)?;
-                gossip.insert(key, Signature::blank()).unwrap();
-                roots.push(root);
-            }
-        }
-
-        store.prune_stale_attestation_data().await?;
-
-        for (i, root) in roots.iter().enumerate() {
-            let slot = (i + 1) as u64;
-            let attestation_data_by_root_provider =
-                store.store.lock().await.attestation_data_by_root_provider();
-            if slot <= 5 {
-                ensure!(!attestation_data_by_root_provider.contains_key(root));
-            } else {
-                ensure!(attestation_data_by_root_provider.contains_key(root));
-            }
-        }
-        Ok(())
-    }
-
-    // BLOCK PRODUCTION TESTS
-
-    /// Test basic block production by authorized proposer.
-    #[tokio::test]
-    async fn test_produce_block_basic() {
-        let slot = 1;
-        let validator_index = 1;
-        let mut store = sample_store(10).await;
-        let BlockWithSignatures { block, .. } = store
-            .produce_block_with_signatures(slot, validator_index)
-            .await
-            .unwrap();
-
-        let head_provider = { store.store.lock().await.head_provider() };
-        assert!(block.slot == slot);
-        assert!(block.proposer_index == validator_index);
-        assert!(block.parent_root == head_provider.get().unwrap());
-        assert!(block.state_root != B256::ZERO);
-    }
-
-    /// Test block production fails for unauthorized proposer.
-    #[tokio::test]
-    async fn test_produce_block_unauthorized_proposer() {
-        let mut store = sample_store(10).await;
-        let block_with_signature = store.produce_block_with_signatures(1, 2).await;
-        assert!(block_with_signature.is_err());
-    }
-
-    /// Test block production with no available attestations.
-    #[tokio::test]
-    pub async fn test_produce_block_empty_attestations() {
-        let mut store = sample_store(10).await;
-        let head = store.get_proposal_head(3).await.unwrap();
-
-        let slot = 3;
-        let validator_index = 3;
-        let BlockWithSignatures { block, .. } = store
-            .produce_block_with_signatures(slot, validator_index)
-            .await
-            .unwrap();
-
-        assert_eq!(block.body.attestations.len(), 0);
-        assert_eq!(block.slot, slot);
-        assert_eq!(block.proposer_index, validator_index);
-        assert_eq!(block.parent_root, head);
-        assert!(!block.state_root.is_zero());
-    }
-
-    // VALIDATOR INTEGRATION TESTS
-
-    /// Test producing a block then creating attestation for it.
-    #[tokio::test]
-    pub async fn test_block_production_then_attestation() {
-        let mut store = sample_store(10).await;
-        let proposer_slot = 1;
-        let proposer_index = 1;
-        store
-            .produce_block_with_signatures(proposer_slot, proposer_index)
-            .await
-            .unwrap();
-        store.update_head().await.unwrap();
-
-        let attestor_slot = 2;
-        let attestor_index = 7;
-        let attestation_data = store.produce_attestation_data(attestor_slot).await.unwrap();
-        let attestation = AggregatedAttestations {
-            validator_id: attestor_index,
-            data: attestation_data,
-        };
-
-        assert!(attestation.validator_id == attestor_index);
-        assert!(attestation.data.slot == attestor_slot);
-
-        let latest_justified = {
-            store
-                .store
-                .lock()
-                .await
-                .latest_justified_provider()
-                .get()
-                .unwrap()
-        };
-        assert!(attestation.data.source == latest_justified);
-    }
-
-    /// Test multiple validators producing blocks and attestations.
-    #[tokio::test]
-    pub async fn test_multiple_validators_coordination() {
-        let mut store = sample_store(10).await;
-        let genesis_hash = { store.store.lock().await.head_provider().get().unwrap() };
-        let block1 = store.produce_block_with_signatures(1, 1).await.unwrap();
-        let _block1_hash = block1.block.tree_hash_root();
-
-        let mut attestations = Vec::new();
-        for i in 2..6 {
-            let attestation_data = store.produce_attestation_data(2).await.unwrap();
-            let attestation = AggregatedAttestations {
-                validator_id: i,
-                data: attestation_data,
-            };
-            attestations.push(attestation);
-        }
-
-        let block2 = store.produce_block_with_signatures(2, 2).await.unwrap();
-
-        assert!(block2.block.slot == 2);
-        assert!(block2.block.proposer_index == 2);
-        assert!(block1.block.parent_root == genesis_hash);
-        // Block1 not stored by produce_block_with_signatures otherwise block2.block.parent_root ==
-        // block1_hash
-        assert!(block2.block.parent_root == genesis_hash);
-    }
-
-    /// Test edge cases in validator operations.
-    #[tokio::test]
-    pub async fn test_validator_edge_cases() {
-        let mut store = sample_store(10).await;
-        let max_validator = 9;
-        let slot = 9;
-
-        let BlockWithSignatures { block, .. } = store
-            .produce_block_with_signatures(slot, max_validator)
-            .await
-            .unwrap();
-        assert!(block.proposer_index == max_validator);
-
-        let attestation_data = store.produce_attestation_data(10).await.unwrap();
-        let attestation = AggregatedAttestations {
-            validator_id: max_validator,
-            data: attestation_data,
-        };
-        assert!(attestation.validator_id == max_validator);
-    }
-
-    // ATTESTATION TESTS
-
-    /// Test basic attestation production.
-    #[tokio::test]
-    pub async fn test_produce_attestation_basic() {
-        let slot = 1;
-        let validator_id = 5;
-
-        let store = sample_store(10).await;
-        let latest_justified_checkpoint = store
-            .store
-            .lock()
-            .await
-            .latest_justified_provider()
-            .get()
-            .unwrap();
-
-        let attestation = AggregatedAttestations {
-            validator_id,
-            data: store.produce_attestation_data(slot).await.unwrap(),
-        };
-        assert_eq!(attestation.validator_id, validator_id);
-        assert_eq!(attestation.data.slot, slot);
-        assert_eq!(attestation.data.source, latest_justified_checkpoint);
-    }
-
-    /// Test that attestation references correct head.
-    #[tokio::test]
-    pub async fn test_produce_attestation_head_reference() {
-        let slot = 2;
-        let mut store = sample_store(10).await;
-        let block_provider = store.store.lock().await.block_provider();
-        let attestation = AggregatedAttestations {
-            validator_id: 8,
-            data: store.produce_attestation_data(slot).await.unwrap(),
-        };
-        let head = store.get_proposal_head(slot).await.unwrap();
-
-        assert_eq!(attestation.data.head.root, head);
-
-        let head_block = block_provider.get(head).unwrap().unwrap();
-        assert_eq!(attestation.data.head.slot, head_block.block.slot);
-    }
-
-    /// Test that attestation calculates target correctly.
-    #[tokio::test]
-    pub async fn test_produce_attestation_target_calculation() {
-        let store = sample_store(10).await;
-        let attestation = AggregatedAttestations {
-            validator_id: 9,
-            data: store.produce_attestation_data(3).await.unwrap(),
-        };
-        let expected_target = store.get_attestation_target().await.unwrap();
-        assert_eq!(attestation.data.target.root, expected_target.root);
-        assert_eq!(attestation.data.target.slot, expected_target.slot);
-    }
-
-    /// Test attestation production for different validators in same slot.
-    #[tokio::test]
-    pub async fn test_produce_attestation_different_validators() {
-        let slot = 4;
-        let store = sample_store(10).await;
-
-        let mut attestations = Vec::new();
-        for validator_id in 0..5 {
-            let attestation = AggregatedAttestations {
-                validator_id,
-                data: store.produce_attestation_data(slot).await.unwrap(),
-            };
-
-            assert_eq!(attestation.validator_id, validator_id);
-            assert_eq!(attestation.data.slot, slot);
-
-            attestations.push(attestation);
-        }
-        let first_attestation = &attestations[0];
-        for attestation in attestations.iter().skip(1) {
-            assert_eq!(attestation.data.head, first_attestation.data.head);
-            assert_eq!(attestation.data.target, first_attestation.data.target);
-            assert_eq!(attestation.data.source, first_attestation.data.source);
-        }
-    }
-
-    /// Test attestation production across sequential slots.
-    #[tokio::test]
-    pub async fn test_produce_attestation_sequential_slots() {
-        let store = sample_store(10).await;
-        let latest_justified_provider = store.store.lock().await.latest_justified_provider();
-
-        let mut aggregation_bits = BitList::<U4096>::with_capacity(32).unwrap();
-        aggregation_bits.set(0, true).unwrap();
-
-        let attestation_1 = AggregatedAttestation {
-            aggregation_bits: aggregation_bits.clone(),
-            message: store.produce_attestation_data(1).await.unwrap(),
-        };
-
-        let attestation_2 = AggregatedAttestation {
-            aggregation_bits,
-            message: store.produce_attestation_data(2).await.unwrap(),
-        };
-
-        assert_ne!(attestation_1.slot(), attestation_2.slot());
-        assert_eq!(attestation_1.source(), attestation_2.source());
-        assert_eq!(
-            attestation_1.source(),
-            latest_justified_provider.get().unwrap()
-        );
-    }
-
-    /// Test that attestation source uses current justified checkpoint.
-    #[tokio::test]
-    pub async fn test_produce_attestation_justification_consistency() {
-        let store = sample_store(10).await;
-        let (latest_justified_provider, block_provider) = {
-            let db = store.store.lock().await;
-            (db.latest_justified_provider(), db.block_provider())
-        };
-
-        let mut aggregation_bits = BitList::<U4096>::with_capacity(32).unwrap();
-        aggregation_bits.set(0, true).unwrap();
-
-        let attestation = AggregatedAttestation {
-            aggregation_bits,
-            message: store.produce_attestation_data(5).await.unwrap(),
-        };
-
-        assert_eq!(
-            attestation.source(),
-            latest_justified_provider.get().unwrap()
-        );
-        assert!(
-            block_provider
-                .get(attestation.source().root)
-                .unwrap()
-                .is_some()
-        );
-    }
-
-    // VALIDATOR ERROR HANDLING TESTS
-
-    /// Test error when wrong validator tries to produce block.
-    #[tokio::test]
-    pub async fn test_produce_block_wrong_proposer() {
-        let mut store = sample_store(10).await;
-
-        let block = store.produce_block_with_signatures(5, 3).await;
-        assert!(block.is_err());
-        assert_eq!(
-            block.unwrap_err().to_string(),
-            "Validator 3 is not the proposer for slot 5".to_string()
-        );
-    }
-
-    /// Test error when parent state is missing.
-    #[tokio::test]
-    pub async fn test_produce_block_missing_parent_state() {
-        let mut store = sample_store(10).await;
-        store
-            .store
-            .lock()
-            .await
-            .head_provider()
-            .insert(B256::ZERO)
-            .unwrap();
-        store
-            .store
-            .lock()
-            .await
-            .safe_target_provider()
-            .insert(B256::ZERO)
-            .unwrap();
-
-        let block = store.produce_block_with_signatures(1, 1).await;
-        assert_eq!(
-            block.unwrap_err().to_string(),
-            "Failed to get head state for safe target update".to_string()
-        );
-    }
-
-    /// Test validator operations with invalid parameters.
-    #[tokio::test]
-    pub async fn test_validator_operations_invalid_parameters() {
-        let store = sample_store(10).await;
-
-        // shoudl fail
-        assert!(!is_proposer(1000000, 1000000, 10));
-
-        let attestation = AggregatedAttestations {
-            validator_id: 1000000,
-            data: store.produce_attestation_data(1).await.unwrap(),
-        };
-        assert_eq!(attestation.validator_id, 1000000);
-    }
-
-    // GET FORKCHOICE STORE TESTS
-
-    /// Test get_forkchoice_store() time initialization.
-    #[tokio::test]
-    pub async fn test_store_time_from_anchor_slot() {
-        let store = sample_store(10).await;
-        let (time_provider, head_provider, block_provider) = {
-            let db = store.store.lock().await;
-            (db.time_provider(), db.head_provider(), db.block_provider())
-        };
-
-        let time = time_provider.get().unwrap();
-        let genesis_hash = head_provider.get().unwrap();
-        let genesis_block = block_provider.get(genesis_hash).unwrap().unwrap().block;
-
-        assert!(time == lean_network_spec().seconds_per_slot * genesis_block.slot);
-    }
-
-    // ON TICK TESTS
-
-    /// Test basic on_tick functionality.
-    #[tokio::test]
-    pub async fn test_on_tick_basic() {
-        let mut store = sample_store(10).await;
-        let time_provider = { store.store.lock().await.time_provider() };
-
-        let initial_time = time_provider.get().unwrap();
-        let target_time = lean_network_spec().genesis_time + 200;
-
-        store.on_tick(target_time, true, false).await.unwrap();
-
-        let new_time = time_provider.get().unwrap();
-
-        assert!(new_time > initial_time);
-    }
-
-    /// Test on_tick without proposal.
-    #[tokio::test]
-    pub async fn test_on_tick_no_proposal() {
-        let mut store = sample_store(10).await;
-        let time_provider = { store.store.lock().await.time_provider() };
-
-        let initial_time = time_provider.get().unwrap();
-        let target_time = lean_network_spec().genesis_time + 100;
-
-        store.on_tick(target_time, true, false).await.unwrap();
-
-        let new_time = time_provider.get().unwrap();
-
-        assert!(new_time >= initial_time);
-    }
-
-    /// Test on_tick when already at target time.
-    #[tokio::test]
-    pub async fn test_on_tick_already_current() {
-        let mut store = sample_store(10).await;
-        let time_provider = { store.store.lock().await.time_provider() };
-
-        let initial_time = time_provider.get().unwrap();
-        let current_target = lean_network_spec().genesis_time + initial_time;
-
-        store.on_tick(current_target, true, false).await.unwrap();
-
-        let new_time = time_provider.get().unwrap();
-
-        assert!(new_time == initial_time);
-    }
-
-    /// Test on_tick with small time increment.
-    #[tokio::test]
-    pub async fn test_on_tick_small_increment() {
-        let mut store = sample_store(10).await;
-        let time_provider = { store.store.lock().await.time_provider() };
-
-        let initial_time = time_provider.get().unwrap();
-        let target_time = lean_network_spec().genesis_time + initial_time + 1;
-
-        store.on_tick(target_time, false, false).await.unwrap();
-
-        let new_time = time_provider.get().unwrap();
-
-        assert!(new_time == target_time - lean_network_spec().genesis_time);
-    }
-
-    // TEST INTERVAL TICKING
-
-    /// Test basic interval ticking.
-    #[tokio::test]
-    pub async fn test_tick_interval_basic() {
-        let mut store = sample_store(10).await;
-        let time_provider = { store.store.lock().await.time_provider() };
-
-        let initial_time = time_provider.get().unwrap();
-
-        store.tick_interval(false, false).await.unwrap();
-
-        let new_time = time_provider.get().unwrap();
-
-        assert!(new_time == initial_time + 1)
-    }
-
-    /// Test interval ticking with proposal.
-    #[tokio::test]
-    pub async fn test_tick_interval_with_proposal() {
-        let mut store = sample_store(10).await;
-        let time_provider = { store.store.lock().await.time_provider() };
-
-        let initial_time = time_provider.get().unwrap();
-
-        store.tick_interval(true, false).await.unwrap();
-
-        let new_time = time_provider.get().unwrap();
-
-        assert!(new_time == initial_time + 1)
-    }
-
-    /// Test sequence of interval ticks.
-    #[tokio::test]
-    pub async fn test_tick_interval_sequence() {
-        let mut store = sample_store(10).await;
-        let time_provider = { store.store.lock().await.time_provider() };
-
-        let initial_time = time_provider.get().unwrap();
-
-        for i in 0..5 {
-            store.tick_interval((i % 2) == 0, false).await.unwrap();
-        }
-
-        let new_time = time_provider.get().unwrap();
-
-        assert!(new_time == initial_time + 5)
-    }
-
-    /// Test different actions performed based on interval phase.
-    #[tokio::test]
-    pub async fn test_tick_interval_actions_by_phase() {
-        let mut store = sample_store(10).await;
-
-        let mut root = [0u8; 32];
-        root[..4].copy_from_slice(b"test");
-        let test_checkpoint = Checkpoint {
-            slot: 1,
-            root: FixedBytes::new(root),
-        };
-
-        {
-            let db = store.store.lock().await;
-            let justified_provider = db.latest_justified_provider();
-            let justified_checkpoint = justified_provider.get().unwrap();
-            let signed_attestation = SignedAttestation {
-                message: AttestationData {
-                    slot: 1,
-                    head: justified_checkpoint,
-                    target: test_checkpoint,
-                    source: justified_checkpoint,
-                },
-                validator_id: 5,
-                signature: Signature::blank(),
-            };
-            let db_table = db.latest_new_attestations_provider();
-            db_table
-                .insert(signed_attestation.validator_id, signed_attestation)
-                .unwrap();
-        };
-
-        for interval in 0..INTERVALS_PER_SLOT {
-            let has_proposal = interval == 0;
-            store.tick_interval(has_proposal, false).await.unwrap();
-
-            let new_time = {
-                let time_provider = store.store.lock().await.time_provider();
-                time_provider.get().unwrap()
-            };
-            let current_interval = new_time % INTERVALS_PER_SLOT;
-            let expected_interval = (interval + 1) % INTERVALS_PER_SLOT;
-
-            assert!(current_interval == expected_interval);
-        }
-    }
-
-    // TEST SLOT TIME CALCULATIONS
-
-    /// Test conversion from slot to time.
-    #[tokio::test]
-    pub async fn test_slot_to_time_conversion() {
-        let _ = sample_store(10).await;
-
-        let genesis_time = lean_network_spec().genesis_time;
-
-        let slot_0_time = genesis_time;
-        assert!(slot_0_time == genesis_time);
-
-        let slot_1_time = genesis_time + lean_network_spec().seconds_per_slot;
-        assert!(slot_1_time == genesis_time + lean_network_spec().seconds_per_slot);
-
-        let slot_10_time = genesis_time + 10 * lean_network_spec().seconds_per_slot;
-        assert!(slot_10_time == genesis_time + 10 * lean_network_spec().seconds_per_slot);
-    }
-
-    /// Test conversion from time to slot.
-    #[tokio::test]
-    pub async fn test_time_to_slot_conversion() {
-        let _ = sample_store(10).await;
-
-        let genesis_time = lean_network_spec().genesis_time;
-
-        let time_at_genesis = genesis_time;
-        let slot_0 = (time_at_genesis - genesis_time) / lean_network_spec().seconds_per_slot;
-        assert!(slot_0 == 0);
-
-        let time_after_one_slot = genesis_time + lean_network_spec().seconds_per_slot;
-        let slot_1 = (time_after_one_slot - genesis_time) / lean_network_spec().seconds_per_slot;
-        assert!(slot_1 == 1);
-
-        let time_after_five_slots = genesis_time + 5 * lean_network_spec().seconds_per_slot;
-        let slot_5 = (time_after_five_slots - genesis_time) / lean_network_spec().seconds_per_slot;
-        assert!(slot_5 == 5);
-    }
-
-    /// Test interval calculations within slots.
-    #[ignore]
-    #[tokio::test]
-    pub async fn test_interval_calculations() {
-        let total_intervals = 10;
-        let slot_number = total_intervals / INTERVALS_PER_SLOT;
-        let interval_in_slot = total_intervals % INTERVALS_PER_SLOT;
-
-        assert!(slot_number == 2);
-        assert!(interval_in_slot == 2);
-
-        let boundary_intervals = INTERVALS_PER_SLOT;
-        let boundary_slot = boundary_intervals / INTERVALS_PER_SLOT;
-        let boundary_interval = boundary_intervals % INTERVALS_PER_SLOT;
-
-        assert!(boundary_slot == 1);
-        assert!(boundary_interval == 0);
-    }
-
-    /// Test basic new attestation processing moves aggregated payloads.
-    #[tokio::test]
-    pub async fn test_accept_new_attestations_basic() {
-        let mut store = sample_store(10).await;
-        let latest_known_aggregated_payloads_provider = {
-            store
-                .store
-                .lock()
-                .await
-                .latest_known_aggregated_payloads_provider()
-        };
-        let latest_new_aggregated_payloads_provider = {
-            store
-                .store
-                .lock()
-                .await
-                .latest_new_aggregated_payloads_provider()
-        };
-        let initial_known_payloads = latest_known_aggregated_payloads_provider
-            .iter()
-            .unwrap()
-            .len();
-
-        store.accept_new_attestations().await.unwrap();
-
-        assert!(
-            latest_new_aggregated_payloads_provider
-                .iter()
-                .unwrap()
-                .is_empty()
-        );
-        assert!(
-            latest_known_aggregated_payloads_provider
-                .iter()
-                .unwrap()
-                .len()
-                >= initial_known_payloads
-        );
-    }
-
-    /// Test accepting multiple new aggregated payloads.
-    #[tokio::test]
-    pub async fn test_accept_new_attestations_multiple() {
-        let mut store = sample_store(10).await;
-        store.accept_new_attestations().await.unwrap();
-        let latest_new_aggregated_payloads_provider = {
-            store
-                .store
-                .lock()
-                .await
-                .latest_new_aggregated_payloads_provider()
-        };
-
-        assert!(
-            latest_new_aggregated_payloads_provider
-                .iter()
-                .unwrap()
-                .is_empty()
-        );
-    }
-
-    #[tokio::test]
-    pub async fn test_accept_new_attestations_empty() {
-        let mut store = sample_store(10).await;
-        let latest_known_aggregated_payloads_provider = {
-            store
-                .store
-                .lock()
-                .await
-                .latest_known_aggregated_payloads_provider()
-        };
-        let latest_new_aggregated_payloads_provider = {
-            store
-                .store
-                .lock()
-                .await
-                .latest_new_aggregated_payloads_provider()
-        };
-        let initial_known_payloads = latest_known_aggregated_payloads_provider
-            .iter()
-            .unwrap()
-            .len();
-
-        store.accept_new_attestations().await.unwrap();
-
-        assert!(
-            latest_new_aggregated_payloads_provider
-                .iter()
-                .unwrap()
-                .is_empty()
-        );
-        assert!(
-            latest_known_aggregated_payloads_provider
-                .iter()
-                .unwrap()
-                .len()
-                == initial_known_payloads
-        );
-    }
-
-    // TEST PROPOSAL HEAD TIMING
-
-    /// Test getting proposal head for a slot.
-    #[tokio::test]
-    pub async fn test_get_proposal_head_basic() {
-        let mut store = sample_store(10).await;
-
-        let head = store.get_proposal_head(0).await.unwrap();
-
-        let stored_head = { store.store.lock().await.head_provider().get().unwrap() };
-
-        assert!(head == stored_head);
-    }
-
-    /// Test that get_proposal_head advances store time appropriately.
-    #[tokio::test]
-    pub async fn test_get_proposal_head_advances_time() {
-        let mut store = sample_store(10).await;
-        let time_provider = { store.store.lock().await.time_provider() };
-
-        let initial_time = time_provider.get().unwrap();
-
-        store.get_proposal_head(5).await.unwrap();
-
-        let new_time = time_provider.get().unwrap();
-
-        assert!(new_time >= initial_time);
-    }
-
-    #[tokio::test]
-    pub async fn test_get_proposal_head_processes_attestations() {
-        let mut store = sample_store(10).await;
-        store.get_proposal_head(1).await.unwrap();
-        let latest_new_aggregated_payloads_provider = {
-            store
-                .store
-                .lock()
-                .await
-                .latest_new_aggregated_payloads_provider()
-        };
-
-        assert!(
-            latest_new_aggregated_payloads_provider
-                .iter()
-                .unwrap()
-                .is_empty()
-        );
-    }
-
-    // TEST TIME CONSTANTS
-
-    /// Test that time constants are consistent with each other.
-    #[ignore]
-    #[allow(clippy::assertions_on_constants)]
-    #[tokio::test]
-    pub async fn test_time_constants_consistency() {
-        let _test_guard = test_global_lock().lock().await;
-        set_lean_network_spec(LeanNetworkSpec::ephemery().into());
-        let seconds_per_interval = lean_network_spec().seconds_per_slot / INTERVALS_PER_SLOT;
-
-        assert!(INTERVALS_PER_SLOT > 0);
-        assert!(seconds_per_interval > 0);
-        assert!(lean_network_spec().seconds_per_slot > 0);
-    }
-
-    /// Test the relationship between intervals and slots.
-    #[allow(clippy::assertions_on_constants)]
-    #[tokio::test]
-    pub async fn test_interval_slot_relationship() {
-        assert!(INTERVALS_PER_SLOT >= 2);
-
-        let total_intervals = 100;
-        let complete_slots = total_intervals / INTERVALS_PER_SLOT;
-        let remaining_intervals = total_intervals % INTERVALS_PER_SLOT;
-
-        let reconstructed = complete_slots * INTERVALS_PER_SLOT + remaining_intervals;
-        assert!(reconstructed == total_intervals);
-    }
-
-    // TEST STORE ATTESTATION HANDLING
-
-    #[tokio::test]
-    pub async fn test_on_block_processes_multi_validator_aggregations() {
-        let mut store: Store = sample_store_as_store(3).await;
-        let participants: Vec<u64> = vec![1, 2];
-
-        let attestation_slot = 1;
-        let attestation_data = store
-            .produce_attestation_data(attestation_slot)
-            .await
-            .unwrap();
-        let data_root = attestation_data.tree_hash_root();
-        let proof = make_test_aggregated_proof(&participants);
-
-        {
-            let db = store.store.lock().await;
-            db.attestation_data_by_root_provider()
-                .insert(data_root, attestation_data.clone())
-                .unwrap();
-            let latest_known = db.latest_known_aggregated_payloads_provider();
-            latest_known
-                .insert(
-                    SignatureKey::from_parts(participants[0], data_root),
-                    vec![proof.clone()],
-                )
-                .unwrap();
-            latest_known
-                .insert(
-                    SignatureKey::from_parts(participants[1], data_root),
-                    vec![proof.clone()],
-                )
-                .unwrap();
-        }
-
-        let proposer_index = 1;
-        let block_with_signatures = store
-            .produce_block_with_signatures(attestation_slot, proposer_index)
-            .await
-            .unwrap();
-        let signed_block = build_signed_block(block_with_signatures);
-
-        store.on_block(&signed_block, false).await.unwrap();
-
-        let aggregated_payloads = {
-            store
-                .store
-                .lock()
-                .await
-                .latest_known_aggregated_payloads_provider()
-                .iter()
-                .unwrap()
-                .into_iter()
-                .collect::<HashMap<_, _>>()
-        };
-
-        let extracted = store
-            .extract_attestations_from_aggregated_payloads(&aggregated_payloads)
-            .await
-            .unwrap();
-
-        assert_eq!(extracted.get(&participants[0]), Some(&attestation_data));
-        assert_eq!(extracted.get(&participants[1]), Some(&attestation_data));
-    }
-
-    // TEST ON GOSSIP ATTESTATION SUBNET FILTERING
-
-    #[tokio::test]
-    pub async fn test_same_subnet_stores_signature() {
-        let _test_guard = test_global_lock().lock().await;
-        let _committee_count_override = CommitteeCountOverride::new(4);
-        let mut store: Store = sample_store_as_store(8).await;
-
-        let current_validator = 0;
-        let attestor_validator = 4;
-        assert_eq!(
-            compute_subnet_id(current_validator, 4),
-            compute_subnet_id(attestor_validator, 4)
-        );
-        set_validator_id(&store, Some(current_validator)).await;
-        let key_pairs = install_validator_keys(&store, &[attestor_validator]).await;
-
-        let attestation_data = store.produce_attestation_data(1).await.unwrap();
-        let signature = key_pairs
-            .get(&attestor_validator)
-            .unwrap()
-            .1
-            .sign(
-                &attestation_data.tree_hash_root().0,
-                attestation_data.slot as u32,
-            )
-            .unwrap();
-
-        let signed_attestation = SignedAttestation {
-            validator_id: attestor_validator,
-            message: attestation_data.clone(),
-            signature,
-        };
-
-        let sig_key = SignatureKey::new(attestor_validator, &attestation_data);
-        assert!(
-            store
-                .store
-                .lock()
-                .await
-                .attestation_signatures_provider()
-                .get(sig_key.clone())
-                .unwrap()
-                .is_none()
-        );
-
-        store
-            .on_gossip_attestation(signed_attestation, true)
-            .await
-            .unwrap();
-
-        assert!(
-            store
-                .store
-                .lock()
-                .await
-                .attestation_signatures_provider()
-                .get(sig_key)
-                .unwrap()
-                .is_some()
-        );
-    }
-
-    #[tokio::test]
-    pub async fn test_cross_subnet_ignores_signature() {
-        let _test_guard = test_global_lock().lock().await;
-        let _committee_count_override = CommitteeCountOverride::new(4);
-        let mut store: Store = sample_store_as_store(8).await;
-        let current_validator = 0;
-        let attestor_validator = 1;
-        let slot = 1;
-
-        assert_ne!(
-            compute_subnet_id(current_validator, 4),
-            compute_subnet_id(attestor_validator, 4)
-        );
-
-        set_validator_id(&store, Some(current_validator)).await;
-        let key_pairs = install_validator_keys(&store, &[attestor_validator]).await;
-
-        let attestation_data = store.produce_attestation_data(slot).await.unwrap();
-        let signature = key_pairs
-            .get(&attestor_validator)
-            .unwrap()
-            .1
-            .sign(
-                &attestation_data.tree_hash_root().0,
-                attestation_data.slot as u32,
-            )
-            .unwrap();
-
-        let signed_attestation = SignedAttestation {
-            validator_id: attestor_validator,
-            message: attestation_data.clone(),
-            signature,
-        };
-
-        store
-            .on_gossip_attestation(signed_attestation, true)
-            .await
-            .unwrap();
-
-        let sig_key = SignatureKey::new(attestor_validator, &attestation_data);
-        assert!(
-            store
-                .store
-                .lock()
-                .await
-                .attestation_signatures_provider()
-                .get(sig_key)
-                .unwrap()
-                .is_none()
-        );
-    }
-
-    #[tokio::test]
-    pub async fn test_non_aggregator_never_stores_signature() {
-        let mut store: Store = sample_store_as_store(8).await;
-        let current_validator = 0;
-        let attestor_validator = 4;
-        let slot = 1;
-
-        set_validator_id(&store, Some(current_validator)).await;
-        let key_pairs = install_validator_keys(&store, &[attestor_validator]).await;
-
-        let attestation_data = store.produce_attestation_data(slot).await.unwrap();
-        let signature = key_pairs
-            .get(&attestor_validator)
-            .unwrap()
-            .1
-            .sign(
-                &attestation_data.tree_hash_root().0,
-                attestation_data.slot as u32,
-            )
-            .unwrap();
-
-        let signed_attestation = SignedAttestation {
-            validator_id: attestor_validator,
-            message: attestation_data.clone(),
-            signature,
-        };
-
-        store
-            .on_gossip_attestation(signed_attestation, false)
-            .await
-            .unwrap();
-
-        let data_root = attestation_data.tree_hash_root();
-        let sig_key = SignatureKey::from_parts(4, data_root);
-        assert!(
-            store
-                .store
-                .lock()
-                .await
-                .attestation_signatures_provider()
-                .get(sig_key)
-                .unwrap()
-                .is_none()
-        );
-        assert_eq!(
-            store
-                .store
-                .lock()
-                .await
-                .attestation_data_by_root_provider()
-                .get(data_root)
-                .unwrap(),
-            Some(attestation_data)
-        );
-    }
-
-    #[tokio::test]
-    pub async fn test_attestation_data_always_stored() {
-        let _test_guard = test_global_lock().lock().await;
-        let _committee_count_override = CommitteeCountOverride::new(4);
-        let mut store: Store = sample_store_as_store(8).await;
-
-        let current_validator = 0;
-        let attestor_validator = 1;
-        let slot = 1;
-
-        assert_ne!(
-            compute_subnet_id(current_validator, 4),
-            compute_subnet_id(attestor_validator, 4)
-        );
-
-        set_validator_id(&store, Some(current_validator)).await;
-        let key_pairs = install_validator_keys(&store, &[attestor_validator]).await;
-
-        let attestation_data = store.produce_attestation_data(slot).await.unwrap();
-        let signature = key_pairs
-            .get(&attestor_validator)
-            .unwrap()
-            .1
-            .sign(
-                &attestation_data.tree_hash_root().0,
-                attestation_data.slot as u32,
-            )
-            .unwrap();
-
-        let signed_attestation = SignedAttestation {
-            validator_id: attestor_validator,
-            message: attestation_data.clone(),
-            signature,
-        };
-
-        store
-            .on_gossip_attestation(signed_attestation, true)
-            .await
-            .unwrap();
-
-        let data_root = attestation_data.tree_hash_root();
-        let sig_key = SignatureKey::from_parts(attestor_validator, data_root);
-
-        assert!(
-            store
-                .store
-                .lock()
-                .await
-                .attestation_signatures_provider()
-                .get(sig_key)
-                .unwrap()
-                .is_none()
-        );
-        assert_eq!(
-            store
-                .store
-                .lock()
-                .await
-                .attestation_data_by_root_provider()
-                .get(data_root)
-                .unwrap(),
-            Some(attestation_data)
-        );
-    }
-
-    #[tokio::test]
-    pub async fn test_valid_proof_stored_correctly() {
-        let mut store: Store = sample_store_as_store(4).await;
-        let participants: Vec<u64> = vec![1, 2];
-        let key_pairs = install_validator_keys(&store, &participants).await;
-
-        let attestation_data = store.produce_attestation_data(1).await.unwrap();
-        set_time_for_slot(&store, attestation_data.slot).await;
-
-        let proof = make_aggregated_proof(&participants, &key_pairs, &attestation_data);
-        store
-            .on_gossip_aggregated_attestation(SignedAggregatedAttestation {
-                data: attestation_data.clone(),
-                proof: proof.clone(),
-            })
-            .await
-            .unwrap();
-
-        let data_root = attestation_data.tree_hash_root();
-        let latest_new = store
-            .store
-            .lock()
-            .await
-            .latest_new_aggregated_payloads_provider();
-        assert_eq!(
-            latest_new
-                .get(SignatureKey::from_parts(participants[0], data_root))
-                .unwrap()
-                .unwrap()
-                .len(),
-            1
-        );
-        assert_eq!(
-            latest_new
-                .get(SignatureKey::from_parts(participants[1], data_root))
-                .unwrap()
-                .unwrap()
-                .len(),
-            1
-        );
-        assert_eq!(
-            store
-                .store
-                .lock()
-                .await
-                .attestation_data_by_root_provider()
-                .get(data_root)
-                .unwrap(),
-            Some(attestation_data)
-        );
-    }
-
-    #[tokio::test]
-    pub async fn test_attestation_data_stored_by_root() {
-        let mut store: Store = sample_store_as_store(4).await;
-        let participants: Vec<u64> = vec![1];
-        let key_pairs = install_validator_keys(&store, &participants).await;
-        let slot = 1;
-
-        let attestation_data = store.produce_attestation_data(slot).await.unwrap();
-        let data_root = attestation_data.tree_hash_root();
-        set_time_for_slot(&store, attestation_data.slot).await;
-
-        let proof = make_aggregated_proof(&participants, &key_pairs, &attestation_data);
-        store
-            .on_gossip_aggregated_attestation(SignedAggregatedAttestation {
-                data: attestation_data.clone(),
-                proof,
-            })
-            .await
-            .unwrap();
-
-        assert_eq!(
-            store
-                .store
-                .lock()
-                .await
-                .attestation_data_by_root_provider()
-                .get(data_root)
-                .unwrap(),
-            Some(attestation_data)
-        );
-    }
-
-    #[tokio::test]
-    pub async fn test_invalid_proof_rejected() {
-        let mut store: Store = sample_store_as_store(4).await;
-        let claimed_participants: Vec<u64> = vec![1, 2];
-        let actual_signers: Vec<u64> = vec![1, 3];
-        let key_pairs = install_validator_keys(&store, &[1, 2, 3]).await;
-        let slot = 1;
-
-        let attestation_data = store.produce_attestation_data(slot).await.unwrap();
-        set_time_for_slot(&store, attestation_data.slot).await;
-        let data_root = attestation_data.tree_hash_root();
-
-        let proof = make_aggregated_proof(&actual_signers, &key_pairs, &attestation_data);
-        let mut claimed_bits = BitList::<U4096>::with_capacity(3).unwrap();
-        claimed_bits
-            .set(claimed_participants[0] as usize, true)
-            .unwrap();
-        claimed_bits
-            .set(claimed_participants[1] as usize, true)
-            .unwrap();
-        let invalid_proof = AggregatedSignatureProof::new(claimed_bits, proof.proof_data.clone());
-
-        let result = store
-            .on_gossip_aggregated_attestation(SignedAggregatedAttestation {
-                data: attestation_data,
-                proof: invalid_proof,
-            })
-            .await;
-
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Aggregated signature verification failed"),
-            "unexpected error for data_root={data_root:?}"
-        );
-    }
-
-    #[tokio::test]
-    pub async fn test_multiple_proofs_accumulate() {
-        let mut store: Store = sample_store_as_store(4).await;
-        let key_pairs = install_validator_keys(&store, &[1, 2, 3]).await;
-
-        let attestation_data = store.produce_attestation_data(1).await.unwrap();
-        set_time_for_slot(&store, attestation_data.slot).await;
-        let data_root = attestation_data.tree_hash_root();
-
-        let participants_1: Vec<u64> = vec![1, 2];
-        let participants_2: Vec<u64> = vec![1, 3];
-        let mutual_proposer_index = 1;
-
-        let proof_1 = make_aggregated_proof(&participants_1, &key_pairs, &attestation_data);
-        let proof_2 = make_aggregated_proof(&participants_2, &key_pairs, &attestation_data);
-
-        store
-            .on_gossip_aggregated_attestation(SignedAggregatedAttestation {
-                data: attestation_data.clone(),
-                proof: proof_1.clone(),
-            })
-            .await
-            .unwrap();
-        store
-            .on_gossip_aggregated_attestation(SignedAggregatedAttestation {
-                data: attestation_data,
-                proof: proof_2.clone(),
-            })
-            .await
-            .unwrap();
-
-        let sig_key = SignatureKey::from_parts(mutual_proposer_index, data_root);
-        let stored_proofs = store
-            .store
-            .lock()
-            .await
-            .latest_new_aggregated_payloads_provider()
-            .get(sig_key)
-            .unwrap()
-            .unwrap();
-
-        assert_eq!(stored_proofs.len(), 2);
-        assert!(stored_proofs.contains(&proof_1));
-        assert!(stored_proofs.contains(&proof_2));
-    }
-
-    #[tokio::test]
-    pub async fn test_aggregates_gossip_signatures_into_proof() {
-        let _test_guard = test_global_lock().lock().await;
-        let mut store: Store = sample_store_as_store(4).await;
-        set_validator_id(&store, Some(0)).await;
-        let attesting_validators: Vec<u64> = vec![1, 2];
-        let key_pairs = install_validator_keys(&store, &attesting_validators).await;
-        let slot = 1;
-
-        let attestation_data = store.produce_attestation_data(slot).await.unwrap();
-        let data_root = attestation_data.tree_hash_root();
-
-        for &validator_id in attesting_validators.iter() {
-            let signature = key_pairs
-                .get(&validator_id)
-                .unwrap()
-                .1
-                .sign(&data_root.0, attestation_data.slot as u32)
-                .unwrap();
-
-            store
-                .on_gossip_attestation(
-                    SignedAttestation {
-                        validator_id,
-                        message: attestation_data.clone(),
-                        signature,
-                    },
-                    true,
-                )
-                .await
-                .unwrap();
-        }
-
-        store.aggregate().await.unwrap();
-
-        let latest_new = store
-            .store
-            .lock()
-            .await
-            .latest_new_aggregated_payloads_provider();
-
-        for validator_id in attesting_validators {
-            let key = SignatureKey::from_parts(validator_id, data_root);
-            let proofs = latest_new.get(key).unwrap().unwrap();
-            assert!(!proofs.is_empty());
-        }
-    }
-
-    #[tokio::test]
-    pub async fn test_aggregated_proof_is_valid() {
-        let _test_guard = test_global_lock().lock().await;
-        let mut store: Store = sample_store_as_store(4).await;
-        set_validator_id(&store, Some(0)).await;
-        let attesting_validators: Vec<u64> = vec![1, 2];
-        let key_pairs = install_validator_keys(&store, &attesting_validators).await;
-        let slot = 1;
-
-        let attestation_data = store.produce_attestation_data(slot).await.unwrap();
-        let data_root = attestation_data.tree_hash_root();
-
-        for &validator_id in attesting_validators.iter() {
-            let signature = key_pairs
-                .get(&validator_id)
-                .unwrap()
-                .1
-                .sign(&data_root.0, attestation_data.slot as u32)
-                .unwrap();
-
-            store
-                .on_gossip_attestation(
-                    SignedAttestation {
-                        validator_id,
-                        message: attestation_data.clone(),
-                        signature,
-                    },
-                    true,
-                )
-                .await
-                .unwrap();
-        }
-
-        store.aggregate().await.unwrap();
-
-        let proof = store
-            .store
-            .lock()
-            .await
-            .latest_new_aggregated_payloads_provider()
-            .get(SignatureKey::from_parts(attesting_validators[0], data_root))
-            .unwrap()
-            .unwrap()
-            .first()
-            .cloned()
-            .unwrap();
-
-        let participants = proof.to_validator_indices();
-        let state = store
-            .store
-            .lock()
-            .await
-            .state_provider()
-            .get(attestation_data.target.root)
-            .unwrap()
-            .unwrap();
-        let public_keys: Vec<_> = participants
-            .iter()
-            .map(|&validator_id| state.validators[validator_id as usize].attestation_public_key)
-            .collect();
-
-        assert!(
-            verify_aggregate_signature(
-                &public_keys,
-                &data_root.0,
-                proof.proof_data.as_ref(),
-                attestation_data.slot as u32
-            )
-            .is_ok()
-        );
-    }
-
-    #[tokio::test]
-    pub async fn test_empty_gossip_signatures_produces_no_proofs() {
-        let mut store: Store = sample_store_as_store(4).await;
-        store.aggregate().await.unwrap();
-
-        let is_empty = store
-            .store
-            .lock()
-            .await
-            .latest_new_aggregated_payloads_provider()
-            .iter()
-            .unwrap()
-            .is_empty();
-        assert!(is_empty);
-    }
-
-    #[tokio::test]
-    pub async fn test_multiple_attestation_data_grouped_separately() {
-        let mut store: Store = sample_store_as_store(4).await;
-        let attesting_validators: Vec<u64> = vec![1, 2];
-        let key_pairs = install_validator_keys(&store, &attesting_validators).await;
-        let slot = 1;
-
-        let attestation_data_1 = store.produce_attestation_data(slot).await.unwrap();
-        let attestation_data_2 = AttestationData {
-            slot,
-            head: Checkpoint {
-                root: FixedBytes::repeat_byte(1),
+                root: orphan_1_root,
                 slot: 1,
             },
-            target: attestation_data_1.target,
-            source: attestation_data_1.source,
+            source: Checkpoint {
+                root: genesis_root,
+                slot: 0,
+            },
         };
-        let data_root_1 = attestation_data_1.tree_hash_root();
-        let data_root_2 = attestation_data_2.tree_hash_root();
 
-        let sig_1 = key_pairs
-            .get(&1)
-            .unwrap()
-            .1
-            .sign(&data_root_1.0, attestation_data_1.slot as u32)
-            .unwrap();
-        let sig_2 = key_pairs
-            .get(&2)
-            .unwrap()
-            .1
-            .sign(&data_root_2.0, attestation_data_2.slot as u32)
-            .unwrap();
-
-        {
-            let db = store.store.lock().await;
-            let attestation_data_by_root = db.attestation_data_by_root_provider();
-            let gossip_signatures = db.attestation_signatures_provider();
-
-            attestation_data_by_root
-                .insert(data_root_1, attestation_data_1)
-                .unwrap();
-            attestation_data_by_root
-                .insert(data_root_2, attestation_data_2)
-                .unwrap();
-
-            gossip_signatures
-                .insert(
-                    SignatureKey::from_parts(attesting_validators[0], data_root_1),
-                    sig_1,
-                )
-                .unwrap();
-            gossip_signatures
-                .insert(
-                    SignatureKey::from_parts(attesting_validators[1], data_root_2),
-                    sig_2,
-                )
-                .unwrap();
-        }
-
-        store.aggregate().await.unwrap();
-
-        let latest_new = store
-            .store
-            .lock()
+        let err = store
+            .validate_attestation(&SignedAttestation {
+                validator_id: 0,
+                message: attestation_data,
+                signature: Signature::blank(),
+            })
             .await
-            .latest_new_aggregated_payloads_provider();
+            .unwrap_err();
 
         assert!(
-            latest_new
-                .get(SignatureKey::from_parts(
-                    attesting_validators[0],
-                    data_root_1
-                ))
-                .unwrap()
-                .is_some()
-        );
-        assert!(
-            latest_new
-                .get(SignatureKey::from_parts(
-                    attesting_validators[1],
-                    data_root_2
-                ))
-                .unwrap()
-                .is_some()
+            err.to_string()
+                .contains("Head checkpoint must descend from the finalized block"),
+            "unexpected error: {err}"
         );
     }
 
     #[tokio::test]
-    pub async fn test_interval_2_triggers_aggregation_for_aggregator() {
-        let _test_guard = test_global_lock().lock().await;
-        let mut store: Store = sample_store_as_store(4).await;
-        set_validator_id(&store, Some(0)).await;
-        let attesting_validators: Vec<u64> = vec![1, 2];
-        let key_pairs = install_validator_keys(&store, &attesting_validators).await;
-        let slot = 1;
-
-        let attestation_data = store.produce_attestation_data(slot).await.unwrap();
-        let data_root = attestation_data.tree_hash_root();
-
-        for &validator_id in attesting_validators.iter() {
-            let signature = key_pairs
-                .get(&validator_id)
-                .unwrap()
-                .1
-                .sign(&data_root.0, attestation_data.slot as u32)
-                .unwrap();
-
-            store
-                .on_gossip_attestation(
-                    SignedAttestation {
-                        validator_id,
-                        message: attestation_data.clone(),
-                        signature,
-                    },
-                    true,
-                )
-                .await
-                .unwrap();
-        }
-
-        store.store.lock().await.time_provider().insert(1).unwrap();
-        store.tick_interval(false, true).await.unwrap();
-
-        let sig_key = SignatureKey::from_parts(attesting_validators[0], data_root);
-        assert!(
-            store
-                .store
-                .lock()
-                .await
-                .latest_new_aggregated_payloads_provider()
-                .get(sig_key)
-                .unwrap()
-                .is_some()
-        );
-    }
-
-    #[tokio::test]
-    pub async fn test_interval_2_skips_aggregation_for_non_aggregator() {
-        let _test_guard = test_global_lock().lock().await;
-        let mut store: Store = sample_store_as_store(4).await;
-        set_validator_id(&store, Some(0)).await;
-        let attesting_validators: Vec<u64> = vec![1, 2];
-        let key_pairs = install_validator_keys(&store, &attesting_validators).await;
-        let slot = 1;
-
-        let attestation_data = store.produce_attestation_data(slot).await.unwrap();
-        let data_root = attestation_data.tree_hash_root();
-
-        for &validator_id in attesting_validators.iter() {
-            let signature = key_pairs
-                .get(&validator_id)
-                .unwrap()
-                .1
-                .sign(&data_root.0, attestation_data.slot as u32)
-                .unwrap();
-
-            store
-                .on_gossip_attestation(
-                    SignedAttestation {
-                        validator_id,
-                        message: attestation_data.clone(),
-                        signature,
-                    },
-                    true,
-                )
-                .await
-                .unwrap();
-        }
-
-        store.store.lock().await.time_provider().insert(1).unwrap();
-        store.tick_interval(false, false).await.unwrap();
-
-        let sig_key = SignatureKey::from_parts(attesting_validators[0], data_root);
-        assert!(
-            store
-                .store
-                .lock()
-                .await
-                .latest_new_aggregated_payloads_provider()
-                .get(sig_key)
-                .unwrap()
-                .is_none()
-        );
-    }
-
-    #[tokio::test]
-    pub async fn test_other_intervals_do_not_trigger_aggregation() {
-        let _test_guard = test_global_lock().lock().await;
-        let mut store: Store = sample_store_as_store(4).await;
-        let attesting_validators: Vec<u64> = vec![1, 2];
-        set_validator_id(&store, Some(0)).await;
-        let key_pairs = install_validator_keys(&store, &attesting_validators).await;
-        let slot = 1;
-
-        let attestation_data = store.produce_attestation_data(slot).await.unwrap();
-        let data_root = attestation_data.tree_hash_root();
-        let sig_key = SignatureKey::from_parts(1, data_root);
-
-        for &validator_id in attesting_validators.iter() {
-            let signature = key_pairs
-                .get(&validator_id)
-                .unwrap()
-                .1
-                .sign(&data_root.0, attestation_data.slot as u32)
-                .unwrap();
-
-            store
-                .on_gossip_attestation(
-                    SignedAttestation {
-                        validator_id,
-                        message: attestation_data.clone(),
-                        signature,
-                    },
-                    true,
-                )
-                .await
-                .unwrap();
-        }
-
-        let non_aggregation_intervals = vec![0, 1, 3, 4];
-        for target_interval in non_aggregation_intervals {
-            let pre_tick_time = (target_interval + INTERVALS_PER_SLOT - 1) % INTERVALS_PER_SLOT;
-            {
-                let db = store.store.lock().await;
-                db.time_provider().insert(pre_tick_time).unwrap();
-                db.latest_new_aggregated_payloads_provider()
-                    .drain()
-                    .unwrap();
-            }
-
-            store.tick_interval(false, true).await.unwrap();
-
-            assert!(
-                store
-                    .store
-                    .lock()
-                    .await
-                    .latest_new_aggregated_payloads_provider()
-                    .get(sig_key.clone())
-                    .unwrap()
-                    .is_none(),
-                "Aggregation should not occur at interval {target_interval}"
-            );
-        }
-    }
-
-    #[tokio::test]
-    pub async fn test_interval_0_accepts_attestations_with_proposal() {
-        let mut store: Store = sample_store_as_store(4).await;
-
-        store.store.lock().await.time_provider().insert(4).unwrap();
-        store.tick_interval(true, true).await.unwrap();
-
-        let time = store.store.lock().await.time_provider().get().unwrap();
-        assert_eq!(time, 5);
-        assert_eq!(time % INTERVALS_PER_SLOT, 0);
-    }
-
-    #[tokio::test]
-    pub async fn test_gossip_to_aggregation_to_storage() {
-        let _test_guard = test_global_lock().lock().await;
-        let mut store: Store = sample_store_as_store(4).await;
-        set_validator_id(&store, Some(0)).await;
-        let attesting_validators: Vec<u64> = vec![1, 2];
-        let key_pairs = install_validator_keys(&store, &attesting_validators).await;
-        let slot = 1;
-
-        let attestation_data = store.produce_attestation_data(slot).await.unwrap();
-        let data_root = attestation_data.tree_hash_root();
-
-        for &validator_id in attesting_validators.iter() {
-            let signature = key_pairs
-                .get(&validator_id)
-                .unwrap()
-                .1
-                .sign(&data_root.0, attestation_data.slot as u32)
-                .unwrap();
-            store
-                .on_gossip_attestation(
-                    SignedAttestation {
-                        validator_id,
-                        message: attestation_data.clone(),
-                        signature,
-                    },
-                    true,
-                )
-                .await
-                .unwrap();
-            assert!(
-                store
-                    .store
-                    .lock()
-                    .await
-                    .attestation_signatures_provider()
-                    .get(SignatureKey::from_parts(validator_id, data_root))
-                    .unwrap()
-                    .is_some()
-            );
-        }
-
-        store.store.lock().await.time_provider().insert(1).unwrap();
-        store.tick_interval(false, true).await.unwrap();
-
-        let latest_new = store
-            .store
-            .lock()
-            .await
-            .latest_new_aggregated_payloads_provider();
-        let sig_key = SignatureKey::from_parts(1, data_root);
-        let proof = latest_new
-            .get(sig_key)
-            .unwrap()
-            .unwrap()
-            .first()
-            .cloned()
-            .unwrap();
-        let participants = proof.to_validator_indices();
-        let state = store
-            .store
-            .lock()
-            .await
-            .state_provider()
-            .get(attestation_data.target.root)
-            .unwrap()
-            .unwrap();
-        let public_keys: Vec<_> = participants
-            .iter()
-            .map(|&validator_id| state.validators[validator_id as usize].attestation_public_key)
-            .collect();
-
-        assert!(
-            verify_aggregate_signature(
-                &public_keys,
-                &data_root.0,
-                proof.proof_data.as_ref(),
-                attestation_data.slot as u32
-            )
-            .is_ok()
-        );
-    }
-
-    // COMPUTE BLOCK WEIGHT TESTS
-
-    /// A genesis-only store with no attestations has no block weights.
-    #[tokio::test]
-    pub async fn test_genesis_only_store_returns_empty_weights() {
-        let store = sample_store_as_store(10).await;
-        let weights = store.compute_block_weights().await.unwrap();
-        assert!(weights.is_empty());
-    }
-
-    // TEST GET ATTESTATION TARGET
-
-    /// Target at genesis should be the genesis block.
-    #[tokio::test]
-    pub async fn test_get_attestation_target_at_genesis() {
-        let store = sample_store_as_store(10).await;
-        let target = store.get_attestation_target().await.unwrap();
-        let (head_provider, block_provider) = {
-            let db = store.store.lock().await;
-            (db.head_provider(), db.block_provider())
-        };
-
-        let genesis_root = head_provider.get().unwrap();
-        let genesis_block = block_provider.get(genesis_root).unwrap().unwrap();
-
-        assert_eq!(target.root, genesis_root);
-        assert_eq!(target.slot, genesis_block.block.slot);
-    }
-
-    /// get_attestation_target should return a Checkpoint.
-    #[tokio::test]
-    pub async fn test_get_attestation_target_returns_checkpoint() {
-        let store = sample_store_as_store(10).await;
-        let target = store.get_attestation_target().await.unwrap();
-        let block_provider = { store.store.lock().await.block_provider() };
-        let target_block = block_provider.get(target.root).unwrap();
-
-        assert!(target_block.is_some());
-        assert_eq!(target.slot, target_block.unwrap().block.slot);
-    }
-
-    /// Target should walk back toward safe_target when head is ahead.
-    #[tokio::test]
-    pub async fn test_get_attestation_target_walks_back_toward_safe_target() {
-        let mut store = sample_store_as_store(10).await;
-        for slot in 1..6 {
-            produce_and_import_block(&mut store, slot, slot)
-                .await
-                .unwrap();
-        }
-
-        let (head_provider, block_provider, safe_target_provider) = {
-            let db = store.store.lock().await;
-            (
-                db.head_provider(),
-                db.block_provider(),
-                db.safe_target_provider(),
-            )
-        };
-        let head_root = head_provider.get().unwrap();
-        let head_slot = block_provider.get(head_root).unwrap().unwrap().block.slot;
-
-        let safe_target_root = safe_target_provider.get().unwrap();
-        let safe_target_slot = block_provider
-            .get(safe_target_root)
-            .unwrap()
-            .unwrap()
-            .block
-            .slot;
-        let target = store.get_attestation_target().await.unwrap();
-
-        assert!(head_slot >= 1);
-        assert_eq!(safe_target_slot, 0);
-        assert!(target.slot >= head_slot.saturating_sub(super::JUSTIFICATION_LOOKBACK_SLOTS));
-    }
-
-    /// Target should land on a slot that is_justifiable_after the finalized slot.
-    #[tokio::test]
-    pub async fn test_get_attestation_target_respects_justifiable_slots() {
-        let mut store = sample_store_as_store(10).await;
-        for slot in 1..10 {
-            produce_and_import_block(&mut store, slot, slot)
-                .await
-                .unwrap();
-        }
-
-        let target = store.get_attestation_target().await.unwrap();
-        let finalized_slot = {
-            store
-                .store
-                .lock()
-                .await
-                .latest_finalized_provider()
-                .get()
-                .unwrap()
-                .slot
-        };
-
-        assert!(is_justifiable_after(target.slot, finalized_slot).unwrap());
-    }
-
-    /// Target should be on the path from head to finalized checkpoint.
-    #[tokio::test]
-    pub async fn test_get_attestation_target_consistency_with_head() {
-        let mut store = sample_store_as_store(10).await;
-        for slot in 1..4 {
-            produce_and_import_block(&mut store, slot, slot)
-                .await
-                .unwrap();
-        }
-
-        let target = store.get_attestation_target().await.unwrap();
-        let (head_provider, block_provider) = {
-            let db = store.store.lock().await;
-            (db.head_provider(), db.block_provider())
-        };
-
-        let mut current_root = head_provider.get().unwrap();
-        let mut found_target = false;
-
-        while current_root != B256::ZERO {
-            if current_root == target.root {
-                found_target = true;
-                break;
-            }
-
-            let current_block = block_provider.get(current_root).unwrap().unwrap();
-            current_root = current_block.block.parent_root;
-        }
-
-        assert!(found_target, "Target should be an ancestor of head");
-    }
-
-    // TEST SAFE TARGET ADVANCEMENT
-
-    /// Safe target should only advance with 2/3+ attestation support.
-    #[tokio::test]
-    pub async fn test_safe_target_requires_supermajority() {
-        let _test_guard = test_global_lock().lock().await;
-        let _committee_count_override = CommitteeCountOverride::new(1);
-        let mut store: Store = sample_store_as_store(10).await;
-        let slot = 1;
-        let proposer_index = 1;
-        produce_and_import_block(&mut store, slot, proposer_index)
-            .await
-            .unwrap();
-        set_validator_id(&store, Some(0)).await;
-
-        let (head_provider, latest_justified_provider, state_provider) = {
-            let db = store.store.lock().await;
-            (
-                db.head_provider(),
-                db.latest_justified_provider(),
-                db.state_provider(),
-            )
-        };
-        let block_root = head_provider.get().unwrap();
-        let num_validators = state_provider
-            .get(block_root)
-            .unwrap()
-            .unwrap()
-            .validators
-            .len() as u64;
-        let threshold = (num_validators * 2 + 2).div_ceil(3);
-
-        let validator_ids: Vec<u64> = (0..num_validators).collect();
-        let key_pairs = install_validator_keys(&store, &validator_ids).await;
-        let attestation_data = AttestationData {
-            slot,
-            head: Checkpoint {
-                root: block_root,
-                slot,
-            },
-            target: Checkpoint {
-                root: block_root,
-                slot,
-            },
-            source: latest_justified_provider.get().unwrap(),
-        };
-        let data_root = attestation_data.tree_hash_root();
-
-        for validator_id in 0..(threshold - 1) {
-            let signature = key_pairs
-                .get(&validator_id)
-                .unwrap()
-                .1
-                .sign(&data_root.0, attestation_data.slot as u32)
-                .unwrap();
-
-            store
-                .on_gossip_attestation(
-                    SignedAttestation {
-                        validator_id,
-                        message: attestation_data.clone(),
-                        signature,
-                    },
-                    true,
-                )
-                .await
-                .unwrap();
-        }
-
-        store.aggregate().await.unwrap();
-        store.update_safe_target().await.unwrap();
-
-        let (safe_target_provider, block_provider) = {
-            let db = store.store.lock().await;
-            (db.safe_target_provider(), db.block_provider())
-        };
-        let safe_target_slot = block_provider
-            .get(safe_target_provider.get().unwrap())
-            .unwrap()
-            .unwrap()
-            .block
-            .slot;
-
-        assert!(safe_target_slot <= 1);
-    }
-
-    /// Safe target should advance when 2/3+ validators attest to same target.
-    #[tokio::test]
-    pub async fn test_safe_target_advances_with_supermajority() {
-        let _test_guard = test_global_lock().lock().await;
-        let _committee_count_override = CommitteeCountOverride::new(1);
-        let mut store: Store = sample_store_as_store(10).await;
-        let slot = 1;
-        let proposer_index = 1;
-        produce_and_import_block(&mut store, slot, proposer_index)
-            .await
-            .unwrap();
-        set_validator_id(&store, Some(0)).await;
-
-        let (head_provider, latest_justified_provider, state_provider) = {
-            let db = store.store.lock().await;
-            (
-                db.head_provider(),
-                db.latest_justified_provider(),
-                db.state_provider(),
-            )
-        };
-        let block_root = head_provider.get().unwrap();
-        let num_validators = state_provider
-            .get(block_root)
-            .unwrap()
-            .unwrap()
-            .validators
-            .len() as u64;
-        let threshold = (num_validators * 2 + 2).div_ceil(3);
-
-        let validator_ids: Vec<u64> = (0..num_validators).collect();
-        let key_pairs = install_validator_keys(&store, &validator_ids).await;
-        let attestation_data = AttestationData {
-            slot,
-            head: Checkpoint {
-                root: block_root,
-                slot,
-            },
-            target: Checkpoint {
-                root: block_root,
-                slot,
-            },
-            source: latest_justified_provider.get().unwrap(),
-        };
-        let data_root = attestation_data.tree_hash_root();
-
-        for validator_id in 0..(threshold + 1) {
-            let signature = key_pairs
-                .get(&validator_id)
-                .unwrap()
-                .1
-                .sign(&data_root.0, attestation_data.slot as u32)
-                .unwrap();
-
-            store
-                .on_gossip_attestation(
-                    SignedAttestation {
-                        validator_id,
-                        message: attestation_data.clone(),
-                        signature,
-                    },
-                    true,
-                )
-                .await
-                .unwrap();
-        }
-
-        store.aggregate().await.unwrap();
-        store.update_safe_target().await.unwrap();
-
-        let (safe_target_provider, block_provider) = {
-            let db = store.store.lock().await;
-            (db.safe_target_provider(), db.block_provider())
-        };
-        let safe_target_slot = block_provider
-            .get(safe_target_provider.get().unwrap())
-            .unwrap()
-            .unwrap()
-            .block
-            .slot;
-
-        assert!(safe_target_slot <= slot);
-    }
-
-    /// update_safe_target should use new aggregated payloads.
-    #[tokio::test]
-    pub async fn test_update_safe_target_uses_new_attestations() {
-        let _test_guard = test_global_lock().lock().await;
-        let _committee_count_override = CommitteeCountOverride::new(1);
-        let mut store: Store = sample_store_as_store(10).await;
-        let slot = 1;
-        let proposer_index = 1;
-        produce_and_import_block(&mut store, slot, proposer_index)
-            .await
-            .unwrap();
-        set_validator_id(&store, Some(0)).await;
-
-        let (head_provider, latest_justified_provider, state_provider) = {
-            let db = store.store.lock().await;
-            (
-                db.head_provider(),
-                db.latest_justified_provider(),
-                db.state_provider(),
-            )
-        };
-        let block_root = head_provider.get().unwrap();
-        let num_validators = state_provider
-            .get(block_root)
-            .unwrap()
-            .unwrap()
-            .validators
-            .len() as u64;
-
-        let validator_ids: Vec<u64> = (0..num_validators).collect();
-        let key_pairs = install_validator_keys(&store, &validator_ids).await;
-        let attestation_data = AttestationData {
-            slot,
-            head: Checkpoint {
-                root: block_root,
-                slot,
-            },
-            target: Checkpoint {
-                root: block_root,
-                slot,
-            },
-            source: latest_justified_provider.get().unwrap(),
-        };
-        let data_root = attestation_data.tree_hash_root();
-
-        for validator_id in 0..num_validators {
-            let signature = key_pairs
-                .get(&validator_id)
-                .unwrap()
-                .1
-                .sign(&data_root.0, attestation_data.slot as u32)
-                .unwrap();
-
-            store
-                .on_gossip_attestation(
-                    SignedAttestation {
-                        validator_id,
-                        message: attestation_data.clone(),
-                        signature,
-                    },
-                    true,
-                )
-                .await
-                .unwrap();
-        }
-
-        store.aggregate().await.unwrap();
-        let has_new_payloads = {
-            let db = store.store.lock().await;
-            !db.latest_new_aggregated_payloads_provider()
-                .iter()
-                .unwrap()
-                .is_empty()
-        };
-        store.update_safe_target().await.unwrap();
-
-        let (safe_target_provider, block_provider) = {
-            let db = store.store.lock().await;
-            (db.safe_target_provider(), db.block_provider())
-        };
-        let safe_target_slot = block_provider
-            .get(safe_target_provider.get().unwrap())
-            .unwrap()
-            .unwrap()
-            .block
-            .slot;
-
-        assert!(has_new_payloads);
-        assert!(safe_target_slot <= slot);
-    }
-
-    // TEST JUSTIFICATION LOGIC
-
-    /// Justification should occur when 2/3 validators attest to the same target.
-    #[tokio::test]
-    pub async fn test_justification_with_supermajority_attestations() {
-        let _test_guard = test_global_lock().lock().await;
-        let _committee_count_override = CommitteeCountOverride::new(1);
-        let mut store: Store = sample_store_as_store(10).await;
-
-        let slot_1 = 1;
-        let proposer_index_1 = 1;
-        let block_1_with_signatures = store
-            .produce_block_with_signatures(slot_1, proposer_index_1)
-            .await
-            .unwrap();
-        let signed_block_1 = build_signed_block(block_1_with_signatures);
-        store.on_block(&signed_block_1, false).await.unwrap();
-        set_validator_id(&store, Some(0)).await;
-
-        let (head_provider, state_provider, latest_justified_provider) = {
-            let db = store.store.lock().await;
-            (
-                db.head_provider(),
-                db.state_provider(),
-                db.latest_justified_provider(),
-            )
-        };
-        let initial_latest_justified_slot = latest_justified_provider.get().unwrap().slot;
-        let block_1_root = head_provider.get().unwrap();
-        let num_validators = state_provider
-            .get(block_1_root)
-            .unwrap()
-            .unwrap()
-            .validators
-            .len() as u64;
-        let threshold = (num_validators * 2 + 2).div_ceil(3);
-
-        let validator_ids: Vec<u64> = (0..num_validators).collect();
-        let key_pairs = install_validator_keys(&store, &validator_ids).await;
+    async fn test_validate_attestation_accepts_head_descending_from_finalized() {
+        let (store, canonical_1_root, canonical_2_root, _, _) =
+            store_with_finalized_orphaned_branch().await;
+
+        let genesis_root = { store.store.lock().await.head_provider().get().unwrap() };
 
         let attestation_data = AttestationData {
-            slot: slot_1,
+            slot: 2,
             head: Checkpoint {
-                root: block_1_root,
-                slot: slot_1,
+                root: canonical_2_root,
+                slot: 2,
             },
             target: Checkpoint {
-                root: block_1_root,
-                slot: slot_1,
+                root: canonical_1_root,
+                slot: 1,
             },
-            source: latest_justified_provider.get().unwrap(),
-        };
-        let data_root = attestation_data.tree_hash_root();
-
-        for validator_id in 0..(threshold + 1) {
-            let signature = key_pairs
-                .get(&validator_id)
-                .unwrap()
-                .1
-                .sign(&data_root.0, attestation_data.slot as u32)
-                .unwrap();
-
-            store
-                .on_gossip_attestation(
-                    SignedAttestation {
-                        validator_id,
-                        message: attestation_data.clone(),
-                        signature,
-                    },
-                    true,
-                )
-                .await
-                .unwrap();
-        }
-
-        store.aggregate().await.unwrap();
-        {
-            let db = store.store.lock().await;
-            let latest_new = db.latest_new_aggregated_payloads_provider();
-            let latest_known = db.latest_known_aggregated_payloads_provider();
-            for (signature_key, mut new_proofs) in latest_new.drain().unwrap() {
-                let mut existing = latest_known
-                    .get(signature_key.clone())
-                    .unwrap()
-                    .unwrap_or_default();
-                existing.append(&mut new_proofs);
-                latest_known.insert(signature_key, existing).unwrap();
-            }
-        }
-
-        let latest_justified_slot = {
-            store
-                .store
-                .lock()
-                .await
-                .latest_justified_provider()
-                .get()
-                .unwrap()
-                .slot
-        };
-
-        let slot_2 = 2;
-        let proposer_index_2 = 2;
-        let block_2_result = store
-            .produce_block_with_signatures(slot_2, proposer_index_2)
-            .await;
-        if let Ok(block_with_signatures) = block_2_result {
-            assert!(!block_with_signatures.block.body.attestations.is_empty());
-        } else {
-            let known_payloads_len = {
-                let db = store.store.lock().await;
-                db.latest_known_aggregated_payloads_provider()
-                    .iter()
-                    .unwrap()
-                    .len()
-            };
-            assert!(known_payloads_len > 0);
-        }
-        assert!(latest_justified_slot >= initial_latest_justified_slot);
-    }
-
-    /// Attestations must have a valid/already justified source.
-    #[tokio::test]
-    pub async fn test_justification_requires_valid_source() {
-        let mut store: Store = sample_store_as_store(10).await;
-        let slot = 1;
-        let proposer_index = 1;
-
-        let block_1_with_signatures = store
-            .produce_block_with_signatures(slot, proposer_index)
-            .await
-            .unwrap();
-        let signed_block_1 = build_signed_block(block_1_with_signatures);
-        store.on_block(&signed_block_1, false).await.unwrap();
-
-        let (head_provider, block_provider) = {
-            let db = store.store.lock().await;
-            (db.head_provider(), db.block_provider())
-        };
-        let block_root = head_provider.get().unwrap();
-        let block_slot = block_provider.get(block_root).unwrap().unwrap().block.slot;
-
-        let attestation = SignedAttestation {
-            validator_id: 5,
-            message: AttestationData {
-                slot: block_slot,
-                head: Checkpoint {
-                    root: block_root,
-                    slot: block_slot,
-                },
-                target: Checkpoint {
-                    root: block_root,
-                    slot: block_slot,
-                },
-                source: Checkpoint {
-                    root: B256::from([0x69; 32]),
-                    slot: 999,
-                },
+            source: Checkpoint {
+                root: genesis_root,
+                slot: 0,
             },
-            signature: Signature::blank(),
         };
 
-        let result = store.validate_attestation(&attestation).await;
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Unknown source block")
-        );
-    }
-
-    /// Justification should track votes for multiple potential targets.
-    #[tokio::test]
-    pub async fn test_justification_tracking_with_multiple_targets() {
-        let _test_guard = test_global_lock().lock().await;
-        let _committee_count_override = CommitteeCountOverride::new(1);
-        let mut store: Store = sample_store_as_store(10).await;
-
-        for slot_num in 1..4 {
-            let block_with_signatures = store
-                .produce_block_with_signatures(slot_num, slot_num)
-                .await
-                .unwrap();
-            let signed_block = build_signed_block(block_with_signatures);
-            store.on_block(&signed_block, false).await.unwrap();
-        }
-        set_validator_id(&store, Some(0)).await;
-
-        let (head_provider, block_provider, state_provider) = {
-            let db = store.store.lock().await;
-            (db.head_provider(), db.block_provider(), db.state_provider())
-        };
-        let head_root = head_provider.get().unwrap();
-        let head_block = block_provider.get(head_root).unwrap().unwrap();
-        let head_slot = head_block.block.slot;
-        let num_validators = state_provider
-            .get(head_root)
-            .unwrap()
-            .unwrap()
-            .validators
-            .len() as u64;
-
-        let validator_ids: Vec<u64> = (0..num_validators).collect();
-        let key_pairs = install_validator_keys(&store, &validator_ids).await;
-        let attestation_data_head = store.produce_attestation_data(head_slot).await.unwrap();
-        let data_root = attestation_data_head.tree_hash_root();
-
-        for validator_id in 0..(num_validators / 2) {
-            let signature = key_pairs
-                .get(&validator_id)
-                .unwrap()
-                .1
-                .sign(&data_root.0, attestation_data_head.slot as u32)
-                .unwrap();
-
-            store
-                .on_gossip_attestation(
-                    SignedAttestation {
-                        validator_id,
-                        message: attestation_data_head.clone(),
-                        signature,
-                    },
-                    true,
-                )
-                .await
-                .unwrap();
-        }
-
-        store.aggregate().await.unwrap();
-        store.update_safe_target().await.unwrap();
-
-        let safe_target_root = {
-            store
-                .store
-                .lock()
-                .await
-                .safe_target_provider()
-                .get()
-                .unwrap()
-        };
-        assert!(block_provider.contains_key(safe_target_root));
-    }
-
-    // TEST FINALIZATION FOLLOWS JUSTIFICATION
-
-    /// Finalization should follow when justification advances without gaps.
-    #[tokio::test]
-    pub async fn test_finalization_after_consecutive_justification() {
-        let _test_guard = test_global_lock().lock().await;
-        let _committee_count_override = CommitteeCountOverride::new(1);
-        let mut store: Store = sample_store_as_store(10).await;
-        set_validator_id(&store, Some(0)).await;
-
-        let initial_finalized_slot = {
-            store
-                .store
-                .lock()
-                .await
-                .latest_finalized_provider()
-                .get()
-                .unwrap()
-                .slot
-        };
-
-        let num_validators = {
-            let db = store.store.lock().await;
-            let head_root = db.head_provider().get().unwrap();
-            db.state_provider()
-                .get(head_root)
-                .unwrap()
-                .unwrap()
-                .validators
-                .len() as u64
-        };
-        let threshold = (num_validators * 2 + 2).div_ceil(3);
-        let validator_ids: Vec<u64> = (0..num_validators).collect();
-        let key_pairs = install_validator_keys(&store, &validator_ids).await;
-
-        for slot_num in 1..5 {
-            if slot_num > 1 {
-                let (head_provider, block_provider, latest_justified_provider) = {
-                    let db = store.store.lock().await;
-                    (
-                        db.head_provider(),
-                        db.block_provider(),
-                        db.latest_justified_provider(),
-                    )
-                };
-                let prev_head = head_provider.get().unwrap();
-                let prev_block = block_provider.get(prev_head).unwrap().unwrap();
-                let prev_slot = prev_block.block.slot;
-
-                let attestation_data = AttestationData {
-                    slot: prev_slot,
-                    head: Checkpoint {
-                        root: prev_head,
-                        slot: prev_slot,
-                    },
-                    target: Checkpoint {
-                        root: prev_head,
-                        slot: prev_slot,
-                    },
-                    source: latest_justified_provider.get().unwrap(),
-                };
-                let data_root = attestation_data.tree_hash_root();
-
-                for validator_id in 0..(threshold + 1) {
-                    let signature = key_pairs
-                        .get(&validator_id)
-                        .unwrap()
-                        .1
-                        .sign(&data_root.0, attestation_data.slot as u32)
-                        .unwrap();
-
-                    store
-                        .on_gossip_attestation(
-                            SignedAttestation {
-                                validator_id,
-                                message: attestation_data.clone(),
-                                signature,
-                            },
-                            true,
-                        )
-                        .await
-                        .unwrap();
-                }
-
-                store.aggregate().await.unwrap();
-            }
-
-            let proposer = slot_num % num_validators;
-            let _ = produce_and_import_block(&mut store, slot_num, proposer).await;
-        }
-
-        let final_finalized_slot = {
-            store
-                .store
-                .lock()
-                .await
-                .latest_finalized_provider()
-                .get()
-                .unwrap()
-                .slot
-        };
-
-        assert!(final_finalized_slot >= initial_finalized_slot);
-    }
-
-    // TEST ATTESTATION TARGET EDGE CASES
-
-    /// Attestation target should handle chains with skipped slots.
-    #[tokio::test]
-    pub async fn test_attestation_target_with_skipped_slots() {
-        let mut store: Store = sample_store_as_store(10).await;
-        produce_and_import_block(&mut store, 1, 1).await.unwrap();
-        produce_and_import_block(&mut store, 4, 4).await.unwrap();
-
-        let target = store.get_attestation_target().await.unwrap();
-        let (block_provider, latest_finalized_provider) = {
-            let db = store.store.lock().await;
-            (db.block_provider(), db.latest_finalized_provider())
-        };
-        let finalized_slot = latest_finalized_provider.get().unwrap().slot;
-
-        assert!(block_provider.contains_key(target.root));
-        assert!(is_justifiable_after(target.slot, finalized_slot).unwrap());
-    }
-
-    /// Attestation target computation should work with single validator.
-    #[tokio::test]
-    pub async fn test_attestation_target_single_validator() {
-        let store: Store = sample_store_as_store(1).await;
-        let target = store.get_attestation_target().await.unwrap();
-        let head_root = { store.store.lock().await.head_provider().get().unwrap() };
-
-        assert_eq!(target.root, head_root);
-    }
-
-    /// Test target when head is exactly JUSTIFICATION_LOOKBACK_SLOTS ahead.
-    #[tokio::test]
-    pub async fn test_attestation_target_at_justification_lookback_boundary() {
-        let mut store: Store = sample_store_as_store(10).await;
-        let num_validators = {
-            let db = store.store.lock().await;
-            let head_root = db.head_provider().get().unwrap();
-            db.state_provider()
-                .get(head_root)
-                .unwrap()
-                .unwrap()
-                .validators
-                .len() as u64
-        };
-
-        for slot_num in 1..(JUSTIFICATION_LOOKBACK_SLOTS + 2) {
-            let proposer = slot_num % num_validators;
-            produce_and_import_block(&mut store, slot_num, proposer)
-                .await
-                .unwrap();
-        }
-
-        let target = store.get_attestation_target().await.unwrap();
-        let (head_provider, block_provider) = {
-            let db = store.store.lock().await;
-            (db.head_provider(), db.block_provider())
-        };
-
-        let head_slot = block_provider
-            .get(head_provider.get().unwrap())
-            .unwrap()
-            .unwrap()
-            .block
-            .slot;
-
-        assert!(target.slot >= head_slot - JUSTIFICATION_LOOKBACK_SLOTS);
-    }
-
-    // TEST INTEGRATION SCENARIOS
-
-    /// Test complete cycle: produce block, attest, justify.
-    #[tokio::test]
-    pub async fn test_full_attestation_cycle() {
-        let _test_guard = test_global_lock().lock().await;
-        let _committee_count_override = CommitteeCountOverride::new(1);
-        let mut store: Store = sample_store_as_store(10).await;
-
-        let slot_1 = 1;
-        let proposer_1 = 1;
         store
-            .produce_block_with_signatures(slot_1, proposer_1)
+            .validate_attestation(&SignedAttestation {
+                validator_id: 0,
+                message: attestation_data,
+                signature: Signature::blank(),
+            })
             .await
             .unwrap();
-
-        set_validator_id(&store, Some(0)).await;
-        let (head_provider, state_provider) = {
-            let db = store.store.lock().await;
-            (db.head_provider(), db.state_provider())
-        };
-        let num_validators = state_provider
-            .get(head_provider.get().unwrap())
-            .unwrap()
-            .unwrap()
-            .validators
-            .len() as u64;
-        let validator_ids: Vec<u64> = (0..num_validators).collect();
-        let key_pairs = install_validator_keys(&store, &validator_ids).await;
-        let attestation_data = store.produce_attestation_data(slot_1).await.unwrap();
-        let data_root = attestation_data.tree_hash_root();
-
-        for validator_id in 0..num_validators {
-            let signature = key_pairs
-                .get(&validator_id)
-                .unwrap()
-                .1
-                .sign(&data_root.0, attestation_data.slot as u32)
-                .unwrap();
-            store
-                .on_gossip_attestation(
-                    SignedAttestation {
-                        validator_id,
-                        message: attestation_data.clone(),
-                        signature,
-                    },
-                    true,
-                )
-                .await
-                .unwrap();
-        }
-
-        store.aggregate().await.unwrap();
-        store.update_safe_target().await.unwrap();
-
-        let slot_2 = 2;
-        let proposer_2 = 2;
-        let _ = store
-            .produce_block_with_signatures(slot_2, proposer_2)
-            .await;
-
-        let (safe_target_provider, block_provider) = {
-            let db = store.store.lock().await;
-            (db.safe_target_provider(), db.block_provider())
-        };
-
-        let safe_target_slot = block_provider
-            .get(safe_target_provider.get().unwrap())
-            .unwrap()
-            .unwrap()
-            .block
-            .slot;
-
-        assert!(safe_target_slot <= 1);
-        assert!(block_provider.contains_key(head_provider.get().unwrap()));
-        assert!(block_provider.contains_key(safe_target_provider.get().unwrap()));
-    }
-
-    /// Test attestation target is correct after processing a block via on_block.
-    #[tokio::test]
-    pub async fn test_attestation_target_after_on_block() {
-        let mut store: Store = sample_store_as_store(10).await;
-        let slot_1 = 1;
-        let proposer_1 = 1;
-        let block_with_signatures = store
-            .produce_block_with_signatures(slot_1, proposer_1)
-            .await
-            .unwrap();
-        let signed_block = build_signed_block(block_with_signatures);
-
-        let target_time =
-            lean_network_spec().genesis_time + slot_1 * lean_network_spec().seconds_per_slot;
-        store.on_tick(target_time, true, false).await.unwrap();
-        store.on_block(&signed_block, false).await.unwrap();
-
-        let target = store.get_attestation_target().await.unwrap();
-        let (block_provider, latest_finalized_provider) = {
-            let db = store.store.lock().await;
-            (db.block_provider(), db.latest_finalized_provider())
-        };
-        let finalized_slot = latest_finalized_provider.get().unwrap().slot;
-
-        assert!(block_provider.contains_key(target.root));
-        assert!(is_justifiable_after(target.slot, finalized_slot).unwrap());
     }
 }

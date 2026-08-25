@@ -161,7 +161,7 @@ pub struct State {
     pub justified_slots: DataList<bool>,
     pub validators: DataList<Validator>,
     pub justifications_roots: DataList<B256>,
-    pub justifications_validators: DataList<Vec<u64>>,
+    pub justifications_validators: DataList<bool>,
 }
 
 impl<T> DataList<T> {

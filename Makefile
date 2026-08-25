@@ -6,6 +6,10 @@ BIN_DIR = "dist/bin"
 # Cargo features for builds.
 FEATURES ?=
 
+# Devnet feature selected for Shadow builds (devnet4/devnet5 are mutually
+# exclusive, and `--no-default-features` drops the default `devnet4`).
+SHADOW_DEVNET ?= devnet5
+
 # Cargo profile for builds.
 PROFILE ?= release
 
@@ -13,6 +17,11 @@ PROFILE ?= release
 CARGO_INSTALL_EXTRA_FLAGS ?=
 
 CARGO_TARGET_DIR ?= target
+
+IMAGE ?= ream-local
+TAG ?= dev
+DOCKER_REPOSITORY ?= ghcr.io/reamlabs/ream
+DOCKER_TAGS ?= latest latest-devnet5 devnet5
 
 ##@ Help
 
@@ -40,15 +49,19 @@ install: # Build and install the Ream binary under `~/.cargo/bin`.
 ##@ Testing and Linting
 
 .PHONY: test
-test: test-devnet4 test-devnet5
-
-.PHONY: test-devnet4
-test-devnet4:
-	cargo test --workspace -- --nocapture
+test: test-devnet5
 
 .PHONY: test-devnet5
 test-devnet5:
 	cargo test --workspace --no-default-features --features "devnet5" -- --nocapture
+
+.PHONY: test-ef
+test-ef: # Download test vectors and run the EF spec tests.
+	$(MAKE) -C testing/ef-tests test
+
+.PHONY: clean-ef
+clean-ef: # Clean up downloaded EF test vectors.
+	$(MAKE) -C testing/ef-tests clean
 
 .PHONY: fmt
 fmt: # Run `rustfmt` on the entire workspace and enfore closure variables on `map_err` to be `err`
@@ -116,13 +129,25 @@ pr: lint update-book-cli clean-deps test # Run all checks for a PR.
 build-%:
 	cross build --bin ream --target $* --features "$(FEATURES)" --profile "$(PROFILE)" $(EXTRA_FLAGS)
 
+##@ Shadow simulator
+
+.PHONY: shadow-build
+shadow-build: # Shadow-compatible binary (single-threaded, no jemalloc, quinn-udp patch).
+	./shadow/build.sh cargo build --profile "$(PROFILE)" \
+		--no-default-features --features "shadow-integration $(SHADOW_DEVNET)" --bin ream
+
+.PHONY: shadow-docker-build
+shadow-docker-build: # Build a Shadow-compatible Docker image, tagged ...:latest-shadow.
+	docker build --file ./Dockerfile . \
+		--build-arg SHADOW=1 \
+		--build-arg NO_DEFAULT_FEATURES=--no-default-features \
+		--build-arg FEATURES="shadow-integration $(SHADOW_DEVNET)" \
+		--build-arg LOCKED= \
+		--build-arg BUILD_PROFILE=$(PROFILE) \
+		--tag ghcr.io/reamlabs/ream:latest-shadow
+
 .PHONY: docker-build-push
 docker-build-push:
-	$(MAKE) docker-build-push-default
-	$(MAKE) docker-build-push-devnet5
-
-.PHONY: docker-build-push-default
-docker-build-push-default:
 	$(MAKE) build-x86_64-unknown-linux-gnu
 	mkdir -p $(BIN_DIR)/amd64
 	cp $(CARGO_TARGET_DIR)/x86_64-unknown-linux-gnu/$(PROFILE)/ream $(BIN_DIR)/amd64/ream
@@ -133,29 +158,18 @@ docker-build-push-default:
 
 	docker buildx build --file ./Dockerfile.cross . \
 		--platform linux/amd64,linux/arm64 \
-		--tag ghcr.io/reamlabs/ream:latest \
-		--tag ghcr.io/reamlabs/ream:latest-devnet4 \
+		$(foreach tag,$(DOCKER_TAGS),--tag $(DOCKER_REPOSITORY):$(tag)) \
 		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
 		--build-arg GIT_BRANCH=$(GIT_BRANCH) \
 		--build-arg BUILD_DATE=$(BUILD_DATE) \
 		--provenance=false \
 		--push
 
-.PHONY: docker-build-push-devnet5
-docker-build-push-devnet5:
-	$(MAKE) build-x86_64-unknown-linux-gnu FEATURES="devnet5" EXTRA_FLAGS="--no-default-features"
-	mkdir -p $(BIN_DIR)/amd64
-	cp $(CARGO_TARGET_DIR)/x86_64-unknown-linux-gnu/$(PROFILE)/ream $(BIN_DIR)/amd64/ream
-
-	$(MAKE) build-aarch64-unknown-linux-gnu FEATURES="devnet5" EXTRA_FLAGS="--no-default-features"
-	mkdir -p $(BIN_DIR)/arm64
-	cp $(CARGO_TARGET_DIR)/aarch64-unknown-linux-gnu/$(PROFILE)/ream $(BIN_DIR)/arm64/ream
-
-	docker buildx build --file ./Dockerfile.cross . \
-		--platform linux/amd64,linux/arm64 \
-		--tag ghcr.io/reamlabs/ream:latest-devnet5 \
-		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
-		--build-arg GIT_BRANCH=$(GIT_BRANCH) \
-		--build-arg BUILD_DATE=$(BUILD_DATE) \
-		--provenance=false \
-		--push
+.PHONY: docker-local
+docker-local:
+	docker build \
+		-f Dockerfile \
+		--build-arg BUILD_PROFILE=release \
+		--build-arg FEATURES="$(FEATURES)" \
+		-t $(IMAGE):$(TAG) \
+		.

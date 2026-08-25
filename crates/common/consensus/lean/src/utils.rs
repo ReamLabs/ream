@@ -5,8 +5,8 @@ use crate::validator::Validator;
 pub fn generate_default_validators(number_of_validators: usize) -> Vec<Validator> {
     (0..number_of_validators)
         .map(|index| Validator {
-            attestation_public_key: PublicKey::from(&[0_u8; 52][..]),
-            proposal_public_key: PublicKey::from(&[0_u8; 52][..]),
+            attestation_public_key: PublicKey::default(),
+            proposal_public_key: PublicKey::default(),
             index: index as u64,
         })
         .collect()

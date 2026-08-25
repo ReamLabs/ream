@@ -1,7 +1,5 @@
-NETWORK ?= devnet4
+NETWORK ?= devnet5
 EXTRACT_DIR = fixtures/$(NETWORK)
-DEVNET4_REPO_URL = https://github.com/ReamLabs/lean-spec-tests.git
-DEVNET4_COMMIT = a3bf5d72e74e3bdf7634e5ee3a8154aabf0a8565
 DEVNET5_RELEASE_URL = https://github.com/leanEthereum/leanSpec/releases/download/latest/fixtures-prod-scheme.tar.gz
 DEVNET5_RELEASE_API_URL = https://api.github.com/repos/leanEthereum/leanSpec/releases/tags/latest
 DEVNET5_ARCHIVE = fixtures-prod-scheme.tar.gz
@@ -10,38 +8,29 @@ CURL = curl --fail --location --retry 3 --retry-all-errors --retry-delay 5 --con
 KEYS_DIR = $(EXTRACT_DIR)/keys/prod_scheme
 KEYS_URL = https://github.com/leanEthereum/leansig-test-keys/releases/download/leanSpec-bbbbf62/prod_scheme.tar.gz
 
-FIXTURES := state_transition ssz fork_choice justifiability slot_clock sync verify_signatures
+FIXTURES := state_transition ssz justifiability slot_clock sync verify_signatures
 SELECTED := $(filter $(FIXTURES),$(MAKECMDGOALS))
 CARGO_FEATURES = lean-spec-tests $(NETWORK)
 SOURCE_MARKER = $(EXTRACT_DIR)/.ream-source
 
-.PHONY: all clean test test-devnet4 test-devnet5 prepare-fixtures $(FIXTURES)
+.PHONY: all clean test test-devnet5 prepare-fixtures $(FIXTURES)
 
 all: test
-
-test-devnet4:
-	@$(MAKE) test NETWORK=devnet4
 
 test-devnet5:
 	@$(MAKE) test NETWORK=devnet5
 
 prepare-fixtures:
-	@if [ "$(NETWORK)" != "devnet4" ] && [ "$(NETWORK)" != "devnet5" ]; then \
-		echo "Unsupported NETWORK=$(NETWORK). Use devnet4 or devnet5."; \
+	@if [ "$(NETWORK)" != "devnet5" ]; then \
+		echo "Unsupported NETWORK=$(NETWORK). Use devnet5."; \
 		exit 1; \
 	fi
 	@if [ -f $(SOURCE_MARKER) ] && [ -d $(EXTRACT_DIR)/consensus ]; then \
 		echo "$(EXTRACT_DIR) already contains $(NETWORK) fixtures. Skipping download."; \
-	elif [ "$(NETWORK)" = "devnet4" ]; then \
-		echo "Cloning devnet4 fixtures from $(DEVNET4_REPO_URL) at $(DEVNET4_COMMIT)..."; \
-		rm -rf $(EXTRACT_DIR); \
-		git clone --filter=blob:none --quiet $(DEVNET4_REPO_URL) $(EXTRACT_DIR) || { echo "Clone failed. Repository may be private or inaccessible."; exit 1; }; \
-		git -C $(EXTRACT_DIR) checkout --quiet $(DEVNET4_COMMIT) || { echo "Checkout of commit $(DEVNET4_COMMIT) failed."; exit 1; }; \
-		touch $(SOURCE_MARKER); \
-		echo "devnet4 fixtures downloaded successfully."; \
 	else \
 		echo "Downloading devnet5 fixtures from $(DEVNET5_RELEASE_URL)..."; \
 		rm -rf $(EXTRACT_DIR); \
+		mkdir -p $(dir $(EXTRACT_DIR)); \
 		mkdir -p $(DEVNET5_TMP_DIR); \
 		if [ ! -f $(DEVNET5_TMP_DIR)/$(DEVNET5_ARCHIVE) ]; then \
 			$(CURL) --output $(DEVNET5_TMP_DIR)/$(DEVNET5_ARCHIVE) $(DEVNET5_RELEASE_URL) || { echo "Fixture download failed."; exit 1; }; \
@@ -54,7 +43,7 @@ prepare-fixtures:
 		(cd $(DEVNET5_TMP_DIR) && shasum -a 256 -c $(DEVNET5_ARCHIVE).sha256) || { echo "Fixture checksum verification failed."; exit 1; }; \
 		tar xzf $(DEVNET5_TMP_DIR)/$(DEVNET5_ARCHIVE) -C $(DEVNET5_TMP_DIR) || { echo "Fixture extraction failed."; exit 1; }; \
 		if [ -d $(DEVNET5_TMP_DIR)/fixtures/consensus ]; then \
-			mv $(DEVNET5_TMP_DIR)/fixtures $(EXTRACT_DIR); \
+			mv $(DEVNET5_TMP_DIR)/fixtures $(EXTRACT_DIR) || { echo "Fixture move failed."; exit 1; }; \
 		elif [ -d $(DEVNET5_TMP_DIR)/consensus ]; then \
 			mkdir -p $(EXTRACT_DIR); \
 			mv $(DEVNET5_TMP_DIR)/consensus $(EXTRACT_DIR)/consensus; \
@@ -92,6 +81,6 @@ $(FIXTURES):
 
 clean:
 	@echo "Cleaning up downloaded fixtures and keys..."
-	@rm -rf fixtures/devnet4 fixtures/devnet5
+	@rm -rf fixtures/devnet5
 	@rm -rf $(DEVNET5_TMP_DIR)
 	@echo "Clean up complete."

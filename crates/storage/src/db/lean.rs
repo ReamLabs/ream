@@ -1,6 +1,7 @@
 use std::{fmt::Write, sync::Arc};
 
-use redb::{Database, ReadableDatabase, ReadableTableMetadata};
+use alloy_primitives::B256;
+use redb::{Database, Durability, ReadableDatabase, ReadableTableMetadata};
 use tracing::info;
 
 use crate::{
@@ -33,6 +34,32 @@ pub struct LeanDB {
 }
 
 impl LeanDB {
+    /// Atomically update the canonical slot index and persisted head.
+    pub fn update_canonical_head(
+        &self,
+        head: B256,
+        new_slots: &[(u64, B256)],
+        stale_slots: &[u64],
+    ) -> anyhow::Result<()> {
+        let mut write_txn = self.db.begin_write()?;
+        write_txn.set_durability(Durability::Immediate)?;
+        {
+            let mut slot_index = write_txn.open_table(LeanSlotIndexTable::TABLE_DEFINITION)?;
+            for (slot, root) in new_slots {
+                slot_index.insert(*slot, *root)?;
+            }
+            for slot in stale_slots {
+                slot_index.remove(*slot)?;
+            }
+        }
+        {
+            let mut head_field = write_txn.open_table(LeanHeadField::FIELD_DEFINITION)?;
+            head_field.insert(LeanHeadField::KEY, head)?;
+        }
+        write_txn.commit()?;
+        Ok(())
+    }
+
     /// Attach a cache to this LeanDB instance.
     /// This enables in-memory caching of blocks and states for improved performance.
     pub fn with_cache(mut self, cache: Arc<LeanCacheDB>) -> Self {

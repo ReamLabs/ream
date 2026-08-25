@@ -66,7 +66,7 @@ pub async fn validate_sync_committee(
     // [REJECT] The signature is valid for the message beacon_block_root for the validator
     // referenced by validator_index.
     let signing_root = compute_signing_root(
-        message,
+        message.beacon_block_root,
         state.get_domain(
             DOMAIN_SYNC_COMMITTEE,
             Some(compute_epoch_at_slot(message.slot)),

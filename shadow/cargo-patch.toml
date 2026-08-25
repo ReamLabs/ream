@@ -1,0 +1,6 @@
+# This is a *fragment*, not a standalone manifest: it carries no
+# `[patch.crates-io]` header because the workspace Cargo.toml already declares
+# that table (a second header would be a TOML duplicate-key error). It is merged
+# under the existing table by shadow/inject-patch.sh at build time; never
+# committed into Cargo.toml.
+quinn-udp = { path = "shadow/quinn-udp-patch" }

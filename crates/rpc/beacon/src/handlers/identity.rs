@@ -12,8 +12,10 @@ use serde::{Deserialize, Serialize};
 pub struct Identity {
     pub peer_id: String,
     pub enr: String,
-    pub p2p_address: Vec<String>,
-    pub discovery_address: Vec<String>,
+    #[serde(alias = "p2p_address")]
+    pub p2p_addresses: Vec<String>,
+    #[serde(alias = "discovery_address")]
+    pub discovery_addresses: Vec<String>,
     pub metadata: GetMetaDataV3,
 }
 
@@ -23,7 +25,7 @@ impl Identity {
         Self {
             peer_id: peer_id.to_string(),
             enr: enr.to_base64(),
-            p2p_address: {
+            p2p_addresses: {
                 let mut addresses = Vec::new();
 
                 if let Some(ip4) = enr.ip4()
@@ -39,7 +41,7 @@ impl Identity {
 
                 addresses
             },
-            discovery_address: {
+            discovery_addresses: {
                 let mut addresses = Vec::new();
 
                 if let Some(ip4) = enr.ip4()

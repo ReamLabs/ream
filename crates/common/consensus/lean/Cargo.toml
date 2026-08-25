@@ -10,9 +10,9 @@ rust-version.workspace = true
 version.workspace = true
 
 [features]
-default = ["devnet4"]
-devnet4 = ["ream-post-quantum-crypto/devnet4"]
+default = ["devnet5"]
 devnet5 = ["ream-post-quantum-crypto/devnet5"]
+optimized-leanvm = ["devnet5", "ream-post-quantum-crypto/optimized-leanvm"]
 reth = ["dep:ream-execution-rpc-types"]
 
 [dependencies]

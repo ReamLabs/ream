@@ -79,12 +79,20 @@ jobs:
       - name: Build
         run: cargo build --verbose
 
-  test-devnet4:
-    name: test devnet4
+  build-devnet5-leanvm-main:
+    name: build devnet5-leanvm-main
+    runs-on: ubuntu-latest
     needs: [format, cargo-clippy]
-    uses: ./.github/workflows/tests-matrix.yml
-    with:
-      network: devnet4
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Build LeanVM v0.9 variant
+        run: cargo build --verbose --package ream --bin ream --no-default-features --features optimized-leanvm
 
   test-devnet5:
     name: test devnet5
@@ -105,7 +113,7 @@ jobs:
           cache-on-failure: true
 
       - name: Test consensus spec tests
-        run: cd testing/ef-tests && make test
+        run: make test-ef
 
   lean-spec-tests:
     runs-on: ubuntu-latest

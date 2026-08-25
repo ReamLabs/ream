@@ -1,6 +1,8 @@
 use std::{future::Future, sync::Arc, thread::sleep, time::Duration};
 
 use anyhow::bail;
+#[cfg(feature = "shadow-integration")]
+use tokio::runtime;
 use tokio::{runtime::Runtime, sync::broadcast, task::JoinHandle};
 use tracing::warn;
 
@@ -12,7 +14,14 @@ pub struct ReamExecutor {
 
 impl ReamExecutor {
     pub fn new() -> std::io::Result<Self> {
+        #[cfg(not(feature = "shadow-integration"))]
         let runtime = Arc::new(Runtime::new()?);
+        #[cfg(feature = "shadow-integration")]
+        let runtime = Arc::new(
+            runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?,
+        );
         let (shutdown, _) = broadcast::channel(1);
         Ok(Self { runtime, shutdown })
     }

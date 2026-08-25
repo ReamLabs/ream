@@ -46,6 +46,21 @@ use tracing::{error, info};
 
 use crate::aggregate_and_proof::SignedAggregateAndProof;
 
+const BROADCAST_VALIDATION_QUERY_PARAM: &str = "broadcast_validation";
+const BROADCAST_VALIDATION_GOSSIP: &str = "gossip";
+const BROADCAST_VALIDATION_CONSENSUS: &str = "consensus";
+const BROADCAST_VALIDATION_CONSENSUS_AND_EQUIVOCATION: &str = "consensus_and_equivocation";
+
+fn broadcast_validation_value(broadcast_validation: BroadcastValidation) -> &'static str {
+    match broadcast_validation {
+        BroadcastValidation::Gossip => BROADCAST_VALIDATION_GOSSIP,
+        BroadcastValidation::Consensus => BROADCAST_VALIDATION_CONSENSUS,
+        BroadcastValidation::ConsensusAndEquivocation => {
+            BROADCAST_VALIDATION_CONSENSUS_AND_EQUIVOCATION
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct BeaconApiClient {
     http_client: ClientWithBaseUrl,
@@ -133,7 +148,7 @@ impl BeaconApiClient {
             .http_client
             .execute(
                 self.http_client
-                    .get(format!("/eth/v1/beacon/states/{state_id}/root"))?
+                    .get(format!("/eth/v1/beacon/blocks/{state_id}/root"))?
                     .build()?,
             )
             .await?;
@@ -599,6 +614,12 @@ impl BeaconApiClient {
 
         let response = self.http_client.execute(request_builder.build()?).await?;
 
+        if !response.status().is_success() {
+            return Err(ValidatorError::RequestFailed {
+                status_code: response.status(),
+            });
+        }
+
         let headers = response.headers();
 
         let content_type = get_header_str(headers, "content-type")?;
@@ -630,17 +651,7 @@ impl BeaconApiClient {
                 },
             })
         } else {
-            Ok(ProduceBlockResponse {
-                version,
-                execution_payload_blinded,
-                execution_payload_value,
-                consensus_block_value,
-                data: if execution_payload_blinded {
-                    ProduceBlockData::Blinded(response.json().await?)
-                } else {
-                    ProduceBlockData::Full(response.json().await?)
-                },
-            })
+            Ok(response.json().await?)
         }
     }
 
@@ -649,15 +660,13 @@ impl BeaconApiClient {
         broadcast_validation: BroadcastValidation,
         signed_beacon_block: SignedBeaconBlock,
     ) -> anyhow::Result<(), ValidatorError> {
+        let broadcast_validation = broadcast_validation_value(broadcast_validation);
         let response = self
             .http_client
             .execute(
                 self.http_client
                     .post("/eth/v2/beacon/blocks".to_string(), ContentType::Ssz)?
-                    .query(&[(
-                        "broadcast_validation",
-                        serde_json::to_string(&broadcast_validation)?,
-                    )])
+                    .query(&[(BROADCAST_VALIDATION_QUERY_PARAM, broadcast_validation)])
                     .header(ETH_CONSENSUS_VERSION_HEADER, VERSION)
                     .body(signed_beacon_block.as_ssz_bytes())
                     .build()?,
@@ -678,6 +687,7 @@ impl BeaconApiClient {
         broadcast_validation: BroadcastValidation,
         signed_blinded_beacon_block: SignedBlindedBeaconBlock,
     ) -> anyhow::Result<(), ValidatorError> {
+        let broadcast_validation = broadcast_validation_value(broadcast_validation);
         let response = self
             .http_client
             .execute(
@@ -686,10 +696,7 @@ impl BeaconApiClient {
                         "/eth/v2/beacon/blinded_blocks".to_string(),
                         ContentType::Ssz,
                     )?
-                    .query(&[(
-                        "broadcast_validation",
-                        serde_json::to_string(&broadcast_validation)?,
-                    )])
+                    .query(&[(BROADCAST_VALIDATION_QUERY_PARAM, broadcast_validation)])
                     .header(ETH_CONSENSUS_VERSION_HEADER, VERSION)
                     .body(signed_blinded_beacon_block.as_ssz_bytes())
                     .build()?,

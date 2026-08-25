@@ -22,7 +22,9 @@ use ream_consensus_beacon::{
     beacon_committee_selection::BeaconCommitteeSelection,
     bls_to_execution_change::SignedBLSToExecutionChange,
     electra::{
-        beacon_block::BeaconBlock, beacon_block_body::BeaconBlockBody, beacon_state::BeaconState,
+        beacon_block::BeaconBlock,
+        beacon_block_body::BeaconBlockBody,
+        beacon_state::{BeaconState, fork_name_at_epoch},
         blinded_beacon_block::BlindedBeaconBlock,
         blinded_beacon_block_body::BlindedBeaconBlockBody,
     },
@@ -33,13 +35,17 @@ use ream_consensus_beacon::{
 };
 use ream_consensus_misc::{
     attestation_data::AttestationData,
+    checkpoint::Checkpoint,
     constants::beacon::{
         DOMAIN_AGGREGATE_AND_PROOF, DOMAIN_BEACON_ATTESTER, DOMAIN_RANDAO, DOMAIN_SYNC_COMMITTEE,
-        MAX_COMMITTEES_PER_SLOT, PROPOSER_REWARD_QUOTIENT, SLOTS_PER_EPOCH,
+        FULU_FORK_EPOCH, MAX_COMMITTEES_PER_SLOT, PROPOSER_REWARD_QUOTIENT, SLOTS_PER_EPOCH,
         SYNC_COMMITTEE_PROPOSER_REWARD_QUOTIENT, WHISTLEBLOWER_REWARD_QUOTIENT,
     },
     deposit::Deposit,
-    misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
+    fork_name::ForkName,
+    misc::{
+        compute_domain, compute_epoch_at_slot, compute_signing_root, compute_start_slot_at_epoch,
+    },
     polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
     validator::Validator,
 };
@@ -49,21 +55,18 @@ use ream_events_beacon::{
 };
 use ream_execution_engine::{ExecutionEngine, engine_trait::ExecutionApi};
 use ream_execution_rpc_types::{
-    electra::execution_payload::ExecutionPayload,
     forkchoice_update::{ForkchoiceStateV1, PayloadAttributesV3},
-    get_payload::PayloadV4,
+    get_payload::Payload,
 };
 use ream_fork_choice_beacon::store::Store;
 use ream_network_manager::gossipsub::validate::sync_committee_contribution_and_proof::get_sync_subcommittee_pubkeys;
+use ream_network_spec::networks::beacon_network_spec;
 use ream_operation_pool::OperationPool;
 use ream_p2p::{
     gossipsub::beacon::topics::{GossipTopic, GossipTopicKind},
     network::beacon::Network,
 };
-use ream_storage::{
-    db::beacon::BeaconDB,
-    tables::{field::REDBField, table::REDBTable},
-};
+use ream_storage::{db::beacon::BeaconDB, tables::table::REDBTable};
 use ream_sync_committee_pool::SyncCommitteePool;
 use ream_validator_beacon::{
     aggregate_and_proof::SignedAggregateAndProof,
@@ -95,6 +98,10 @@ use super::state::get_state_from_id;
 ///  For slots in Electra and later, this AttestationData must have a committee_index of 0.
 const ELECTRA_COMMITTEE_INDEX: u64 = 0;
 const MAX_VALIDATOR_COUNT: usize = 100;
+
+fn gossip_fork_digest(state: &BeaconState) -> B32 {
+    beacon_network_spec().fork_digest(FULU_FORK_EPOCH, state.genesis_validators_root)
+}
 
 fn build_validator_balances(
     validators: &[(Validator, u64)],
@@ -286,7 +293,6 @@ pub async fn post_validators_from_state(
     db: Data<BeaconDB>,
     state_id: Path<ID>,
     request: Json<ValidatorsPostRequest>,
-    _status_query: Json<StatusQuery>,
 ) -> Result<impl Responder, ApiError> {
     let ValidatorsPostRequest { ids, statuses, .. } = request.into_inner();
     let status_query = StatusQuery { status: statuses };
@@ -502,6 +508,7 @@ fn check_validator_participation(
         Ok(validator.is_active_validator(epoch))
     }
 }
+
 #[get("/validator/attestation_data")]
 pub async fn get_attestation_data(
     db: Data<BeaconDB>,
@@ -514,7 +521,7 @@ pub async fn get_attestation_data(
         None,
     );
 
-    if store.is_syncing().map_err(|err| {
+    if store.is_syncing_for_validator_api().map_err(|err| {
         ApiError::InternalError(format!("Failed to check syncing status, err: {err:?}"))
     })? {
         return Err(ApiError::UnderSyncing);
@@ -522,9 +529,9 @@ pub async fn get_attestation_data(
 
     let slot = query.slot;
 
-    let current_slot = store
-        .get_current_slot()
-        .map_err(|err| ApiError::InternalError(format!("Failed to slot_index, error: {err:?}")))?;
+    let current_slot = store.get_current_slot().map_err(|err| {
+        ApiError::InternalError(format!("Failed to get current slot, err: {err:?}"))
+    })?;
 
     if slot > current_slot + 1 {
         return Err(ApiError::InvalidParameter(format!(
@@ -532,24 +539,52 @@ pub async fn get_attestation_data(
         )));
     }
 
-    let beacon_block_root = db
-        .slot_index_provider()
-        .get_highest_root()
-        .map_err(|err| ApiError::InternalError(format!("Failed to slot_index, error: {err:?}")))?
-        .ok_or(ApiError::NotFound(
-            "Failed to find highest block root".to_string(),
-        ))?;
+    let head_root = store
+        .get_head()
+        .map_err(|err| ApiError::InternalError(format!("Failed to get head root: {err:?}")))?;
 
-    let source_checkpoint = db.justified_checkpoint_provider().get().map_err(|err| {
-        ApiError::InternalError(format!("Failed to get source checkpoint, error: {err:?}"))
-    })?;
+    let state = db
+        .state_provider()
+        .get(head_root)
+        .map_err(|err| ApiError::InternalError(format!("Failed to get state, error: {err:?}")))?
+        .ok_or_else(|| ApiError::NotFound(format!("Failed to find state for root {head_root}")))?;
 
-    let target_checkpoint = db
-        .unrealized_justified_checkpoint_provider()
-        .get()
-        .map_err(|err| {
-            ApiError::InternalError(format!("Failed to target checkpoint, error: {err:?}"))
-        })?;
+    let beacon_block_root = if slot >= state.slot {
+        head_root
+    } else {
+        state
+            .get_block_root_at_slot(slot)
+            .or_else(|_| store.get_ancestor(head_root, slot))
+            .map_err(|err| {
+                ApiError::InternalError(format!(
+                    "Failed to get attestation beacon block root, error: {err:?}"
+                ))
+            })?
+    };
+
+    let target_epoch = compute_epoch_at_slot(slot);
+    let source_checkpoint = if target_epoch == state.get_previous_epoch() {
+        state.previous_justified_checkpoint
+    } else {
+        state.current_justified_checkpoint
+    };
+    let target_slot = compute_start_slot_at_epoch(target_epoch);
+    let target_root = if state.slot <= target_slot {
+        beacon_block_root
+    } else {
+        state
+            .get_block_root(target_epoch)
+            .or_else(|_| store.get_checkpoint_block(beacon_block_root, target_epoch))
+            .map_err(|err| {
+                ApiError::InternalError(format!(
+                    "Failed to get target checkpoint block, error: {err:?}"
+                ))
+            })?
+    };
+    let target_checkpoint = Checkpoint {
+        epoch: target_epoch,
+        root: target_root,
+    };
 
     Ok(HttpResponse::Ok().json(DataResponse::new(AttestationData {
         slot,
@@ -585,7 +620,7 @@ pub async fn get_sync_committee_contribution(
 ) -> Result<impl Responder, ApiError> {
     let store = Store::new(db.get_ref().clone(), operation_pool.get_ref().clone(), None);
 
-    if store.is_syncing().map_err(|err| {
+    if store.is_syncing_for_validator_api().map_err(|err| {
         ApiError::InternalError(format!("Failed to check syncing status, err: {err:?}"))
     })? {
         return Err(ApiError::UnderSyncing);
@@ -804,7 +839,7 @@ pub async fn post_beacon_committee_subscriptions(
         let subnet_id =
             compute_subnet_for_attestation(sub.committees_at_slot, sub.slot, sub.committee_index);
 
-        let fork = state.fork.current_version;
+        let fork = gossip_fork_digest(&state);
 
         subnets.insert((subnet_id, fork));
     }
@@ -907,7 +942,7 @@ pub async fn post_sync_committee_subscriptions(
             )));
         }
 
-        let fork = state.fork.current_version;
+        let fork = gossip_fork_digest(&state);
         for subnet_id in validator_subnets {
             subnets_to_subscribe.insert((subnet_id, fork));
         }
@@ -952,8 +987,8 @@ fn verify_validator_registration_signature(
 #[post("/validator/register_validator")]
 pub async fn post_register_validator(
     db: Data<BeaconDB>,
-    builder_client: Option<
-        Data<Arc<ream_validator_beacon::builder::builder_client::BuilderClient>>,
+    builder_client: Data<
+        Option<Arc<ream_validator_beacon::builder::builder_client::BuilderClient>>,
     >,
     registrations: Json<Vec<SignedValidatorRegistrationV1>>,
 ) -> Result<impl Responder, ApiError> {
@@ -1000,7 +1035,7 @@ pub async fn post_register_validator(
         }
 
         // Forward immediately to builder if available
-        if let Some(ref client) = builder_client {
+        if let Some(client) = builder_client.get_ref().as_ref() {
             client
                 .register_validator(registration)
                 .await
@@ -1121,8 +1156,8 @@ pub async fn post_contribution_and_proofs(
 ) -> Result<impl Responder, ApiError> {
     let store = Store::new(db.get_ref().clone(), operation_pool.get_ref().clone(), None);
 
-    if store.is_syncing().map_err(|err| {
-        ApiError::InternalError(format!("Failed to check syncing status: {err:?}"))
+    if store.is_syncing_for_validator_api().map_err(|err| {
+        ApiError::InternalError(format!("Failed to check syncing status, err: {err:?}"))
     })? {
         return Err(ApiError::UnderSyncing);
     }
@@ -1285,9 +1320,10 @@ fn calculate_consensus_block_value(
 
 async fn get_local_execution_payload(
     execution_engine: &ExecutionEngine,
+    fork_name: ForkName,
     forkchoice_state: ForkchoiceStateV1,
     payload_attribute: PayloadAttributesV3,
-) -> Result<(PayloadV4, u64), ApiError> {
+) -> Result<(Payload, u64), ApiError> {
     let result = execution_engine
         .engine_forkchoice_updated_v3(
             ForkchoiceStateV1 {
@@ -1310,16 +1346,16 @@ async fn get_local_execution_payload(
         ApiError::InternalError("No payload id returned from forkchoice update".into())
     })?;
 
-    let payload_v4 = execution_engine
-        .engine_get_payload_v4(payload_id)
+    let payload = execution_engine
+        .engine_get_payload(&fork_name, payload_id)
         .await
         .map_err(|err| ApiError::InternalError(format!("Failed to get payload: {err}")))?;
 
-    let execution_value: u64 = U256::from_be_bytes(payload_v4.block_value.0)
+    let execution_value: u64 = U256::from_be_bytes(payload.block_value().0)
         .try_into()
         .map_err(|err| ApiError::InternalError(format!("Block value too large: {err}")))?;
 
-    Ok((payload_v4, execution_value))
+    Ok((payload, execution_value))
 }
 
 async fn compare_builder_vs_local(
@@ -1371,8 +1407,8 @@ pub async fn get_blocks_v3(
     query: Query<BlockQuery>,
     db: Data<BeaconDB>,
     operation_pool: Data<Arc<OperationPool>>,
-    execution_engine: Option<Data<ExecutionEngine>>,
-    builder_client: Option<Data<Arc<BuilderClient>>>,
+    execution_engine: Data<Option<ExecutionEngine>>,
+    builder_client: Data<Option<Arc<BuilderClient>>>,
 ) -> Result<impl Responder, ApiError> {
     let slot = path.into_inner();
     let query_params = query.into_inner();
@@ -1381,9 +1417,15 @@ pub async fn get_blocks_v3(
     let skip_randao_verification = query_params.skip_randao_verification.unwrap_or(false);
     let builder_boost_factor = query_params.builder_boost_factor.unwrap_or(100);
 
-    let mut state = db.get_latest_state().map_err(|err| {
-        ApiError::InternalError(format!("Unable to fetch the latest state: {err}"))
-    })?;
+    let store = Store::new(db.get_ref().clone(), operation_pool.get_ref().clone(), None);
+    let head_root = store
+        .get_head()
+        .map_err(|err| ApiError::InternalError(format!("Failed to get head root: {err:?}")))?;
+    let mut state = db
+        .state_provider()
+        .get(head_root)
+        .map_err(|err| ApiError::InternalError(format!("Failed to get state, error: {err:?}")))?
+        .ok_or_else(|| ApiError::NotFound(format!("Failed to find state for root {head_root}")))?;
 
     let current_slot = state.slot;
 
@@ -1392,6 +1434,11 @@ pub async fn get_blocks_v3(
             "Current slot is greater than requested slot".into(),
         ));
     }
+
+    // Process slots to get state at the requested slot.
+    state
+        .process_slots(slot)
+        .map_err(|err| ApiError::InternalError(format!("Failed to process slots: {err}")))?;
 
     let proposer_index = state.get_beacon_proposer_index(Some(slot)).map_err(|err| {
         ApiError::InternalError(format!(
@@ -1405,6 +1452,7 @@ pub async fn get_blocks_v3(
 
     let proposer_public_key = proposer.public_key.clone();
     let epoch = compute_epoch_at_slot(slot);
+    let fork_name = fork_name_at_epoch(epoch);
 
     verify_randao_reveal(
         &state,
@@ -1413,11 +1461,6 @@ pub async fn get_blocks_v3(
         skip_randao_verification,
         &proposer_public_key,
     )?;
-
-    // Process slots to get state at the requested slot
-    state
-        .process_slots(slot)
-        .map_err(|err| ApiError::InternalError(format!("Failed to process slots: {err}")))?;
 
     let fee_recipient = operation_pool
         .get_proposer_preparation(proposer_index)
@@ -1445,16 +1488,21 @@ pub async fn get_blocks_v3(
         parent_beacon_block_root: state.latest_block_header.tree_hash_root(),
     };
 
-    let Some(execution_engine) = execution_engine else {
+    let Some(execution_engine) = execution_engine.get_ref().as_ref() else {
         return Err(ApiError::InternalError(
             "Execution engine not available".into(),
         ));
     };
 
-    let (local_payload_v4, local_execution_value) =
-        get_local_execution_payload(&execution_engine, forkchoice_state, payload_attribute).await?;
+    let (local_payload, local_execution_value) = get_local_execution_payload(
+        execution_engine,
+        fork_name,
+        forkchoice_state,
+        payload_attribute,
+    )
+    .await?;
 
-    let builder_client_ref = builder_client.as_ref().map(|bc| bc.as_ref());
+    let builder_client_ref = builder_client.get_ref().as_ref();
     let (use_builder, builder_bid, builder_value) = compare_builder_vs_local(
         builder_client_ref,
         state.latest_execution_payload_header.block_hash,
@@ -1474,7 +1522,7 @@ pub async fn get_blocks_v3(
         .try_into()
         .unwrap_or_default();
     let attestations: VariableList<Attestation, U8> = operation_pool
-        .get_all_attestations()
+        .get_attestations_for_block(&state)
         .try_into()
         .unwrap_or_default();
     let deposits: VariableList<Deposit, U16> = operation_pool
@@ -1485,12 +1533,15 @@ pub async fn get_blocks_v3(
         .get_signed_voluntary_exits()
         .try_into()
         .unwrap_or_default();
-    let sync_aggregate = operation_pool
+    let mut sync_aggregate = operation_pool
         .get_sync_aggregate(
             slot.saturating_sub(1),
             state.latest_block_header.tree_hash_root(),
         )
         .unwrap_or_default();
+    if sync_aggregate.sync_committee_bits.num_set_bits() == 0 {
+        sync_aggregate.sync_committee_signature = BLSSignature::infinity();
+    }
     let bls_to_execution_changes: VariableList<SignedBLSToExecutionChange, U16> = operation_pool
         .get_signed_bls_to_execution_changes()
         .try_into()
@@ -1545,7 +1596,7 @@ pub async fn get_blocks_v3(
         };
 
         let response = ProduceBlockResponse {
-            version: "electra".to_string(),
+            version: fork_name.to_string(),
             execution_payload_blinded: true,
             execution_payload_value: builder_value,
             consensus_block_value,
@@ -1553,7 +1604,7 @@ pub async fn get_blocks_v3(
         };
 
         return Ok(HttpResponse::Ok()
-            .insert_header(("Eth-Consensus-Version", "electra"))
+            .insert_header(("Eth-Consensus-Version", fork_name.to_string()))
             .insert_header(("Eth-Execution-Payload-Blinded", "true"))
             .insert_header((
                 "Eth-Execution-Payload-Value",
@@ -1566,61 +1617,11 @@ pub async fn get_blocks_v3(
             .json(response));
     }
 
-    let execution_payload = ExecutionPayload {
-        parent_hash: local_payload_v4.execution_payload.parent_hash,
-        fee_recipient: local_payload_v4.execution_payload.fee_recipient,
-        state_root: local_payload_v4.execution_payload.state_root,
-        receipts_root: local_payload_v4.execution_payload.receipts_root,
-        logs_bloom: local_payload_v4.execution_payload.logs_bloom,
-        prev_randao: local_payload_v4.execution_payload.prev_randao,
-        block_number: local_payload_v4.execution_payload.block_number,
-        gas_limit: local_payload_v4.execution_payload.gas_limit,
-        gas_used: local_payload_v4.execution_payload.gas_used,
-        timestamp: local_payload_v4.execution_payload.timestamp,
-        extra_data: local_payload_v4.execution_payload.extra_data,
-        base_fee_per_gas: local_payload_v4.execution_payload.base_fee_per_gas,
-        block_hash: local_payload_v4.execution_payload.block_hash,
-        transactions: local_payload_v4.execution_payload.transactions,
-        withdrawals: local_payload_v4.execution_payload.withdrawals,
-        blob_gas_used: local_payload_v4.execution_payload.blob_gas_used,
-        excess_blob_gas: local_payload_v4.execution_payload.excess_blob_gas,
-    };
+    let execution_payload = local_payload.to_execution_payload();
 
-    let blob_kzg_commitments: Vec<KZGCommitment> = local_payload_v4
-        .blobs_bundle
-        .commitments
-        .iter()
-        .map(|c| {
-            let vec = c.clone().to_vec();
-            if vec.len() == 48 {
-                let mut bytes = [0u8; 48];
-                bytes.copy_from_slice(&vec);
-                Ok(KZGCommitment(bytes))
-            } else {
-                Err(ApiError::InternalError(
-                    "Invalid KZG commitment length (expected 48 bytes)".into(),
-                ))
-            }
-        })
-        .collect::<Result<_, _>>()?;
+    let blob_kzg_commitments: Vec<KZGCommitment> = local_payload.blobs_bundle().get_commitments();
 
-    let kzg_proofs: Vec<KZGProof> = local_payload_v4
-        .blobs_bundle
-        .proofs
-        .iter()
-        .map(|p| {
-            let vec = p.clone().to_vec();
-            if vec.len() == 48 {
-                let mut bytes = [0u8; 48];
-                bytes.copy_from_slice(&vec);
-                Ok(KZGProof { 0: bytes })
-            } else {
-                Err(ApiError::InternalError(
-                    "Invalid KZG proof length (expected 48 bytes)".into(),
-                ))
-            }
-        })
-        .collect::<Result<_, _>>()?;
+    let kzg_proofs: Vec<KZGProof> = local_payload.blobs_bundle().get_proofs();
 
     if blob_kzg_commitments.len() != kzg_proofs.len() {
         return Err(ApiError::InternalError(
@@ -1629,7 +1630,7 @@ pub async fn get_blocks_v3(
     }
 
     let execution_requests =
-        get_execution_requests(local_payload_v4.execution_requests.clone()).unwrap_or_default();
+        get_execution_requests(local_payload.execution_requests().clone()).unwrap_or_default();
 
     let block_body = BeaconBlockBody {
         randao_reveal: common_block_body_fields.0,
@@ -1647,13 +1648,21 @@ pub async fn get_blocks_v3(
         execution_requests,
     };
 
-    let block = BeaconBlock {
+    let mut block = BeaconBlock {
         slot,
         proposer_index,
         parent_root: state.latest_block_header.tree_hash_root(),
-        state_root: state.tree_hash_root(),
+        state_root: B256::default(),
         body: block_body,
     };
+    let mut post_state = state.clone();
+    post_state
+        .process_block(&block, &Option::<ExecutionEngine>::None)
+        .await
+        .map_err(|err| {
+            ApiError::InternalError(format!("Failed to compute post-state root: {err}"))
+        })?;
+    block.state_root = post_state.tree_hash_root();
 
     let blob_versioned_hashes: Vec<B256> = blob_kzg_commitments
         .iter()
@@ -1687,7 +1696,7 @@ pub async fn get_blocks_v3(
         .collect();
 
     let response = ProduceBlockResponse {
-        version: "electra".to_string(),
+        version: fork_name.to_string(),
         execution_payload_blinded: false,
         execution_payload_value: local_execution_value,
         consensus_block_value,
@@ -1699,7 +1708,7 @@ pub async fn get_blocks_v3(
     };
 
     Ok(HttpResponse::Ok()
-        .insert_header(("Eth-Consensus-Version", "electra"))
+        .insert_header(("Eth-Consensus-Version", fork_name.to_string()))
         .insert_header(("Eth-Execution-Payload-Blinded", "false"))
         .insert_header((
             "Eth-Execution-Payload-Value",

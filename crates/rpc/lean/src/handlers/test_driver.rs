@@ -12,12 +12,8 @@ use lean_spec_tests::types::{
     ssz::{SignedBlockJSON, StateJSON},
 };
 use ream_api_types_common::error::ApiError;
-#[cfg(feature = "devnet4")]
-use ream_consensus_lean::attestation::AggregatedSignatureProof;
 #[cfg(feature = "devnet5")]
 use ream_consensus_lean::attestation::{MultiMessageAggregate, SingleMessageAggregate};
-#[cfg(feature = "devnet4")]
-use ream_consensus_lean::block::BlockSignatures;
 use ream_consensus_lean::{
     attestation::{SignedAggregatedAttestation, SignedAttestation},
     block::{Block as ReamBlock, BlockBody, SignedBlock},
@@ -29,6 +25,8 @@ use ream_fork_choice_lean::{
     store::{LeanStoreWriter, Store},
 };
 use ream_network_spec::networks::lean_network_spec;
+#[cfg(feature = "devnet5")]
+use ream_post_quantum_crypto::lean_multisig::type_2::type_2_setup_verifier;
 use ream_post_quantum_crypto::leansig::{public_key::PublicKey, signature::Signature};
 use ream_storage::{
     db::ReamDB,
@@ -38,12 +36,15 @@ use ream_storage::{
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "devnet5")]
 use ssz_types::typenum::U524288;
-#[cfg(feature = "devnet4")]
-use ssz_types::typenum::U1048576;
 use ssz_types::{BitList, VariableList, typenum::U4096};
 use tree_hash::TreeHash;
 
 const TEST_DRIVER_ENV: &str = "HIVE_LEAN_TEST_DRIVER";
+
+/// leanSpec's mocked prover (`proofSetting: 0` fixtures) emits placeholder aggregate proofs
+/// prefixed with this sentinel and expects verifiers to accept them without cryptographic checks
+#[cfg(feature = "devnet5")]
+const MOCK_PROOF_PREFIX: &[u8] = b"\x00MOCKED-AGGREGATION-PROOF\x00";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -77,7 +78,8 @@ pub struct GenesisParams {
 pub struct StateTransitionRunRequest {
     pre: FixtureState,
     blocks: Vec<FixtureBlock>,
-    #[serde(default)]
+    // devnet4 fixtures use `expectException`; devnet5 uses `rejectionReason`. Accept both
+    #[serde(default, alias = "rejectionReason")]
     expect_exception: Option<String>,
 }
 
@@ -204,29 +206,6 @@ fn new_test_db() -> Result<ream_storage::db::lean::LeanDB, ApiError> {
 }
 
 fn blank_signed_block(block: ReamBlock) -> anyhow::Result<SignedBlock> {
-    #[cfg(feature = "devnet4")]
-    let proofs = block
-        .body
-        .attestations
-        .iter()
-        .map(|attestation| {
-            Ok(AggregatedSignatureProof::new(
-                attestation.aggregation_bits.clone(),
-                VariableList::<u8, U1048576>::new(vec![])
-                    .map_err(|err| anyhow!("failed to build empty proof data: {err:?}"))?,
-            ))
-        })
-        .collect::<anyhow::Result<Vec<_>>>()?;
-    #[cfg(feature = "devnet4")]
-    return Ok(SignedBlock {
-        block,
-        signature: BlockSignatures {
-            attestation_signatures: VariableList::try_from(proofs)
-                .map_err(|err| anyhow!("failed to build attestation signatures list: {err}"))?,
-            proposer_signature: Signature::blank(),
-        },
-    });
-
     #[cfg(feature = "devnet5")]
     Ok(SignedBlock {
         block,
@@ -358,6 +337,15 @@ async fn build_genesis_store(params: Option<&GenesisParams>) -> Result<Store, Ap
         .map_err(|err| driver_error("failed to initialize fork-choice store", err))
 }
 
+/// Whether the fixture's aggregate proof is a leanSpec mock (placeholder bytes prefixed with
+/// [`MOCK_PROOF_PREFIX`]) rather than a genuine cryptographic proof.
+#[cfg(feature = "devnet5")]
+fn is_mock_aggregate_proof(fixture: &GossipAggregatedAttestationStep) -> bool {
+    hex::decode(fixture.proof.proof_data.data.trim_start_matches("0x"))
+        .map(|bytes| bytes.starts_with(MOCK_PROOF_PREFIX))
+        .unwrap_or(false)
+}
+
 fn convert_gossip_aggregate(
     fixture: &GossipAggregatedAttestationStep,
 ) -> anyhow::Result<SignedAggregatedAttestation> {
@@ -372,17 +360,12 @@ fn convert_gossip_aggregate(
 
     let proof_bytes = hex::decode(fixture.proof.proof_data.data.trim_start_matches("0x"))
         .map_err(|err| anyhow!("failed to decode aggregate proof bytes: {err}"))?;
-    #[cfg(feature = "devnet4")]
-    let proof_data = VariableList::<u8, U1048576>::new(proof_bytes)
-        .map_err(|err| anyhow!("failed to build proof data list: {err:?}"))?;
     #[cfg(feature = "devnet5")]
     let proof = VariableList::<u8, U524288>::new(proof_bytes)
         .map_err(|err| anyhow!("failed to build proof data list: {err:?}"))?;
 
     Ok(SignedAggregatedAttestation {
         data: fixture.data.clone(),
-        #[cfg(feature = "devnet4")]
-        proof: AggregatedSignatureProof::new(participants, proof_data),
         #[cfg(feature = "devnet5")]
         proof: SingleMessageAggregate::new(participants, proof),
     })
@@ -502,10 +485,18 @@ async fn apply_fork_choice_step(store: &mut Store, step: ForkChoiceStep) -> anyh
             }
             (None, None) => Err(anyhow!("tick missing time or interval")),
         },
-        ForkChoiceStep::Block { block, .. } => {
-            let block = ReamBlock::try_from(&block)?;
-            advance_to_block_slot(store, &block, true, true).await?;
-            let signed_block = blank_signed_block(block)?;
+        ForkChoiceStep::Block {
+            block,
+            tick_to_slot,
+            ..
+        } => {
+            let ream_block = ReamBlock::try_from(&block)?;
+            // Advance the store clock to the block's slot unless the fixture pins the clock
+            // (`tickToSlot: false`) to test importing a block ahead of the store clock.
+            if tick_to_slot.unwrap_or(true) {
+                advance_to_block_slot(store, &ream_block, true, true).await?;
+            }
+            let signed_block = blank_signed_block(ream_block)?;
             store.on_block(&signed_block, false).await
         }
         ForkChoiceStep::Attestation { attestation, .. } => {
@@ -517,12 +508,25 @@ async fn apply_fork_choice_step(store: &mut Store, step: ForkChoiceStep) -> anyh
             store.on_gossip_attestation(signed, false).await
         }
         ForkChoiceStep::GossipAggregatedAttestation { attestation, .. } => {
-            if let Some(attestation) = attestation {
-                store
-                    .on_gossip_aggregated_attestation(convert_gossip_aggregate(&attestation)?)
-                    .await
-            } else {
-                Ok(())
+            let Some(attestation) = attestation else {
+                return Ok(());
+            };
+            #[cfg(feature = "devnet5")]
+            {
+                // Mocked proofs (proofSetting=0) carry the MOCK_PROOF_PREFIX sentinel and
+                // can't be verified; apply the attestation to the store without the proof
+                // check so it still folds into the aggregated pool and can move the head
+                // Genuine proofs run the full pipeline after compiling the verifier bytecode.
+                let is_mocked = is_mock_aggregate_proof(&attestation);
+                let signed = convert_gossip_aggregate(&attestation)?;
+                if is_mocked {
+                    store
+                        .on_gossip_aggregated_attestation_without_verification(signed)
+                        .await
+                } else {
+                    type_2_setup_verifier();
+                    store.on_gossip_aggregated_attestation(signed).await
+                }
             }
         }
         ForkChoiceStep::Checks { .. } => Ok(()),

@@ -6,10 +6,12 @@ macro_rules! test_epoch_processing {
             #[allow(non_snake_case)]
             mod [<tests_ $processing_fn>] {
                 use super::*;
+                use ream_network_spec::networks::initialize_test_network_spec;
                 use rstest::rstest;
 
                 #[rstest]
                 fn test_epoch_processing() {
+                    initialize_test_network_spec();
                     let base_path = format!(
                         "mainnet/tests/mainnet/fulu/epoch_processing/{}/pyspec_tests",
                         stringify!($operation_name)

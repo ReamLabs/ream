@@ -2,14 +2,21 @@ use std::collections::HashMap;
 
 use alloy_primitives::{Address, B256, map::HashSet};
 use parking_lot::RwLock;
+use ream_bls::{BLSSignature, traits::Aggregatable};
 use ream_consensus_beacon::{
     attestation::Attestation, attester_slashing::AttesterSlashing,
     bls_to_execution_change::SignedBLSToExecutionChange, electra::beacon_state::BeaconState,
     proposer_slashing::ProposerSlashing, sync_aggregate::SyncAggregate,
     voluntary_exit::SignedVoluntaryExit,
 };
-use ream_consensus_misc::deposit::Deposit;
+use ream_consensus_misc::{
+    constants::beacon::MIN_ATTESTATION_INCLUSION_DELAY, deposit::Deposit,
+    misc::compute_epoch_at_slot,
+};
 use tree_hash::TreeHash;
+
+/// Electra's `MAX_ATTESTATIONS_ELECTRA`: the most attestations a block body can carry.
+const MAX_ATTESTATIONS_ELECTRA: usize = 8;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProposerPreparation {
@@ -197,6 +204,39 @@ impl OperationPool {
         }
     }
 
+    /// Select attestations that can be included in the block.
+    ///
+    /// Only keep attestations whose target epoch is current or previous, whose minimum inclusion
+    /// delay has passed, and aggregate non-overlapping votes by key.
+    pub fn get_attestations_for_block(&self, state: &BeaconState) -> Vec<Attestation> {
+        let current_epoch = state.get_current_epoch();
+        let previous_epoch = state.get_previous_epoch();
+        let attestations = self.attestations.read();
+
+        let mut keys: Vec<&AttestationKey> = attestations
+            .keys()
+            .filter(|key| {
+                let target_epoch = compute_epoch_at_slot(key.slot);
+                (target_epoch == current_epoch || target_epoch == previous_epoch)
+                    && key.slot + MIN_ATTESTATION_INCLUSION_DELAY <= state.slot
+            })
+            .collect();
+        keys.sort_by_key(|key| std::cmp::Reverse(key.slot));
+
+        keys.into_iter()
+            .filter_map(|key| aggregate_attestation_group(&attestations[key]))
+            .take(MAX_ATTESTATIONS_ELECTRA)
+            .collect()
+    }
+
+    /// Keep only attestations from the current or previous epoch.
+    pub fn clean_attestations(&self, current_epoch: u64) {
+        self.attestations.write().retain(|key, _| {
+            let target_epoch = compute_epoch_at_slot(key.slot);
+            target_epoch + 1 >= current_epoch
+        });
+    }
+
     pub fn get_sync_aggregate(&self, slot: u64, beacon_block_root: B256) -> Option<SyncAggregate> {
         let key = SyncAggregateKey {
             slot,
@@ -231,6 +271,52 @@ impl OperationPool {
     pub fn insert_deposit(&self, deposit: Deposit) {
         self.deposits.write().insert(deposit);
     }
+}
+
+/// Aggregate non-overlapping votes from the same attestation group.
+fn aggregate_attestation_group(group: &[Attestation]) -> Option<Attestation> {
+    let mut aggregate = group.first()?.clone();
+    let mut aggregation_bits = aggregate.aggregation_bits.clone();
+    let mut seen = HashSet::new();
+    let mut signatures = Vec::new();
+
+    for index in 0..aggregation_bits.len() {
+        aggregation_bits.set(index, false).ok()?;
+    }
+
+    for attestation in group {
+        if attestation.committee_bits != aggregate.committee_bits {
+            continue;
+        }
+
+        let set_bits: Vec<usize> = (0..attestation.aggregation_bits.len())
+            .filter(|&index| attestation.aggregation_bits.get(index).unwrap_or(false))
+            .collect();
+
+        if set_bits.is_empty()
+            || set_bits
+                .iter()
+                .any(|position| *position >= aggregation_bits.len())
+            || set_bits.iter().any(|position| seen.contains(position))
+        {
+            continue;
+        }
+
+        for position in &set_bits {
+            seen.insert(*position);
+            aggregation_bits.set(*position, true).ok()?;
+        }
+
+        signatures.push(&attestation.signature);
+    }
+
+    if signatures.is_empty() {
+        return None;
+    }
+
+    aggregate.aggregation_bits = aggregation_bits;
+    aggregate.signature = BLSSignature::aggregate(&signatures).ok()?;
+    Some(aggregate)
 }
 
 #[cfg(test)]

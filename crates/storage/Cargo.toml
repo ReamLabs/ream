@@ -10,9 +10,13 @@ rust-version.workspace = true
 version.workspace = true
 
 [features]
-default = ["devnet4"]
-devnet4 = ["ream-consensus-lean/devnet4"]
+default = ["devnet5"]
 devnet5 = ["ream-consensus-lean/devnet5"]
+optimized-leanvm = [
+    "devnet5",
+    "ream-consensus-lean/optimized-leanvm",
+    "ream-post-quantum-crypto/optimized-leanvm",
+]
 
 [dependencies]
 alloy-primitives.workspace = true

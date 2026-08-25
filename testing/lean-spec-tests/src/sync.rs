@@ -19,30 +19,15 @@ pub fn load_sync_test(path: impl AsRef<Path>) -> anyhow::Result<TestFixture<Sync
 
 /// Run a single sync test case (currently the only operation is `verify_checkpoint`)
 pub fn run_sync_test(test_name: &str, test: &SyncTest) -> anyhow::Result<()> {
-    // devnet4: operation is a plain string, params in output
-    // devnet5: operation is an object with kind + params
-    let (operation_kind, num_validators, expected_anchor_slot) =
-        if let Some(kind) = test.operation.as_str() {
-            let num_validators = test
-                .output
-                .validator_count
-                .ok_or_else(|| anyhow!("devnet4 format requires output.validatorCount"))?;
-            let anchor_slot = test
-                .output
-                .anchor_slot
-                .ok_or_else(|| anyhow!("devnet4 format requires output.anchorSlot"))?;
-            (kind.to_string(), num_validators, anchor_slot)
-        } else {
-            let kind = test.operation["kind"]
-                .as_str()
-                .ok_or_else(|| anyhow!("Missing operation.kind"))?
-                .to_string();
-            let num_validators = test.operation["numValidators"]
-                .as_u64()
-                .ok_or_else(|| anyhow!("Missing operation.numValidators"))?;
-            let anchor_slot = test.operation["anchorSlot"].as_u64().unwrap_or(0);
-            (kind, num_validators, anchor_slot)
-        };
+    // operation is an object with `kind` and its params.
+    let operation_kind = test.operation["kind"]
+        .as_str()
+        .ok_or_else(|| anyhow!("Missing operation.kind"))?
+        .to_string();
+    let num_validators = test.operation["numValidators"]
+        .as_u64()
+        .ok_or_else(|| anyhow!("Missing operation.numValidators"))?;
+    let expected_anchor_slot = test.operation["anchorSlot"].as_u64().unwrap_or(0);
 
     info!("Running sync test: {test_name} (operation={operation_kind})");
 

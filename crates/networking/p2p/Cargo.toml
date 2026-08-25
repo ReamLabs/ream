@@ -10,18 +10,22 @@ rust-version.workspace = true
 version.workspace = true
 
 [features]
-default = ["devnet4"]
-devnet4 = [
-    "ream-consensus-lean/devnet4",
-    "ream-chain-lean/devnet4",
-    "ream-network-state-lean/devnet4",
-    "ream-storage/devnet4",
-]
+default = ["devnet5"]
 devnet5 = [
     "ream-consensus-lean/devnet5",
     "ream-chain-lean/devnet5",
     "ream-network-state-lean/devnet5",
     "ream-storage/devnet5",
+]
+optimized-leanvm = [
+    "ream-network-spec/optimized-leanvm",
+    "devnet5",
+    "ream-chain-lean/optimized-leanvm",
+    "ream-consensus-lean/optimized-leanvm",
+    "ream-network-state-lean/optimized-leanvm",
+    "ream-req-resp/optimized-leanvm",
+    "ream-storage/optimized-leanvm",
+    "ream-validator-beacon/optimized-leanvm",
 ]
 
 [dependencies]

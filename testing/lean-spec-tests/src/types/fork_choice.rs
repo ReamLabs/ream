@@ -18,6 +18,8 @@ pub struct ForkChoiceTest {
     pub anchor_block: Block,
     #[serde(default)]
     pub anchor_valid: Option<bool>,
+    #[serde(default)]
+    pub proof_setting: Option<u64>,
     pub steps: Vec<ForkChoiceStep>,
 }
 
@@ -32,18 +34,25 @@ pub enum ForkChoiceStep {
         time: Option<u64>,
         #[serde(default)]
         interval: Option<u64>,
-        #[serde(default)]
+        #[serde(default, rename = "hasProposal")]
         has_proposal: Option<bool>,
     },
     Block {
         valid: bool,
         checks: Option<StoreChecks>,
+        /// Whether to advance the store clock to the block's slot before import.
+        /// Absent/`true` for normal blocks; `false` for blocks delivered ahead
+        /// of the store clock.
+        #[serde(default, rename = "tickToSlot")]
+        tick_to_slot: Option<bool>,
         block: Block,
     },
     Attestation {
         valid: bool,
         checks: Option<StoreChecks>,
         attestation: Attestation,
+        #[serde(default, rename = "isAggregator")]
+        is_aggregator: Option<bool>,
     },
     GossipAggregatedAttestation {
         #[serde(default)]
@@ -76,6 +85,7 @@ pub struct StoreChecks {
 #[serde(rename_all = "camelCase")]
 pub struct AttestationCheck {
     pub validator: u64,
+    pub head_slot: Option<u64>,
     pub source_slot: Option<u64>,
     pub target_slot: Option<u64>,
     pub location: String,
@@ -120,22 +130,16 @@ impl TryFrom<State> for LeanState {
             .map_err(|err| anyhow!("Failed to create justifications_roots VariableList: {err}"))?;
 
         let justifications_validators = {
-            let validator_count = validators.len();
-            let total_bits = state.justifications_validators.data.len() * validator_count;
+            let bits = &state.justifications_validators.data;
 
-            let mut bitlist = ssz_types::BitList::with_capacity(total_bits).map_err(|err| {
+            let mut bitlist = ssz_types::BitList::with_capacity(bits.len()).map_err(|err| {
                 anyhow!("Failed to create BitList for justifications_validators: {err:?}")
             })?;
 
-            for (root_index, validator_list) in
-                state.justifications_validators.data.iter().enumerate()
-            {
-                for &validator_index in validator_list {
-                    let flat_index = root_index * validator_count + validator_index as usize;
-                    bitlist.set(flat_index, true).map_err(|err| {
-                        anyhow!("Failed to set bit at flat index {flat_index}: {err:?}")
-                    })?;
-                }
+            for (index, &bit) in bits.iter().enumerate() {
+                bitlist
+                    .set(index, bit)
+                    .map_err(|err| anyhow!("Failed to set bit at index {index}: {err:?}"))?;
             }
             bitlist
         };

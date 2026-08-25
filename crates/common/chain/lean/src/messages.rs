@@ -81,5 +81,10 @@ pub enum RequestResult<T> {
 pub enum ServiceResponse<T> {
     Ok(T),
     Syncing,
+    SyncLag {
+        head_slot: u64,
+        lag: u64,
+        max_seen_slot: u64,
+    },
     Err(anyhow::Error),
 }

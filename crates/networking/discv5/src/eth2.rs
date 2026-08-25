@@ -1,9 +1,6 @@
 use alloy_primitives::{B256, aliases::B32};
 use alloy_rlp::{BufMut, Decodable, Encodable, bytes::Bytes};
-use ream_consensus_misc::{
-    constants::beacon::{ELECTRA_FORK_EPOCH, FAR_FUTURE_EPOCH},
-    fork_data::{ForkData, compute_fork_digest},
-};
+use ream_consensus_misc::constants::beacon::FAR_FUTURE_EPOCH;
 use ream_network_spec::networks::beacon_network_spec;
 use ssz::{Decode, Encode};
 use ssz_derive::{Decode, Encode};
@@ -19,17 +16,32 @@ pub struct EnrForkId {
 }
 
 impl EnrForkId {
-    pub fn electra(genesis_validators_root: B256) -> Self {
-        let current_fork_version = beacon_network_spec().electra_fork_version;
-        let next_fork_version = current_fork_version;
-        let next_fork_epoch = FAR_FUTURE_EPOCH;
+    pub fn current(genesis_validators_root: B256, epoch: u64) -> Self {
+        let spec = beacon_network_spec();
 
-        let fork_data = ForkData {
-            current_version: current_fork_version,
-            genesis_validators_root,
+        let fork_digest = spec.fork_digest(epoch, genesis_validators_root);
+
+        let fork_schedule = spec.fork_schedule();
+
+        let current_version = spec.current_fork_version(epoch);
+
+        let next_regular_fork = fork_schedule.0.iter().find(|fork| fork.epoch > epoch);
+
+        let next_bpo_epoch = spec
+            .blob_schedule
+            .iter()
+            .map(|params| params.epoch)
+            .filter(|&bpo_epoch| bpo_epoch > epoch)
+            .min();
+
+        let (next_fork_version, next_fork_epoch) = match (next_regular_fork, next_bpo_epoch) {
+            (Some(regular), Some(bpo)) if regular.epoch <= bpo => {
+                (regular.current_version, regular.epoch)
+            }
+            (Some(regular), None) => (regular.current_version, regular.epoch),
+            (_, Some(bpo)) => (current_version, bpo),
+            (None, None) => (current_version, FAR_FUTURE_EPOCH),
         };
-
-        let fork_digest = compute_fork_digest(fork_data, ELECTRA_FORK_EPOCH);
 
         Self {
             fork_digest,

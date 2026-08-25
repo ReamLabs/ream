@@ -42,14 +42,10 @@ pub fn run_state_transition_test(
     let mut state = LeanState::try_from(test.pre.clone())
         .map_err(|err| anyhow!("Failed to convert pre-state: {err}"))?;
 
-    // Track whether we expect an exception (devnet4: expectException, devnet5: rejectionReason)
+    // Track whether we expect a block to be rejected (rejectionReason).
     let expect_exception = test.expects_failure();
     if expect_exception {
-        let reason = test
-            .expect_exception
-            .as_deref()
-            .or(test.rejection_reason.as_deref())
-            .unwrap_or("unknown");
+        let reason = test.rejection_reason.as_deref().unwrap_or("unknown");
         info!("Expected result: Exception: {reason}");
     } else {
         info!("Expected result: Success");
@@ -95,11 +91,7 @@ pub fn run_state_transition_test(
     // Check if the result matches expectations
     match (result, expect_exception) {
         (Ok(_), true) => {
-            let reason = test
-                .expect_exception
-                .as_deref()
-                .or(test.rejection_reason.as_deref())
-                .unwrap_or("unknown");
+            let reason = test.rejection_reason.as_deref().unwrap_or("unknown");
             bail!("Expected exception '{reason}' but state transition succeeded");
         }
         (Err(err), false) => {

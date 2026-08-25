@@ -1,18 +1,30 @@
 use anyhow::anyhow;
 use bls12_381::{
-    G2Projective, Scalar,
+    G1Projective, G2Projective, Scalar,
     hash_to_curve::{ExpandMsgXmd, HashToCurve},
 };
 use group::Curve;
 use ssz_types::FixedVector;
 
 use crate::{
-    PrivateKey,
+    PrivateKey, PublicKey,
     constants::DST,
     errors::BLSError,
     signature::BLSSignature,
     traits::{Signable, ZkcryptoSignable},
 };
+
+impl PrivateKey {
+    pub fn public_key(&self) -> Result<PublicKey, BLSError> {
+        let scalar = Scalar::from_bytes(self.inner.as_ref())
+            .into_option()
+            .ok_or(BLSError::InvalidPrivateKey(anyhow!(
+                "Failed to convert inner to scalar"
+            )))?;
+
+        Ok(PublicKey::from(G1Projective::generator() * scalar))
+    }
+}
 
 impl Signable for PrivateKey {
     type Error = BLSError;

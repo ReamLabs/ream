@@ -15,18 +15,7 @@ name = "ream"
 path = "src/main.rs"
 
 [features]
-default = ["devnet4"]
-devnet4 = [
-    "ream-chain-lean/devnet4",
-    "ream-consensus-lean/devnet4",
-    "ream-fork-choice-lean/devnet4",
-    "ream-keystore/devnet4",
-    "ream-network-spec/devnet4",
-    "ream-p2p/devnet4",
-    "ream-rpc-lean/devnet4",
-    "ream-storage/devnet4",
-    "ream-validator-lean/devnet4",
-]
+default = ["devnet5"]
 devnet5 = [
     "ream-chain-lean/devnet5",
     "ream-consensus-lean/devnet5",
@@ -46,6 +35,33 @@ reth = [
     "ream-fork-choice-lean/reth",
     "ream-rpc-lean/reth",
 ]
+jemalloc = ["dep:tikv-jemallocator"]
+shadow-integration = [
+    "ream-executor/shadow-integration",
+    "ream-post-quantum-crypto/shadow-integration",
+]
+optimized-leanvm = [
+    "ream-network-spec/optimized-leanvm",
+    "devnet5",
+    "ream-chain-beacon/optimized-leanvm",
+    "ream-chain-lean/optimized-leanvm",
+    "ream-checkpoint-sync-beacon/optimized-leanvm",
+    "ream-checkpoint-sync-lean/optimized-leanvm",
+    "ream-consensus-lean/optimized-leanvm",
+    "ream-fork-choice-beacon/optimized-leanvm",
+    "ream-fork-choice-lean/optimized-leanvm",
+    "ream-keystore/optimized-leanvm",
+    "ream-network-manager/optimized-leanvm",
+    "ream-network-state-lean/optimized-leanvm",
+    "ream-p2p/optimized-leanvm",
+    "ream-post-quantum-crypto/optimized-leanvm",
+    "ream-rpc-beacon/optimized-leanvm",
+    "ream-rpc-lean/optimized-leanvm",
+    "ream-storage/optimized-leanvm",
+    "ream-sync-committee-pool/optimized-leanvm",
+    "ream-validator-beacon/optimized-leanvm",
+    "ream-validator-lean/optimized-leanvm",
+]
 
 [dependencies]
 alloy-primitives.workspace = true
@@ -64,7 +80,9 @@ serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true
 ssz_types.workspace = true
-tikv-jemallocator.workspace = true
+tikv-jemallocator = { workspace = true, optional = true, features = [
+    "unprefixed_malloc_on_supported_platforms",
+] }
 tokio.workspace = true
 tracing = { workspace = true, features = ["log"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
@@ -83,6 +101,9 @@ ream-checkpoint-sync-lean.workspace = true
 ream-consensus-beacon.workspace = true
 ream-consensus-lean.workspace = true
 ream-consensus-misc.workspace = true
+ream-data-availability.workspace = true
+ream-data-availability-node.workspace = true
+ream-data-availability-verifier-kzg.workspace = true
 ream-discv5.workspace = true
 ream-events-beacon.workspace = true
 ream-execution-engine.workspace = true
@@ -102,6 +123,7 @@ ream-reth-engine = { workspace = true, optional = true }
 ream-rpc-beacon.workspace = true
 ream-rpc-common.workspace = true
 ream-rpc-lean.workspace = true
+ream-rpc-data-availability.workspace = true
 ream-storage.workspace = true
 ream-sync.workspace = true
 ream-sync-committee-pool.workspace = true
@@ -109,7 +131,11 @@ ream-validator-beacon.workspace = true
 ream-validator-lean.workspace = true
 
 [dev-dependencies]
+ream-bls.workspace = true
+ream-mock-execution-engine.workspace = true
+reqwest.workspace = true
 serial_test = "3.4.0"
+sha2.workspace = true
 
 [lints]
 workspace = true

@@ -1,4 +1,8 @@
-use std::collections::HashSet;
+use std::{
+    collections::HashSet,
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use anyhow::anyhow;
 use ream_chain_lean::{
@@ -7,8 +11,6 @@ use ream_chain_lean::{
 };
 #[cfg(feature = "devnet5")]
 use ream_consensus_lean::attestation::MultiMessageAggregate;
-#[cfg(feature = "devnet4")]
-use ream_consensus_lean::block::BlockSignatures;
 use ream_consensus_lean::{
     attestation::SignedAttestation,
     block::{BlockWithSignatures, SignedBlock},
@@ -29,7 +31,10 @@ use ream_post_quantum_crypto::lean_multisig::type_2::{
 };
 #[cfg(feature = "devnet5")]
 use ssz_types::VariableList;
-use tokio::sync::{mpsc, oneshot};
+use tokio::{
+    sync::{mpsc, oneshot},
+    time::{Duration, sleep},
+};
 use tracing::{Level, debug, enabled, info, warn};
 use tree_hash::TreeHash;
 
@@ -40,22 +45,24 @@ use tree_hash::TreeHash;
 /// Every second tick (t=1/4) it attestations on the proposed block.
 /// NOTE: Other ticks should be handled by the other services, such as [LeanChainService].
 pub struct ValidatorService {
-    keystores: Vec<ValidatorKeystore>,
+    keystores: Vec<Arc<ValidatorKeystore>>,
     chain_sender: mpsc::UnboundedSender<LeanChainServiceMessage>,
+    prebuilding_slot: Option<u64>,
 }
 
 impl ValidatorService {
     pub async fn new(
-        keystores: Vec<ValidatorKeystore>,
+        keystores: Vec<Arc<ValidatorKeystore>>,
         chain_sender: mpsc::UnboundedSender<LeanChainServiceMessage>,
     ) -> Self {
         ValidatorService {
             keystores,
             chain_sender,
+            prebuilding_slot: None,
         }
     }
 
-    pub async fn start(self) -> anyhow::Result<()> {
+    pub async fn start(mut self) -> anyhow::Result<()> {
         info!(
             genesis_time = lean_network_spec().genesis_time,
             "ValidatorService started with {} validator(s)",
@@ -75,61 +82,29 @@ impl ValidatorService {
                 _ = interval.tick() => {
                     let slot = tick_count / INTERVALS_PER_SLOT;
                     match tick_count % INTERVALS_PER_SLOT {
+                        4 => {
+                            let next_slot = slot + 1;
+                            if let Some(keystore) = self.is_proposer(next_slot) {
+                                info!(slot = next_slot, tick = tick_count, "Pre-building block by Validator {}", keystore.index);
+                                self.prebuilding_slot = Some(next_slot);
+                                let chain_sender = self.chain_sender.clone();
+                                tokio::spawn(async move {
+                                    build_block(chain_sender, next_slot, keystore).await;
+                                });
+                            }
+                        }
                         0 => {
-                            // First tick (t=0): Propose a block.
-                            if slot > 0 && let Some(keystore) = self.is_proposer(slot) {
+                            if self.prebuilding_slot == Some(slot) {
+                                self.prebuilding_slot = None;
+                            } else if slot > 0 && let Some(keystore) = self.is_proposer(slot) {
                                 info!(slot, tick = tick_count, "Proposing block by Validator {}", keystore.index);
-                                let (tx, rx) = oneshot::channel();
-
-                                self.chain_sender
-                                    .send(LeanChainServiceMessage::ProduceBlock { slot, sender: tx })
-                                    .expect("Failed to send produce block to LeanChainService");
-
-                                // Wait for the block to be produced.
-                                let block_with_signatures = match rx.await {
-                                    Ok(ServiceResponse::Ok(block_with_signatures)) => block_with_signatures,
-                                    Ok(ServiceResponse::Syncing) => {
-                                        warn!("LeanChainService is syncing, cannot produce block for slot {slot}");
-                                        tick_count += 1;
-                                        continue;
-                                    }
-                                    Ok(ServiceResponse::Err(err)) => {
-                                        warn!("Failed to produce block for slot {slot}: {err}");
-                                        tick_count += 1;
-                                        continue;
-                                    }
-                                    Err(err) => {
-                                        return Err(anyhow!("Failed to receive block from LeanChainService: {err:?}"));
-                                    }
-                                };
-
-                                let block = block_with_signatures.block.clone();
-
-                                info!(
-                                    slot = block.slot,
-                                    block_root = ?block.tree_hash_root(),
-                                    "Building block finished by Validator {}",
-                                    keystore.index,
-                                );
-
-                                let signed_block = match self.sign_block(keystore, block_with_signatures, slot) {
-                                    Ok(signed_block) => signed_block,
-                                    Err(err) => {
-                                        warn!("Failed to sign block for slot {slot}: {err}");
-                                        tick_count += 1;
-                                        continue;
-                                    }
-                                };
-
-                                // Send block to the LeanChainService.
-                                self.chain_sender
-                                    .send(LeanChainServiceMessage::ProcessBlock { signed_block: Box::new(signed_block), need_gossip: true })
-                                    .map_err(|err| anyhow!("Failed to send block to LeanChainService: {err:?}"))?;
+                                let chain_sender = self.chain_sender.clone();
+                                tokio::spawn(async move {
+                                    build_block(chain_sender, slot, keystore).await;
+                                });
                             } else {
-
                                 let proposer_index = slot % lean_network_spec().num_validators;
                                 info!("Not proposer for slot {slot} (proposer is validator {proposer_index}), skipping");
-
                             }
                         }
                         1 => {
@@ -147,6 +122,17 @@ impl ValidatorService {
                                 Ok(ServiceResponse::Ok(data)) => data,
                                 Ok(ServiceResponse::Syncing) => {
                                     warn!("LeanChainService is syncing, cannot build attestation data for slot {slot}");
+                                    tick_count += 1;
+                                    continue;
+                                }
+                                Ok(ServiceResponse::SyncLag { head_slot, lag, max_seen_slot }) => {
+                                    warn!(
+                                        slot,
+                                        head_slot,
+                                        lag,
+                                        max_seen_slot,
+                                        "Skipping attestation: validator is too far behind the chain head",
+                                    );
                                     tick_count += 1;
                                     continue;
                                 }
@@ -235,96 +221,150 @@ impl ValidatorService {
     }
 
     /// Determine if one of the keystores is the proposer for the current slot.
-    fn is_proposer(&self, slot: u64) -> Option<&ValidatorKeystore> {
+    fn is_proposer(&self, slot: u64) -> Option<Arc<ValidatorKeystore>> {
         let proposer_index = slot % lean_network_spec().num_validators;
 
         self.keystores
             .iter()
             .find(|keystore| keystore.index == proposer_index as u64)
+            .cloned()
+    }
+}
+
+pub async fn build_block(
+    chain_sender: mpsc::UnboundedSender<LeanChainServiceMessage>,
+    slot: u64,
+    keystore: Arc<ValidatorKeystore>,
+) {
+    let (tx, rx) = oneshot::channel();
+
+    if chain_sender
+        .send(LeanChainServiceMessage::ProduceBlock { slot, sender: tx })
+        .is_err()
+    {
+        warn!("Failed to send produce block to LeanChainService for slot {slot}");
+        return;
     }
 
-    #[cfg(feature = "devnet4")]
-    fn sign_block(
-        &self,
-        keystore: &ValidatorKeystore,
-        block_with_signatures: BlockWithSignatures,
-        slot: u64,
-    ) -> anyhow::Result<SignedBlock> {
-        let BlockWithSignatures { block, signatures } = block_with_signatures;
-
-        let timer = start_timer(&PQ_SIG_ATTESTATION_SIGNING_TIME, &[]);
-        let proposer_signature = keystore
-            .proposal_private_key
-            .sign(&block.tree_hash_root(), slot as u32)?;
-        stop_timer(timer);
-        inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_TOTAL, &[]);
-
-        Ok(SignedBlock {
-            block,
-            signature: BlockSignatures {
-                attestation_signatures: signatures,
-                proposer_signature,
-            },
-        })
-    }
-
-    #[cfg(feature = "devnet5")]
-    fn sign_block(
-        &self,
-        keystore: &ValidatorKeystore,
-        block_with_signatures: BlockWithSignatures,
-        slot: u64,
-    ) -> anyhow::Result<SignedBlock> {
-        let BlockWithSignatures {
-            block,
-            signatures,
-            attestation_public_keys,
-        } = block_with_signatures;
-
-        if signatures.len() != attestation_public_keys.len() {
-            return Err(anyhow!(
-                "Attestation proof count ({}) does not match public-key-set count ({})",
-                signatures.len(),
-                attestation_public_keys.len()
-            ));
+    // Wait for the block to be produced.
+    let block_with_signatures = match rx.await {
+        Ok(ServiceResponse::Ok(block_with_signatures)) => block_with_signatures,
+        Ok(ServiceResponse::Syncing) => {
+            warn!("LeanChainService is syncing, cannot produce block for slot {slot}");
+            return;
         }
-
-        let block_root = block.tree_hash_root();
-        let block_root_bytes: [u8; 32] = block_root.into();
-
-        let timer = start_timer(&PQ_SIG_ATTESTATION_SIGNING_TIME, &[]);
-        let proposer_signature = keystore
-            .proposal_private_key
-            .sign(&block_root, slot as u32)?;
-        stop_timer(timer);
-        inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_TOTAL, &[]);
-
-        let mut components = Vec::with_capacity(signatures.len() + 1);
-        for (proof, public_keys) in signatures.iter().zip(attestation_public_keys.iter()) {
-            let component = type_1_from_wire(&proof.proof, public_keys).map_err(|err| {
-                anyhow!("Failed to reconstruct attestation single-message aggregate proof: {err}")
-            })?;
-            components.push(component);
+        Ok(ServiceResponse::SyncLag {
+            head_slot,
+            lag,
+            max_seen_slot,
+        }) => {
+            warn!(
+                slot,
+                head_slot,
+                lag,
+                max_seen_slot,
+                "Unreachable: Block production should not be gated by SyncLag",
+            );
+            return;
         }
+        Ok(ServiceResponse::Err(err)) => {
+            warn!("Failed to produce block for slot {slot}: {err}");
+            return;
+        }
+        Err(err) => {
+            warn!("Failed to receive block from LeanChainService for slot {slot}: {err:?}");
+            return;
+        }
+    };
 
-        let proposer_type_1 = type_1_aggregate(
-            &[],
-            &[(keystore.proposal_public_key, proposer_signature)],
-            &block_root_bytes,
-            slot as u32,
-        )
-        .map_err(|err| anyhow!("Failed to build proposer single-message aggregate proof: {err}"))?;
-        components.push(proposer_type_1);
+    info!(
+        slot = block_with_signatures.block.slot,
+        block_root = ?block_with_signatures.block.tree_hash_root(),
+        "Building block finished by Validator {}",
+        keystore.index,
+    );
 
-        let merged = type_2_merge(components)
-            .map_err(|err| anyhow!("Failed to merge block multi-message aggregate proof: {err}"))?;
+    let signed_block = match sign_block(keystore, block_with_signatures, slot) {
+        Ok(signed_block) => signed_block,
+        Err(err) => {
+            warn!("Failed to sign block for slot {slot}: {err}");
+            return;
+        }
+    };
 
-        Ok(SignedBlock {
-            block,
-            proof: MultiMessageAggregate::new(
-                VariableList::new(type_2_to_wire(&merged))
-                    .map_err(|err| anyhow!("Block proof exceeds size limit: {err:?}"))?,
-            ),
-        })
+    let spec = lean_network_spec();
+    let slot_start_ms = (spec.genesis_time + slot * spec.seconds_per_slot) * 1000;
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as u64)
+        .unwrap_or(slot_start_ms);
+    if now_ms < slot_start_ms {
+        sleep(Duration::from_millis(slot_start_ms - now_ms)).await;
     }
+
+    if let Err(err) = chain_sender.send(LeanChainServiceMessage::ProcessBlock {
+        signed_block: Box::new(signed_block),
+        need_gossip: true,
+    }) {
+        warn!("Failed to send block to LeanChainService for slot {slot}: {err:?}");
+    }
+}
+
+#[cfg(feature = "devnet5")]
+fn sign_block(
+    keystore: Arc<ValidatorKeystore>,
+    block_with_signatures: BlockWithSignatures,
+    slot: u64,
+) -> anyhow::Result<SignedBlock> {
+    let BlockWithSignatures {
+        block,
+        signatures,
+        attestation_public_keys,
+    } = block_with_signatures;
+
+    if signatures.len() != attestation_public_keys.len() {
+        return Err(anyhow!(
+            "Attestation proof count ({}) does not match public-key-set count ({})",
+            signatures.len(),
+            attestation_public_keys.len()
+        ));
+    }
+
+    let block_root = block.tree_hash_root();
+    let block_root_bytes: [u8; 32] = block_root.into();
+
+    let timer = start_timer(&PQ_SIG_ATTESTATION_SIGNING_TIME, &[]);
+    let proposer_signature = keystore
+        .proposal_private_key
+        .sign(&block_root, slot as u32)?;
+    stop_timer(timer);
+    inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_TOTAL, &[]);
+
+    let mut components = Vec::with_capacity(signatures.len() + 1);
+    for (proof, public_keys) in signatures.iter().zip(attestation_public_keys.iter()) {
+        let component = type_1_from_wire(&proof.proof, public_keys).map_err(|err| {
+            anyhow!("Failed to reconstruct attestation single-message aggregate proof: {err}")
+        })?;
+        components.push(component);
+    }
+
+    let proposer_type_1 = type_1_aggregate(
+        &[],
+        &[(keystore.proposal_public_key, proposer_signature)],
+        &block_root_bytes,
+        slot as u32,
+    )
+    .map_err(|err| anyhow!("Failed to build proposer single-message aggregate proof: {err}"))?;
+    components.push(proposer_type_1);
+
+    let merged = type_2_merge(components)
+        .map_err(|err| anyhow!("Failed to merge block multi-message aggregate proof: {err}"))?;
+
+    Ok(SignedBlock {
+        block,
+        proof: MultiMessageAggregate::new(
+            VariableList::new(type_2_to_wire(&merged))
+                .map_err(|err| anyhow!("Block proof exceeds size limit: {err:?}"))?,
+        ),
+    })
 }

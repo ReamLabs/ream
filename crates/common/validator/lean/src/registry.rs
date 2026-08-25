@@ -48,7 +48,7 @@ pub fn load_validator_registry<P: AsRef<Path> + Debug>(
 
     let mut validator_keystores = vec![];
 
-    // In devnet4 dual-key mode, each validator index has two consecutive entries:
+    // In dual-key mode, each validator index has two consecutive entries:
     // first the attester key, then the proposer key.
     let mut iter = entries.iter();
     while let Some(attester_entry) = iter.next() {

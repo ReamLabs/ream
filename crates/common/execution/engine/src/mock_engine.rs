@@ -3,7 +3,7 @@ use std::path::Path;
 use alloy_primitives::B256;
 use anyhow::Ok;
 use async_trait::async_trait;
-use ream_execution_rpc_types::get_blobs::BlobAndProofV1;
+use ream_execution_rpc_types::get_blobs::{BlobAndProofV1, BlobAndProofV2};
 use serde::Deserialize;
 
 use super::{engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest};
@@ -44,5 +44,21 @@ impl ExecutionApi for MockExecutionEngine {
         blob_version_hashes: Vec<B256>,
     ) -> anyhow::Result<Vec<Option<BlobAndProofV1>>> {
         Ok(blob_version_hashes.into_iter().map(|_| None).collect())
+    }
+
+    async fn engine_get_blobs_v2(
+        &self,
+        blob_version_hashes: Vec<B256>,
+    ) -> anyhow::Result<Option<Vec<BlobAndProofV2>>> {
+        Ok(blob_version_hashes.into_iter().map(|_| None).collect())
+    }
+
+    async fn engine_get_blobs_v3(
+        &self,
+        blob_version_hashes: Vec<B256>,
+    ) -> anyhow::Result<Option<Vec<Option<BlobAndProofV2>>>> {
+        Ok(Some(
+            blob_version_hashes.into_iter().map(|_| None).collect(),
+        ))
     }
 }

@@ -5,7 +5,7 @@ use ream_consensus_beacon::{
     attestation::Attestation, attester_slashing::AttesterSlashing,
     electra::beacon_block::SignedBeaconBlock,
 };
-use ream_consensus_misc::constants::beacon::{FULU_FORK_EPOCH, genesis_validators_root};
+use ream_consensus_misc::constants::beacon::genesis_validators_root;
 use ream_events_beacon::{BeaconEvent, BeaconEventSender, event::chain::BlockEvent};
 use ream_execution_engine::ExecutionEngine;
 use ream_fork_choice_beacon::{
@@ -56,6 +56,12 @@ impl BeaconChain {
             signed_block.message.slot >= beacon_network_spec().slot_n_days_ago(17),
         )
         .await?;
+
+        for attestation in signed_block.message.body.attestations.iter() {
+            if let Err(err) = on_attestation(&mut store, attestation.clone(), true) {
+                warn!("Failed to process block attestation through fork choice: {err:?}");
+            }
+        }
 
         // Build and Emit Block event
         let finalized_checkpoint = store.db.finalized_checkpoint_provider().get().ok();
@@ -122,8 +128,10 @@ impl BeaconChain {
         };
 
         Ok(Status {
-            fork_digest: beacon_network_spec()
-                .fork_digest(FULU_FORK_EPOCH, genesis_validators_root()),
+            fork_digest: beacon_network_spec().fork_digest(
+                beacon_network_spec().current_epoch(),
+                genesis_validators_root(),
+            ),
             finalized_root: finalized_checkpoint.root,
             finalized_epoch: finalized_checkpoint.epoch,
             head_root,

@@ -159,7 +159,7 @@ pub fn compute_cells(
 
 #[cfg(test)]
 mod tests {
-    use rand::{Rng, SeedableRng, rngs::StdRng, seq::SliceRandom};
+    use rand::{RngExt, SeedableRng, rngs::StdRng, seq::SliceRandom};
     use rust_eth_kzg::{DASContext, TrustedSetup, UsePrecomp};
     use ssz::Decode;
 

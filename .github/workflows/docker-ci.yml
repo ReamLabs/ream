@@ -9,8 +9,19 @@ permissions:
 
 jobs:
   push:
+    name: push ${{ matrix.variant }}
     runs-on: ubuntu-latest
     if: github.repository == 'reamlabs/ream'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: devnet5
+            features: devnet5
+            tags: latest latest-devnet5 devnet5
+          - variant: devnet5-leanvm-main
+            features: optimized-leanvm
+            tags: devnet5-leanvm-main
     steps:
       - uses: actions/checkout@v6
       - uses: rui314/setup-mold@v1
@@ -29,10 +40,13 @@ jobs:
         run: |
           docker run --privileged --rm tonistiigi/binfmt --install arm64,amd64
           docker buildx create --use --name cross-builder
-      - name: Build and push ream image
+      - name: Build and push ream ${{ matrix.variant }} image
         run: |
           BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
           make docker-build-push \
+            FEATURES="${{ matrix.features }}" \
+            EXTRA_FLAGS="--no-default-features" \
+            DOCKER_TAGS="${{ matrix.tags }}" \
             GIT_COMMIT="${{ github.sha }}" \
             GIT_BRANCH="${{ github.ref_name }}" \
             BUILD_DATE="$BUILD_DATE"

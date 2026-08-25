@@ -53,6 +53,7 @@ use ream_consensus_misc::{
     deposit_request::DepositRequest,
     eth_1_data::Eth1Data,
     fork::Fork,
+    fork_name::ForkName,
     indexed_attestation::IndexedAttestation,
     misc::{
         bytes_to_int64, compute_activation_exit_epoch, compute_committee, compute_domain,
@@ -1061,9 +1062,9 @@ impl BeaconState {
         // Update the next validator index to start the next withdrawal sweep
         if expected_withdrawals.len() == MAX_WITHDRAWALS_PER_PAYLOAD as usize {
             // Next sweep starts after the latest withdrawal's validator index
-            let next_validator_index = expected_withdrawals[expected_withdrawals.len() - 1]
-                .validator_index
-                + 1 % self.validators.len() as u64;
+            let next_validator_index =
+                (expected_withdrawals[expected_withdrawals.len() - 1].validator_index + 1)
+                    % self.validators.len() as u64;
             self.next_withdrawal_validator_index = next_validator_index
         } else {
             // Advance sweep by the max length of the sweep if there was not a full set of
@@ -2289,8 +2290,11 @@ impl BeaconState {
             let Some(deposit) = self.pending_deposits.get(index).cloned() else {
                 bail!("Pending deposit not found");
             };
-            // Do not process deposit requests if Eth1 bridge deposits are not yet applied
-            if deposit.slot > GENESIS_SLOT
+            // Fulu removes support for the former Eth1 bridge deposit transition.
+            let fulu_fork_epoch = beacon_network_spec().fulu_fork_epoch;
+            let is_fulu_or_later = self.get_current_epoch() >= fulu_fork_epoch;
+            if !is_fulu_or_later
+                && deposit.slot > GENESIS_SLOT
                 && self.eth1_deposit_index < self.deposit_requests_start_index
             {
                 break;
@@ -2701,7 +2705,11 @@ impl BeaconState {
         // Verify commitments are under limit
         ensure!(
             body.blob_kzg_commitments.len()
-                <= get_blob_parameters(self.get_current_epoch()).max_blobs_per_block as usize
+                <= get_blob_parameters(
+                    &beacon_network_spec().blob_schedule,
+                    self.get_current_epoch()
+                )
+                .max_blobs_per_block as usize
         );
 
         // Verify the execution payload is valid
@@ -3092,4 +3100,34 @@ pub fn is_valid_deposit_signature(
     signature
         .verify(public_key, signing_root.as_ref())
         .map_err(|err| anyhow!("Invalid deposit signature: {err:?}"))
+}
+
+pub fn fork_name_at_epoch(epoch: u64) -> ForkName {
+    if epoch >= beacon_network_spec().fulu_fork_epoch {
+        ForkName::Fulu
+    } else if epoch >= beacon_network_spec().electra_fork_epoch {
+        ForkName::Electra
+    } else if epoch >= beacon_network_spec().deneb_fork_epoch {
+        ForkName::Deneb
+    } else if epoch >= beacon_network_spec().capella_fork_epoch {
+        ForkName::Capella
+    } else if epoch >= beacon_network_spec().bellatrix_fork_epoch {
+        ForkName::Bellatrix
+    } else if epoch >= beacon_network_spec().altair_fork_epoch {
+        ForkName::Altair
+    } else {
+        ForkName::Base
+    }
+}
+
+pub fn fork_name_from_version(version: [u8; 4]) -> ForkName {
+    match version {
+        _ if version == beacon_network_spec().electra_fork_version => ForkName::Electra,
+        _ if version == beacon_network_spec().fulu_fork_version => ForkName::Fulu,
+        _ if version == beacon_network_spec().deneb_fork_version => ForkName::Deneb,
+        _ if version == beacon_network_spec().capella_fork_version => ForkName::Capella,
+        _ if version == beacon_network_spec().bellatrix_fork_version => ForkName::Bellatrix,
+        _ if version == beacon_network_spec().altair_fork_version => ForkName::Altair,
+        _ => ForkName::Base,
+    }
 }

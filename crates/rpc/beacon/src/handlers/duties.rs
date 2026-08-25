@@ -2,15 +2,23 @@ use actix_web::{
     HttpResponse, Responder, get, post,
     web::{Data, Json, Path},
 };
+use alloy_primitives::B256;
 use ream_api_types_beacon::{
     duties::{AttesterDuty, ProposerDuty, SyncCommitteeDuty},
     responses::DutiesResponse,
 };
-use ream_api_types_common::{error::ApiError, id::ID};
+use ream_api_types_common::error::ApiError;
+use ream_consensus_beacon::electra::beacon_state::BeaconState;
 use ream_consensus_misc::{constants::beacon::SLOTS_PER_EPOCH, misc::compute_start_slot_at_epoch};
-use ream_storage::db::beacon::BeaconDB;
+use ream_storage::{db::beacon::BeaconDB, tables::table::REDBTable};
+use serde::Deserialize;
 
-use crate::handlers::state::get_state_from_id;
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ValidatorIndexRequest {
+    Number(u64),
+    String(String),
+}
 
 #[get("/validator/duties/proposer/{epoch}")]
 pub async fn get_proposer_duties(
@@ -18,12 +26,13 @@ pub async fn get_proposer_duties(
     epoch: Path<u64>,
 ) -> Result<impl Responder, ApiError> {
     let epoch = epoch.into_inner();
-    let state = get_state_from_id(ID::Slot(compute_start_slot_at_epoch(epoch)), &db).await?;
-    let dependent_root = state
-        .get_block_root_at_slot(compute_start_slot_at_epoch(epoch) - 1)
-        .map_err(|err| ApiError::BadRequest(format!("Failed to get dependent root {err:?}")))?;
-
     let start_slot = compute_start_slot_at_epoch(epoch);
+    let state = get_state_at_or_before_slot(&db, start_slot).await?;
+    let dependent_root = if epoch == 0 {
+        get_block_root_at_or_before_slot(&db, 0)?
+    } else {
+        get_block_root_at_or_before_slot(&db, start_slot - 1)?
+    };
     let end_slot = start_slot + SLOTS_PER_EPOCH;
     let mut duties = vec![];
     for slot in start_slot..end_slot {
@@ -46,15 +55,17 @@ pub async fn get_proposer_duties(
 pub async fn get_attester_duties(
     db: Data<BeaconDB>,
     epoch: Path<u64>,
-    validator_indices: Json<Vec<u64>>,
+    validator_indices: Json<Vec<ValidatorIndexRequest>>,
 ) -> Result<impl Responder, ApiError> {
     let epoch = epoch.into_inner();
-    let state = get_state_from_id(ID::Slot(compute_start_slot_at_epoch(epoch)), &db).await?;
-    let dependent_root = state
-        .get_block_root_at_slot(compute_start_slot_at_epoch(epoch) - 1)
-        .map_err(|err| ApiError::BadRequest(format!("Failed to get dependent root {err:?}")))?;
-
-    let validator_indices = validator_indices.into_inner();
+    let start_slot = compute_start_slot_at_epoch(epoch);
+    let state = get_state_at_or_before_slot(&db, start_slot).await?;
+    let dependent_root = if epoch == 0 {
+        get_block_root_at_or_before_slot(&db, 0)?
+    } else {
+        get_block_root_at_or_before_slot(&db, start_slot - 1)?
+    };
+    let validator_indices = parse_validator_indices(validator_indices.into_inner())?;
     let committees_at_slot = state.get_committee_count_per_slot(epoch);
     let mut duties = vec![];
 
@@ -97,11 +108,11 @@ pub async fn get_attester_duties(
 pub async fn get_sync_committee_duties(
     db: Data<BeaconDB>,
     epoch: Path<u64>,
-    validator_indices: Json<Vec<u64>>,
+    validator_indices: Json<Vec<ValidatorIndexRequest>>,
 ) -> Result<impl Responder, ApiError> {
     let epoch = epoch.into_inner();
-    let state = get_state_from_id(ID::Slot(compute_start_slot_at_epoch(epoch)), &db).await?;
-    let validator_indices = validator_indices.into_inner();
+    let state = get_state_at_or_before_slot(&db, compute_start_slot_at_epoch(epoch)).await?;
+    let validator_indices = parse_validator_indices(validator_indices.into_inner())?;
 
     let mut duties = vec![];
     for validator_index in validator_indices {
@@ -136,4 +147,59 @@ pub async fn get_sync_committee_duties(
         });
     }
     Ok(HttpResponse::Ok().json(DutiesResponse::new(None, duties)))
+}
+
+fn parse_validator_indices(
+    validator_indices: Vec<ValidatorIndexRequest>,
+) -> Result<Vec<u64>, ApiError> {
+    validator_indices
+        .into_iter()
+        .map(|index| match index {
+            ValidatorIndexRequest::Number(index) => Ok(index),
+            ValidatorIndexRequest::String(index) => index.parse::<u64>().map_err(|err| {
+                ApiError::BadRequest(format!("Invalid validator index `{index}`: {err}"))
+            }),
+        })
+        .collect()
+}
+
+async fn get_state_at_or_before_slot(db: &BeaconDB, slot: u64) -> Result<BeaconState, ApiError> {
+    let block_root = get_block_root_at_or_before_slot(db, slot)?;
+    let mut state = db
+        .state_provider()
+        .get(block_root)
+        .map_err(|err| {
+            ApiError::InternalError(format!(
+                "Failed to get beacon state by block root, error: {err:?}"
+            ))
+        })?
+        .ok_or_else(|| {
+            ApiError::NotFound(format!("Failed to find beacon state for slot {slot}"))
+        })?;
+    if state.slot < slot {
+        state
+            .process_slots(slot)
+            .map_err(|err| ApiError::BadRequest(err.to_string()))?;
+    }
+    Ok(state)
+}
+
+fn get_block_root_at_or_before_slot(db: &BeaconDB, slot: u64) -> Result<B256, ApiError> {
+    for candidate_slot in (0..=slot).rev() {
+        match db
+            .slot_index_provider()
+            .get(candidate_slot)
+            .map_err(|err| {
+                ApiError::InternalError(format!(
+                    "Failed to get block root for slot {candidate_slot}, error: {err:?}"
+                ))
+            })? {
+            Some(block_root) => return Ok(block_root),
+            None => continue,
+        }
+    }
+
+    Err(ApiError::NotFound(format!(
+        "Failed to find block root at or before slot {slot}"
+    )))
 }

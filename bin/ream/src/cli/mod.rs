@@ -1,6 +1,7 @@
 pub mod account_manager;
 pub mod beacon_node;
 pub mod constants;
+pub mod data_availability_node;
 pub mod generate_private_key;
 pub mod generate_validator_registry;
 pub mod import_keystores;
@@ -17,6 +18,7 @@ use ream_node::version::FULL_VERSION;
 use crate::cli::{
     account_manager::AccountManagerConfig,
     beacon_node::BeaconNodeConfig,
+    data_availability_node::DataAvailabilityNodeConfig,
     generate_private_key::GeneratePrivateKeyConfig,
     generate_validator_registry::GenerateValidatorRegistryConfig,
     lean_node::LeanNodeConfig,
@@ -77,6 +79,10 @@ pub enum Commands {
     #[command(name = "beacon_node")]
     BeaconNode(Box<BeaconNodeConfig>),
 
+    /// Start the data node
+    #[command(name = "da_node")]
+    DataAvailabilityNode(Box<DataAvailabilityNodeConfig>),
+
     /// Start the validator node
     #[command(name = "validator_node")]
     ValidatorNode(Box<ValidatorNodeConfig>),
@@ -109,7 +115,7 @@ mod tests {
     use url::Url;
 
     use super::*;
-    use crate::cli::constants::DEFAULT_BEACON_API_ENDPOINT;
+    use crate::cli::constants::{DEFAULT_BEACON_API_ENDPOINT, DEFAULT_DATA_AVAILABILITY_HTTP_PORT};
 
     #[test]
     fn test_cli_lean_node_command() {
@@ -200,6 +206,40 @@ mod tests {
                 assert_eq!(config.discovery_port, 9002);
             }
             _ => unreachable!("This test should only validate the beacon node cli"),
+        }
+    }
+
+    #[test]
+    fn test_cli_data_availability_node_command() {
+        let cli = Cli::parse_from([
+            "program",
+            "--verbosity",
+            "4",
+            "da_node",
+            "--http-address",
+            "127.0.0.1",
+            "--http-port",
+            "5999",
+        ]);
+
+        assert_eq!(cli.verbosity, Verbosity::Debug);
+
+        match cli.command {
+            Commands::DataAvailabilityNode(config) => {
+                assert_eq!(config.http_address, IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+                assert_eq!(config.http_port, 5999);
+                assert!(!config.http_allow_origin);
+            }
+            _ => unreachable!("This test should only validate the data node cli"),
+        }
+
+        let cli = Cli::parse_from(["program", "da_node"]);
+
+        match cli.command {
+            Commands::DataAvailabilityNode(config) => {
+                assert_eq!(config.http_port, DEFAULT_DATA_AVAILABILITY_HTTP_PORT)
+            }
+            _ => unreachable!("This test should only validate the data node cli"),
         }
     }
 

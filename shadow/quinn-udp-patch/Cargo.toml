@@ -1,0 +1,24 @@
+[package]
+name = "quinn-udp"
+version = "0.5.14"
+edition = "2021"
+
+[features]
+default = ["tracing", "log"]
+log = ["tracing/log"]
+direct-log = ["dep:log"]
+fast-apple-datapath = []
+
+[dependencies]
+libc = { version = "0.2" }
+log = { version = "0.4", optional = true }
+tracing = { version = "0.1", optional = true }
+
+[target.'cfg(not(all(target_family = "wasm", target_os = "unknown")))'.dependencies]
+socket2 = { version = "0.5" }
+
+[build-dependencies]
+cfg_aliases = { version = "0.2" }
+
+[lib]
+bench = false

@@ -1,10 +1,11 @@
 use alloy_primitives::{B256, aliases::B32};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use ssz_derive::{Decode, Encode};
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
-use crate::blob_parameters::get_blob_parameters;
+use crate::blob_parameters::{BlobParameters, get_blob_parameters};
 
 #[derive(Debug, PartialEq, Clone, Copy, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct ForkData {
@@ -24,11 +25,25 @@ impl ForkData {
 /// Return the 4-byte fork digest for the ``current_version`` and ``genesis_validators_root``.
 /// This is a digest primarily used for domain separation on the p2p layer.
 /// 4-bytes suffices for practical separation of forks/chains.
-pub fn compute_fork_digest(fork_data: ForkData, epoch: u64) -> B32 {
+pub fn compute_fork_digest(
+    fork_data: ForkData,
+    blob_schedule: &[BlobParameters],
+    fulu_fork_epoch: u64,
+    epoch: u64,
+) -> B32 {
     let base_digest = fork_data.compute_fork_data_root();
-    let blob_parameters = get_blob_parameters(epoch);
 
-    let blob_hash = blob_parameters.tree_hash_root();
+    if epoch < fulu_fork_epoch {
+        return B32::from_slice(&base_digest[..4]);
+    }
+
+    let blob_parameters = get_blob_parameters(blob_schedule, epoch);
+
+    // EIP-7892: SHA256 over the raw little-endian uint64 bytes, not the SSZ hash_tree_root.
+    let mut hasher = Sha256::new();
+    hasher.update(blob_parameters.epoch.to_le_bytes());
+    hasher.update(blob_parameters.max_blobs_per_block.to_le_bytes());
+    let blob_hash = hasher.finalize();
 
     let mut result = [0u8; 4];
     for index in 0..4 {

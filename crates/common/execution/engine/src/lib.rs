@@ -12,14 +12,15 @@ use ream_consensus_misc::{
         CONSOLIDATION_REQUEST_TYPE, DEPOSIT_REQUEST_TYPE, WITHDRAWAL_REQUEST_TYPE,
     },
     execution_requests::ExecutionRequests,
+    fork_name::ForkName,
 };
 use ream_execution_rpc_types::{
     electra::execution_payload::ExecutionPayload,
     eth_syncing::EthSyncing,
     execution_payload::ExecutionPayloadV3,
     forkchoice_update::{ForkchoiceStateV1, ForkchoiceUpdateResult, PayloadAttributesV3},
-    get_blobs::BlobAndProofV1,
-    get_payload::PayloadV4,
+    get_blobs::{BlobAndProofV1, BlobAndProofV2},
+    get_payload::{Payload, PayloadV4, PayloadV5},
     payload_status::{PayloadStatus, PayloadStatusV1},
 };
 use reqwest::{Client, Request, Url};
@@ -290,7 +291,9 @@ impl ExecutionEngine {
         let capabilities: Vec<String> = vec![
             "engine_forkchoiceUpdatedV3".to_string(),
             "engine_getBlobsV1".to_string(),
-            "engine_getPayloadV4".to_string(),
+            "engine_getBlobsV2".to_string(),
+            "engine_getBlobsV3".to_string(),
+            "engine_getPayloadV5".to_string(),
             "engine_newPayloadV4".to_string(),
         ];
         let request_body = JsonRpcRequest {
@@ -310,6 +313,24 @@ impl ExecutionEngine {
             .to_result()
     }
 
+    pub async fn engine_get_payload(
+        &self,
+        fork_name: &ForkName,
+        payload_id: B64,
+    ) -> anyhow::Result<Payload> {
+        match fork_name {
+            ForkName::Electra => self
+                .engine_get_payload_v4(payload_id)
+                .await
+                .map(Payload::V4),
+            ForkName::Fulu => self
+                .engine_get_payload_v5(payload_id)
+                .await
+                .map(Payload::V5),
+            _ => Err(anyhow!("Unsupported fork: {fork_name}")),
+        }
+    }
+
     pub async fn engine_get_payload_v4(&self, payload_id: B64) -> anyhow::Result<PayloadV4> {
         let request_body = JsonRpcRequest {
             id: 1,
@@ -324,6 +345,24 @@ impl ExecutionEngine {
             .execute(http_post_request)
             .await?
             .json::<JsonRpcResponse<PayloadV4>>()
+            .await?
+            .to_result()
+    }
+
+    pub async fn engine_get_payload_v5(&self, payload_id: B64) -> anyhow::Result<PayloadV5> {
+        let request_body = JsonRpcRequest {
+            id: 1,
+            jsonrpc: "2.0".to_string(),
+            method: "engine_getPayloadV5".to_string(),
+            params: vec![json!(payload_id)],
+        };
+
+        let http_post_request = self.build_request(request_body)?;
+
+        self.http_client
+            .execute(http_post_request)
+            .await?
+            .json::<JsonRpcResponse<PayloadV5>>()
             .await?
             .to_result()
     }
@@ -469,6 +508,48 @@ impl ExecutionApi for ExecutionEngine {
             .execute(http_post_request)
             .await?
             .json::<JsonRpcResponse<Vec<Option<BlobAndProofV1>>>>()
+            .await?
+            .to_result()
+    }
+
+    async fn engine_get_blobs_v2(
+        &self,
+        blob_version_hashes: Vec<B256>,
+    ) -> anyhow::Result<Option<Vec<BlobAndProofV2>>> {
+        let request = JsonRpcRequest {
+            id: 1,
+            jsonrpc: "2.0".into(),
+            method: "engine_getBlobsV2".into(),
+            params: vec![json!(blob_version_hashes)],
+        };
+
+        let req = self.build_request(request)?;
+
+        self.http_client
+            .execute(req)
+            .await?
+            .json::<JsonRpcResponse<Option<Vec<BlobAndProofV2>>>>()
+            .await?
+            .to_result()
+    }
+
+    async fn engine_get_blobs_v3(
+        &self,
+        blob_version_hashes: Vec<B256>,
+    ) -> anyhow::Result<Option<Vec<Option<BlobAndProofV2>>>> {
+        let request = JsonRpcRequest {
+            id: 1,
+            jsonrpc: "2.0".into(),
+            method: "engine_getBlobsV3".into(),
+            params: vec![json!(blob_version_hashes)],
+        };
+
+        let req = self.build_request(request)?;
+
+        self.http_client
+            .execute(req)
+            .await?
+            .json::<JsonRpcResponse<Option<Vec<Option<BlobAndProofV2>>>>>()
             .await?
             .to_result()
     }

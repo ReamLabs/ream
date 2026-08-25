@@ -31,6 +31,8 @@ Options:
           Trusted RPC URL to initiate Checkpoint Sync.
       --weak-subjectivity-checkpoint <WEAK_SUBJECTIVITY_CHECKPOINT>
           Weak subjectivity checkpoint in format <0xblock_root>:<epoch>
+      --genesis-state-path <GENESIS_STATE_PATH>
+          Path to an SSZ-encoded genesis BeaconState file. Bootstraps the database directly from genesis, skipping checkpoint sync entirely. Use this for local devnets (e.g. Kurtosis) where no already-synced peer exists to checkpoint-sync from. Mutually exclusive with --checkpoint-sync-url in practice — if both are unset and the network has no default checkpoint sync sources (dev, custom), startup will fail.
       --execution-endpoint <EXECUTION_ENDPOINT>
           The URL of the execution endpoint. This is used to send requests to the engine api.
       --execution-jwt-secret <EXECUTION_JWT_SECRET>

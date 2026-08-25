@@ -1,0 +1,21 @@
+use std::{io::Result, sync::Arc};
+
+use ream_data_availability::store::ColumnReadStore;
+use ream_data_availability_node::ingest::IngestHandle;
+use ream_rpc_common::{config::RpcServerConfig, server::RpcServerBuilder};
+
+use crate::routes::register_routers;
+
+pub async fn start(
+    server_config: RpcServerConfig,
+    ingest_handle: IngestHandle,
+    store: Arc<dyn ColumnReadStore>,
+) -> Result<()> {
+    RpcServerBuilder::new(server_config.http_socket_address)
+        .allow_origin(server_config.http_allow_origin)
+        .with_data(ingest_handle)
+        .with_data(store)
+        .configure(register_routers)
+        .start()
+        .await
+}
