@@ -10,10 +10,7 @@ rust-version.workspace = true
 version.workspace = true
 
 [features]
-optimized-leanvm = [
-    "ream-network-spec/optimized-leanvm",
-    "ream-keystore/optimized-leanvm",
-]
+optimized-leanvm = ["ream-network-spec/optimized-leanvm", "ream-keystore/optimized-leanvm"]
 
 [dependencies]
 alloy-primitives.workspace = true
