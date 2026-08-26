@@ -31,7 +31,6 @@ impl IngestHandle {
             .send(IngestWorkItem::Candidate(candidate))
             .await
             .map_err(|err| {
-                drop(err);
                 debug!("candidate submission failed, receiver dropped: {err}");
                 IngestionError::Closed
             })
@@ -54,7 +53,6 @@ impl IngestHandle {
             .send(IngestWorkItem::Retention(hint))
             .await
             .map_err(|err| {
-                drop(err);
                 debug!("retention submission failed, receiver dropped: {err}");
                 IngestionError::Closed
             })
