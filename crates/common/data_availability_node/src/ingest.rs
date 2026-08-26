@@ -1,5 +1,6 @@
 use ream_data_availability::column::CandidateColumn;
 use tokio::sync::mpsc;
+use tracing::debug;
 
 use crate::error::IngestionError;
 
@@ -29,7 +30,10 @@ impl IngestHandle {
         self.sender
             .send(IngestWorkItem::Candidate(candidate))
             .await
-            .map_err(|_| IngestionError::Closed)
+            .map_err(|err| {
+                debug!("candidate submission failed, receiver dropped: {err}");
+                IngestionError::Closed
+            })
     }
 
     /// Submit a candidate without waiting; a full queue is
@@ -48,7 +52,10 @@ impl IngestHandle {
         self.sender
             .send(IngestWorkItem::Retention(hint))
             .await
-            .map_err(|_| IngestionError::Closed)
+            .map_err(|err| {
+                debug!("retention submission failed, receiver dropped: {err}");
+                IngestionError::Closed
+            })
     }
 
     /// Submit a retention hint without waiting; a full queue is
