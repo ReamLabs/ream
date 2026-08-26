@@ -250,7 +250,9 @@ pub async fn get_sync_committees(
         .collect::<Vec<_>>();
 
     let validator_aggregates = validators
-        .chunks_exact((SYNC_COMMITTEE_SIZE / SYNC_COMMITTEE_SUBNET_COUNT) as usize)
+        .as_chunks::<{ (SYNC_COMMITTEE_SIZE / SYNC_COMMITTEE_SUBNET_COUNT) as usize }>()
+        .0
+        .iter()
         .map(|chunk| QuotedU64Vec(chunk.to_vec()))
         .collect::<Vec<QuotedU64Vec>>();
 
