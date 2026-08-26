@@ -60,7 +60,7 @@ anything is submitted, so inconsistent beacon responses fail fast.
 ## Example walkthrough
 
 ```bash
-cargo build -p ream -p ream-data-availability-tool
+cargo build -p ream   # builds both the `ream` node and `ream-data-availability-tool`
 
 # 1. start the data node (loopback only)
 ./target/debug/ream -v 4 da_node

@@ -6380,10 +6380,12 @@ dependencies = [
  "ream-discv5",
  "ream-events-beacon",
  "ream-execution-engine",
+ "ream-execution-rpc-types",
  "ream-executor",
  "ream-fork-choice-beacon",
  "ream-fork-choice-lean",
  "ream-keystore",
+ "ream-merkle",
  "ream-metrics",
  "ream-mock-execution-engine",
  "ream-network-manager",
@@ -6403,6 +6405,7 @@ dependencies = [
  "ream-validator-beacon",
  "ream-validator-lean",
  "reqwest",
+ "rust_eth_kzg",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -6681,27 +6684,6 @@ dependencies = [
  "thiserror 2.0.19",
  "tokio",
  "tracing",
-]
-
-[[package]]
-name = "ream-data-availability-tool"
-version = "0.1.0"
-dependencies = [
- "alloy-primitives",
- "anyhow",
- "clap",
- "ethereum_ssz",
- "ream-consensus-beacon",
- "ream-consensus-misc",
- "ream-execution-rpc-types",
- "ream-merkle",
- "reqwest",
- "rust_eth_kzg",
- "serde",
- "serde_json",
- "ssz_types",
- "tokio",
- "tree_hash",
 ]
 
 [[package]]
