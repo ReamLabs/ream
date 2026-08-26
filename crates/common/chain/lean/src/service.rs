@@ -3037,7 +3037,7 @@ impl LeanChainService {
             let store = fork_choice.store.lock().await;
             let head_root = match store.head_provider().get() {
                 Ok(root) => root,
-                Err(StoreError::FieldNotInitilized) => return Ok(SyncedForDuties::Yes),
+                Err(StoreError::FieldNotInitialized) => return Ok(SyncedForDuties::Yes),
                 Err(err) => return Err(err.into()),
             };
             let Some(head_block) = store.block_provider().get(head_root)? else {

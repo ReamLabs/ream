@@ -9,7 +9,7 @@ pub enum StoreError {
     Io(#[from] std::io::Error),
 
     #[error("Field not initilized")]
-    FieldNotInitilized,
+    FieldNotInitialized,
 
     #[error("DecodeError not found {0}")]
     DecodeError(String),
