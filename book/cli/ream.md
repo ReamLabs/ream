@@ -11,6 +11,7 @@ Usage: ream [OPTIONS] <COMMAND>
 Commands:
   lean_node                    Start the lean node
   beacon_node                  Start the beacon node
+  da_node                      Start the data node
   validator_node               Start the validator node
   account_manager              Manage validator accounts
   voluntary_exit               Perform voluntary exit for a validator
