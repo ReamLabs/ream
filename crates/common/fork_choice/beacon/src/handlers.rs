@@ -163,7 +163,7 @@ pub fn on_attester_slashing(
 
     let mut equivocating = match store.db.equivocating_indices_provider().get() {
         Ok(set) => set,
-        Err(StoreError::FieldNotInitilized) => HashSet::default(),
+        Err(StoreError::FieldNotInitialized) => HashSet::default(),
         Err(err) => return Err(err.into()),
     };
 
