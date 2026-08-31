@@ -1,6 +1,7 @@
 use std::num::NonZeroUsize;
 
 use ream_consensus_beacon::data_column_sidecar::DataColumnSidecar;
+use ream_consensus_misc::{blob_parameters::BlobParameters, misc::compute_epoch_at_slot};
 use ream_data_availability::{
     column::{CandidateColumn, VerifiedColumn},
     error::ValidationError,
@@ -14,18 +15,43 @@ use tree_hash::TreeHash;
 /// Decodes a candidate's payload as an SSZ `DataColumnSidecar` and admits it
 /// only if it is structurally sound and its cells verify against their KZG
 /// commitments.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct KzgVerifier {
-    /// Per-block blob limit; `NonZeroUsize` makes a zero limit — which would
-    /// reject every column — unrepresentable.
-    max_blobs_per_block: NonZeroUsize,
+    /// BPO schedule `(activation epoch, blob limit)`, ascending; zero-limit
+    /// entries — which would reject every column — are dropped at construction.
+    blob_schedule: Vec<(u64, NonZeroUsize)>,
+    max_blobs_per_block_electra: NonZeroUsize,
 }
 
 impl KzgVerifier {
-    pub fn new(max_blobs_per_block: NonZeroUsize) -> Self {
+    pub fn new(
+        blob_schedule: impl IntoIterator<Item = BlobParameters>,
+        max_blobs_per_block_electra: NonZeroUsize,
+    ) -> Self {
+        let mut blob_schedule: Vec<(u64, NonZeroUsize)> = blob_schedule
+            .into_iter()
+            .filter_map(|entry| {
+                NonZeroUsize::new(entry.max_blobs_per_block as usize)
+                    .map(|limit| (entry.epoch, limit))
+            })
+            .collect();
+        blob_schedule.sort_by_key(|(epoch, _)| *epoch);
         Self {
-            max_blobs_per_block,
+            blob_schedule,
+            max_blobs_per_block_electra,
         }
+    }
+
+    /// The blob limit in force at `epoch`: the newest schedule entry activated
+    /// at or before it, falling back to the Electra limit. Mirrors the spec's
+    /// `get_blob_parameters`.
+    fn max_blobs_at(&self, epoch: u64) -> NonZeroUsize {
+        self.blob_schedule
+            .iter()
+            .rev()
+            .find(|(activation_epoch, _)| epoch >= *activation_epoch)
+            .map(|(_, limit)| *limit)
+            .unwrap_or(self.max_blobs_per_block_electra)
     }
 
     /// Eagerly load the KZG trusted setup (a one-time, multi-second cost);
@@ -42,14 +68,16 @@ impl KzgVerifier {
     /// Mirrors `DataColumnSidecar::verify()`, kept separate to return typed
     /// `ValidationError`s instead of a `bool`.
     fn check_shape(&self, sidecar: &DataColumnSidecar) -> Result<(), ValidationError> {
+        let epoch = compute_epoch_at_slot(sidecar.signed_block_header.message.slot);
+        let max_blobs = self.max_blobs_at(epoch).get();
         let commitments = sidecar.kzg_commitments.len();
         if commitments == 0 {
             return Err(ValidationError::EmptyCommitments);
         }
-        if commitments > self.max_blobs_per_block.get() {
+        if commitments > max_blobs {
             return Err(ValidationError::TooManyCommitments {
                 count: commitments,
-                maximum: self.max_blobs_per_block.get(),
+                maximum: max_blobs,
             });
         }
         if sidecar.column.len() != commitments || sidecar.kzg_proofs.len() != commitments {
@@ -123,7 +151,10 @@ mod tests {
     };
     use ream_consensus_misc::{
         beacon_block_header::{BeaconBlockHeader, SignedBeaconBlockHeader},
-        constants::beacon::{BLOB_KZG_COMMITMENTS_INDEX, DATA_COLUMN_SIDECAR_KZG_PROOF_DEPTH},
+        blob_parameters::BlobParameters,
+        constants::beacon::{
+            BLOB_KZG_COMMITMENTS_INDEX, DATA_COLUMN_SIDECAR_KZG_PROOF_DEPTH, SLOTS_PER_EPOCH,
+        },
         polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
     };
     use ream_data_availability::{
@@ -143,8 +174,10 @@ mod tests {
 
     const MAX_BLOBS: usize = 9;
 
+    /// A verifier with no BPO schedule: every epoch uses the Electra fallback,
+    /// so tests that don't care about the schedule see one fixed limit.
     fn verifier() -> KzgVerifier {
-        KzgVerifier::new(NonZeroUsize::new(MAX_BLOBS).expect("nonzero"))
+        KzgVerifier::new([], NonZeroUsize::new(MAX_BLOBS).expect("nonzero"))
     }
 
     /// A well-formed sidecar whose zeroed inclusion proof never verifies —
@@ -307,6 +340,60 @@ mod tests {
             verifier().verify(candidate_of(&sidecar(0, MAX_BLOBS + 1))),
             Err(ValidationError::TooManyCommitments { .. })
         ));
+    }
+
+    #[test]
+    fn blob_schedule_governs_the_limit_per_epoch() {
+        let verifier = KzgVerifier::new(
+            [
+                BlobParameters {
+                    epoch: 2,
+                    max_blobs_per_block: 15,
+                },
+                BlobParameters {
+                    epoch: 4,
+                    max_blobs_per_block: 21,
+                },
+            ],
+            NonZeroUsize::new(MAX_BLOBS).expect("nonzero"),
+        );
+
+        // Before any entry activates, the Electra fallback is in force.
+        assert_eq!(verifier.max_blobs_at(0).get(), MAX_BLOBS);
+        assert_eq!(verifier.max_blobs_at(1).get(), MAX_BLOBS);
+        // Each entry takes over at its activation epoch...
+        assert_eq!(verifier.max_blobs_at(2).get(), 15);
+        assert_eq!(verifier.max_blobs_at(3).get(), 15);
+        // ...and the newest activated entry wins from then on.
+        assert_eq!(verifier.max_blobs_at(4).get(), 21);
+        assert_eq!(verifier.max_blobs_at(100).get(), 21);
+    }
+
+    #[test]
+    fn shape_check_uses_the_limit_at_the_sidecars_epoch() {
+        let verifier = KzgVerifier::new(
+            [BlobParameters {
+                epoch: 1,
+                max_blobs_per_block: 15,
+            }],
+            NonZeroUsize::new(MAX_BLOBS).expect("nonzero"),
+        );
+
+        // 10 blobs in epoch 0: over the Electra fallback, rejected.
+        let mut early = sidecar(3, MAX_BLOBS + 1);
+        early.signed_block_header.message.slot = 0;
+        assert!(matches!(
+            verifier.check_shape(&early),
+            Err(ValidationError::TooManyCommitments {
+                maximum: MAX_BLOBS,
+                ..
+            })
+        ));
+
+        // The same sidecar one epoch later: within the raised limit, accepted.
+        let mut later = early;
+        later.signed_block_header.message.slot = SLOTS_PER_EPOCH;
+        assert!(verifier.check_shape(&later).is_ok());
     }
 
     #[test]
