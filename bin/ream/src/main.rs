@@ -762,10 +762,16 @@ pub async fn run_data_availability_node(
     );
 
     let store = Arc::new(FileColumnStore::new(data_dir).expect("failed to open column store"));
-    let max_blobs_per_block =
-        NonZeroUsize::new(beacon_network_spec().max_blobs_per_block_electra as usize)
+    // The blob limit is epoch-dependent (EIP-7892 BPO forks), so the verifier
+    // gets the network's whole schedule plus the pre-schedule Electra fallback.
+    let network_spec = beacon_network_spec();
+    let max_blobs_per_block_electra =
+        NonZeroUsize::new(network_spec.max_blobs_per_block_electra as usize)
             .expect("network spec max_blobs_per_block must be nonzero");
-    let verifier = Arc::new(KzgVerifier::new(max_blobs_per_block));
+    let verifier = Arc::new(KzgVerifier::new(
+        network_spec.blob_schedule.clone(),
+        max_blobs_per_block_electra,
+    ));
 
     let (ingest_handle, rx) = ingest_channel(DATA_AVAILABILITY_VERIFICATION_QUEUE_CAPACITY);
     let service = DataAvailabilityVerificationService::new(

@@ -2889,6 +2889,8 @@ mod tests {
                 state_root: B256::ZERO,
                 body: BlockBody {
                     attestations: VariableList::empty(),
+                    #[cfg(feature = "reth")]
+                    execution_payload: Default::default(),
                 },
             },
             proof: MultiMessageAggregate {

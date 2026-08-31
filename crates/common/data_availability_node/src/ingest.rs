@@ -1,5 +1,6 @@
 use ream_data_availability::column::CandidateColumn;
 use tokio::sync::mpsc;
+use tracing::debug;
 
 use crate::error::IngestionError;
 
@@ -26,15 +27,13 @@ pub struct IngestHandle {
 impl IngestHandle {
     /// Submit a candidate, awaiting while the queue is full (backpressure).
     pub async fn submit(&self, candidate: CandidateColumn) -> Result<(), IngestionError> {
-        if self
-            .sender
+        self.sender
             .send(IngestWorkItem::Candidate(candidate))
             .await
-            .is_err()
-        {
-            return Err(IngestionError::Closed);
-        }
-        Ok(())
+            .map_err(|err| {
+                debug!("candidate submission failed, receiver dropped: {err}");
+                IngestionError::Closed
+            })
     }
 
     /// Submit a candidate without waiting; a full queue is
@@ -50,15 +49,13 @@ impl IngestHandle {
 
     /// Submit a retention hint, awaiting while the queue is full.
     pub async fn submit_retention(&self, hint: RetentionHint) -> Result<(), IngestionError> {
-        if self
-            .sender
+        self.sender
             .send(IngestWorkItem::Retention(hint))
             .await
-            .is_err()
-        {
-            return Err(IngestionError::Closed);
-        }
-        Ok(())
+            .map_err(|err| {
+                debug!("retention submission failed, receiver dropped: {err}");
+                IngestionError::Closed
+            })
     }
 
     /// Submit a retention hint without waiting; a full queue is

@@ -27,32 +27,20 @@ fn to_lib_signature(signature: &Signature) -> Result<XmssSignature> {
     signature.as_lean_sig()
 }
 
-fn ensure_expected_pubkeys(embedded: &[XmssPublicKey], expected: &[PublicKey]) -> Result<()> {
-    let mut expected = expected
-        .iter()
-        .map(to_lib_public_key)
-        .collect::<Result<Vec<_>>>()?;
-    expected.sort();
-    expected.dedup();
-    if embedded != expected.as_slice() {
-        return Err(anyhow!(
-            "Aggregate proof public keys do not match the expected validator keys"
-        ));
-    }
-    Ok(())
+fn to_lib_public_keys(expected: &[PublicKey]) -> Result<Vec<XmssPublicKey>> {
+    expected.iter().map(to_lib_public_key).collect()
 }
 
 pub fn type_1_from_wire(wire: &[u8], public_keys: &[PublicKey]) -> Result<SingleMessageAggregate> {
     type_2_setup_verifier();
-    let proof = SingleMessageAggregate::from_bytes(wire).ok_or_else(|| {
-        anyhow!("Failed to decode single-message aggregate multi-signature from wire bytes")
-    })?;
-    ensure_expected_pubkeys(&proof.info.pubkeys, public_keys)?;
-    Ok(proof)
+    SingleMessageAggregate::from_bytes_without_pubkeys(wire, to_lib_public_keys(public_keys)?)
+        .ok_or_else(|| {
+            anyhow!("Failed to decode single-message aggregate multi-signature from wire bytes")
+        })
 }
 
 pub fn type_1_to_wire(proof: &SingleMessageAggregate) -> Vec<u8> {
-    proof.to_bytes()
+    proof.to_bytes_without_pubkeys()
 }
 
 pub fn type_1_aggregate(
@@ -88,7 +76,7 @@ pub fn type_2_merge(parts: Vec<SingleMessageAggregate>) -> Result<MultiMessageAg
 }
 
 pub fn type_2_to_wire(proof: &MultiMessageAggregate) -> Vec<u8> {
-    proof.to_bytes()
+    proof.to_bytes_without_pubkeys()
 }
 
 pub fn type_2_from_wire(
@@ -96,20 +84,19 @@ pub fn type_2_from_wire(
     public_keys_per_component: &[Vec<PublicKey>],
 ) -> Result<MultiMessageAggregate> {
     type_2_setup_verifier();
-    let proof = MultiMessageAggregate::from_bytes(wire).ok_or_else(|| {
-        anyhow!("Failed to decode multi-message aggregate multi-signature from wire bytes")
-    })?;
-    if proof.info.len() != public_keys_per_component.len() {
-        return Err(anyhow!(
-            "Multi-message aggregate has {} components but {} public key sets were expected",
-            proof.info.len(),
-            public_keys_per_component.len()
-        ));
-    }
-    for (component, public_keys) in proof.info.iter().zip(public_keys_per_component.iter()) {
-        ensure_expected_pubkeys(&component.pubkeys, public_keys)?;
-    }
-    Ok(proof)
+    let pubkeys_per_component = public_keys_per_component
+        .iter()
+        .map(|public_keys| to_lib_public_keys(public_keys))
+        .collect::<Result<Vec<_>>>()?;
+    let expected_components = pubkeys_per_component.len();
+    MultiMessageAggregate::from_bytes_without_pubkeys(wire, pubkeys_per_component).ok_or_else(
+        || {
+            anyhow!(
+                "Failed to decode multi-message aggregate multi-signature from wire bytes \
+                 ({expected_components} public key sets supplied)"
+            )
+        },
+    )
 }
 
 pub fn type_2_verify(proof: &MultiMessageAggregate) -> Result<()> {
@@ -156,4 +143,82 @@ pub fn type_2_verify_block(
     verify_multi_message_aggregate(&proof)
         .map(|_| ())
         .map_err(|err| anyhow!("multi-message aggregate verification failed: {err}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Mutex, MutexGuard};
+
+    use super::*;
+    use crate::leansig::private_key::PrivateKey;
+
+    const SLOT: u32 = 0;
+    const MESSAGE: [u8; 32] = [7u8; 32];
+
+    // The leanVM prover uses a process-wide arena that permits only one proving
+    // job at a time, so these tests must not run concurrently.
+    static PROVER: Mutex<()> = Mutex::new(());
+
+    fn prover_lock() -> MutexGuard<'static, ()> {
+        PROVER.lock().unwrap_or_else(|err| err.into_inner())
+    }
+
+    fn key_pair(seed_byte: u8) -> (PublicKey, PrivateKey) {
+        PrivateKey::generate_key_pair_from_seed([seed_byte; 32], SLOT as usize, 1)
+    }
+
+    #[test]
+    fn type_1_wire_round_trips_without_pubkeys() {
+        let _guard = prover_lock();
+        let (public_key, private_key) = key_pair(1);
+        let signature = private_key.sign(&MESSAGE, SLOT).expect("signing failed");
+
+        let proof = type_1_aggregate(&[], &[(public_key, signature)], &MESSAGE, SLOT)
+            .expect("type-1 aggregation failed");
+
+        let wire = type_1_to_wire(&proof);
+        let decoded = type_1_from_wire(&wire, &[public_key]).expect("type-1 decode failed");
+
+        assert_eq!(decoded.info.core.message, MESSAGE);
+        assert_eq!(decoded.info.core.slot, SLOT);
+        type_1_verify(&decoded).expect("decoded type-1 proof must verify");
+    }
+
+    #[test]
+    fn type_2_wire_round_trips_without_pubkeys() {
+        let _guard = prover_lock();
+        let (public_key, private_key) = key_pair(2);
+        let signature = private_key.sign(&MESSAGE, SLOT).expect("signing failed");
+
+        let component = type_1_aggregate(&[], &[(public_key, signature)], &MESSAGE, SLOT)
+            .expect("type-1 aggregation failed");
+        let merged = type_2_merge(vec![component]).expect("type-2 merge failed");
+
+        let wire = type_2_to_wire(&merged);
+        let public_keys_per_component = vec![vec![public_key]];
+        let decoded =
+            type_2_from_wire(&wire, &public_keys_per_component).expect("type-2 decode failed");
+
+        assert_eq!(decoded.info.len(), 1);
+        type_2_verify(&decoded).expect("decoded type-2 proof must verify");
+    }
+
+    #[test]
+    fn type_2_wire_rejects_unexpected_pubkeys() {
+        let _guard = prover_lock();
+        let (public_key, private_key) = key_pair(3);
+        let (other_public_key, _) = key_pair(4);
+        let signature = private_key.sign(&MESSAGE, SLOT).expect("signing failed");
+
+        let component = type_1_aggregate(&[], &[(public_key, signature)], &MESSAGE, SLOT)
+            .expect("type-1 aggregation failed");
+        let merged = type_2_merge(vec![component]).expect("type-2 merge failed");
+        let wire = type_2_to_wire(&merged);
+
+        let decoded = type_2_from_wire(&wire, &[vec![other_public_key]]);
+        assert!(
+            decoded.is_err() || type_2_verify(&decoded.unwrap()).is_err(),
+            "a proof decoded against the wrong validator set must not verify"
+        );
+    }
 }

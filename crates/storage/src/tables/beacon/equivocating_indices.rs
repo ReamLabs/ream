@@ -26,7 +26,7 @@ impl CustomField for EquivocatingIndicesField {
         let table = read_txn.open_table(EQUIVOCATING_INDICES_FIELD)?;
         let result = table
             .get(EQUIVOCATING_INDICES_KEY)?
-            .ok_or(StoreError::FieldNotInitilized)?;
+            .ok_or(StoreError::FieldNotInitialized)?;
         Ok(result.value().into_iter().collect())
     }
 

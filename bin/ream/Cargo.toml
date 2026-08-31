@@ -1,5 +1,6 @@
 [package]
 name = "ream"
+default-run = "ream"
 description = "A Rust implementation of the Ethereum Beam Chain specification."
 authors.workspace = true
 edition.workspace = true
@@ -13,6 +14,10 @@ version.workspace = true
 [[bin]]
 name = "ream"
 path = "src/main.rs"
+
+[[bin]]
+name = "ream-data-availability-tool"
+path = "src/data_availability_tool/main.rs"
 
 [features]
 default = ["devnet5"]
@@ -76,6 +81,8 @@ libp2p-identity.workspace = true
 prometheus_exporter.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true
+reqwest.workspace = true
+rust_eth_kzg.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true
@@ -107,10 +114,12 @@ ream-data-availability-verifier-kzg.workspace = true
 ream-discv5.workspace = true
 ream-events-beacon.workspace = true
 ream-execution-engine.workspace = true
+ream-execution-rpc-types.workspace = true
 ream-executor.workspace = true
 ream-fork-choice-beacon.workspace = true
 ream-fork-choice-lean.workspace = true
 ream-keystore.workspace = true
+ream-merkle.workspace = true
 ream-metrics.workspace = true
 ream-network-manager.workspace = true
 ream-network-spec.workspace = true
@@ -133,7 +142,6 @@ ream-validator-lean.workspace = true
 [dev-dependencies]
 ream-bls.workspace = true
 ream-mock-execution-engine.workspace = true
-reqwest.workspace = true
 serial_test = "3.4.0"
 sha2.workspace = true
 

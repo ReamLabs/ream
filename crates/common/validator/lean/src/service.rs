@@ -164,32 +164,31 @@ impl ValidatorService {
                                 );
                             }
 
-                            let mut signed_attestations = vec![];
-                            let attestation_keystores = self.keystores.iter().collect::<Vec<_>>();
-                            for keystore in attestation_keystores {
-                                let message = attestation_data.clone();
-                                let message_root = message.tree_hash_root();
+                            let message_root = attestation_data.tree_hash_root();
+                            let mut signed_attestations = Vec::with_capacity(self.keystores.len());
+                            for keystore in &self.keystores {
                                 let timer = start_timer(&PQ_SIG_ATTESTATION_SIGNING_TIME, &[]);
                                 let signature = keystore.attestation_private_key.sign(&message_root, slot as u32)?;
                                 stop_timer(timer);
                                 inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_TOTAL, &[]);
                                 signed_attestations.push(SignedAttestation {
                                     signature,
-                                    message,
+                                    message: attestation_data.clone(),
                                     validator_id: keystore.index,
                                 });
                             }
 
                             let section = "timely";
                             let mut unique_subnets = HashSet::new();
+                            let signed_attestations_count = signed_attestations.len();
 
-                            for signed_attestation in &signed_attestations {
+                            for signed_attestation in signed_attestations {
                                 let subnet_id = compute_subnet_id(signed_attestation.validator_id, attestation_committee_count());
                                 unique_subnets.insert(subnet_id);
 
                                 self.chain_sender
                                     .send(LeanChainServiceMessage::ProcessAttestation {
-                                        signed_attestation: Box::new(signed_attestation.clone()),
+                                        signed_attestation: Box::new(signed_attestation),
                                         subnet_id,
                                         need_gossip: true
                                     })
@@ -198,7 +197,7 @@ impl ValidatorService {
 
                             set_int_gauge_vec(
                                 &LEAN_ATTESTATION_AGGREGATE_VALIDATORS,
-                                signed_attestations.len() as i64,
+                                signed_attestations_count as i64,
                                 &[section, "combined"]
                             );
 

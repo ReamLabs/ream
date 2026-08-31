@@ -24,7 +24,7 @@ where
         let table = read_txn.open_table(Self::FIELD_DEFINITION)?;
         let result = table
             .get(Self::KEY)?
-            .ok_or(StoreError::FieldNotInitilized)?;
+            .ok_or(StoreError::FieldNotInitialized)?;
         Ok(Self::Value::from(result.value()))
     }
 
