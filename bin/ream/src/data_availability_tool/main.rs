@@ -2,8 +2,10 @@
 //! Usage:
 //!   ream-data-availability-tool health
 //!   ream-data-availability-tool availability <block_root>
-//!   ream-data-availability-tool feed --beacon-url <url> [block_id] [--columns 0,1,2] [--wait 30] [--per-column]
-//!   ream-data-availability-tool generate [--slot 1] [--blobs 1] [--out dir] [--per-column]
+//!   ream-data-availability-tool feed --beacon-url <url> [block_id] [--columns 0,1,2]
+//!       [--wait 30] [--per-column]
+//!   ream-data-availability-tool generate [--slot 1] [--blobs 1] [--out dir]
+//!       [--per-column]
 
 mod beacon;
 mod data_availability;

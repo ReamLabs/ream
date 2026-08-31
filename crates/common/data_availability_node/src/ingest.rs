@@ -55,7 +55,10 @@ impl IngestHandle {
         self.sender
             .send(IngestWorkItem::CandidateBlock(candidate))
             .await
-            .map_err(|_| IngestionError::Closed)
+            .map_err(|err| {
+                debug!("block submission failed, receiver dropped: {err}");
+                IngestionError::Closed
+            })
     }
 
     /// Submit a whole block's batch without waiting.
