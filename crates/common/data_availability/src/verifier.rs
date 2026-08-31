@@ -5,13 +5,6 @@ use crate::{
 
 pub trait ColumnVerifier: Send + Sync {
     fn verify(&self, candidate: CandidateColumn) -> Result<VerifiedColumn, ValidationError>;
-    /// Verify a whole block's candidate batch.
-    ///
-    /// Returns one verdict per submitted column — tagged with its column index,
-    /// in submission order — so a bad column never blocks the rest of the
-    /// block. Per-column verdicts (rather than all-or-nothing) fit mixed-trust
-    /// sources like backfill, where one invalid column says nothing about its
-    /// 127 siblings.
     fn verify_block(
         &self,
         block: CandidateBlock,

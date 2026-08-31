@@ -12,9 +12,6 @@ use crate::handlers::{
 pub fn register_routers(config: &mut ServiceConfig) {
     config.service(
         scope("/data/v0")
-            // A whole block's batch is ~5.7 MB at today's 21-blob cap (~44 KB per
-            // column sidecar × 128 columns), so raise the ceiling scope-wide.
-            // JSON bodies keep their own separate limit.
             .app_data(PayloadConfig::new(MAX_BATCH_INGEST_BODY_BYTES))
             .configure(register_v0_routes),
     );

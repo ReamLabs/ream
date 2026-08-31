@@ -60,39 +60,30 @@ pub async fn post_ingest(
     Ok(HttpResponse::Accepted().finish())
 }
 
-/// One `(column index, payload)` entry of the SSZ batch-ingest body. The
-/// payload stays opaque here, exactly as in the JSON envelope.
+/// One `(column index, payload)` entry of the SSZ batch-ingest body.
 #[derive(Debug, Clone, PartialEq, Eq, SszEncode, SszDecode)]
 pub struct WireIndexedPayload {
     pub index: u64,
-    /// Opaque column payload; the bound is a per-column byte ceiling, not a
-    /// scheme statement. Even at the SSZ spec's theoretical 4096-blob maximum
-    /// a sidecar is only ~8.8 MB (4096 × 2144 B), so 16 MiB never rejects a
+    /// At the SSZ spec's theoretical 4096-blob maximum a sidecar is
+    /// ~8.8 MB (4096 × 2144 B), so 16 MiB never rejects a
     /// legitimate column while still refusing absurd length claims.
     pub payload: VariableList<u8, typenum::U16777216>,
 }
 
-/// SSZ body of `POST /data/v0/ingest/block/{block_root}`: at most one payload
-/// per column of one block (the list bound mirrors `NUMBER_OF_COLUMNS`).
+/// SSZ body of `POST /data/v0/ingest/block/{block_root}`
 pub type WireBlockBatch = VariableList<WireIndexedPayload, typenum::U128>;
 
 /// Query string of `POST /data/v0/ingest/block/{block_root}`.
 #[derive(Deserialize)]
 pub struct BlockIngestQuery {
-    /// Slot of the block the columns belong to — consensus context the node
-    /// cannot read out of the opaque payloads itself.
     slot: u64,
 }
 
 /// `POST /data/v0/ingest/block/{block_root}?slot={slot}` — admit a whole block's
 /// columns in one request.
 ///
-/// The body is SSZ over `application/octet-stream`: a list of
-/// `(column index, payload)` entries, payloads verbatim — no hex, no JSON.
-/// Metadata the node cannot derive from opaque payloads (block root, slot)
-/// travels in the URL. The batch is queued or refused as one unit, through the
-/// same load-shedding [`IngestHandle::try_submit_block`] path as the
-/// single-column endpoint.
+/// The batch is queued or refused as one unit, through the same load-shedding
+/// [`IngestHandle::try_submit_block`] path as the single-column endpoint.
 #[post("/ingest/block/{block_root}")]
 pub async fn post_ingest_block(
     handle: Data<IngestHandle>,

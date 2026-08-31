@@ -63,10 +63,6 @@ pub fn verify_cell_kzg_proof_batch(
 }
 
 /// Verify the KZG proofs of many data column sidecars in one batched check.
-///
-/// Concatenates every sidecar's `(commitment, cell index, cell, proof)` tuples
-/// into a single batched verification, amortizing the pairing cost across a
-/// whole block instead of paying it once per column.
 pub fn verify_data_column_sidecars_batch<'a>(
     sidecars: impl IntoIterator<Item = &'a DataColumnSidecar>,
 ) -> anyhow::Result<bool> {
@@ -85,9 +81,7 @@ pub fn verify_data_column_sidecars_batch<'a>(
     verify_cell_kzg_proof_batch_refs(&commitments, &cell_indices, &cells, &proofs)
 }
 
-/// The reference-based core of the batched cell verification, shared by the
-/// bounded-list wrapper above and the cross-sidecar batch: callers assemble
-/// arbitrarily many tuples without cloning any cell bytes.
+/// The reference-based core of the batched cell verification
 fn verify_cell_kzg_proof_batch_refs(
     commitments_bytes: &[&KZGCommitment],
     cell_indices: &[u64],

@@ -396,9 +396,7 @@ mod tests {
         std::fs::remove_dir_all(&root).ok();
     }
 
-    /// A verifier that counts its calls and rejects a chosen set of column
-    /// indices — lets batch tests observe both the pre-filter (skipped columns
-    /// are never verified) and per-column verdicts.
+    /// A verifier that counts its calls and rejects a chosen set of column indices
     struct CountingVerifier {
         calls: AtomicUsize,
         reject: Vec<u64>,
@@ -450,9 +448,6 @@ mod tests {
         .expect("a valid batch")
     }
 
-    /// A block batch submitted through the handle is verified and every column
-    /// lands in the store — the whole `submit_block -> queue -> verify_block ->
-    /// put` path in one go.
     #[test]
     fn submitted_block_batch_is_verified_and_stored() {
         let executor = ReamExecutor::new().expect("create executor");
@@ -488,8 +483,6 @@ mod tests {
         std::fs::remove_dir_all(&root).ok();
     }
 
-    /// Already-held columns are filtered out by one availability lookup before
-    /// verification — the verifier never sees them.
     #[test]
     fn block_batch_skips_already_held_columns() {
         let executor = ReamExecutor::new().expect("create executor");
@@ -534,8 +527,6 @@ mod tests {
         std::fs::remove_dir_all(&root).ok();
     }
 
-    /// Per-column verdicts: rejected columns are dropped, their siblings are
-    /// stored — one bad column never poisons the batch.
     #[test]
     fn block_batch_stores_survivors_when_some_columns_are_rejected() {
         let executor = ReamExecutor::new().expect("create executor");

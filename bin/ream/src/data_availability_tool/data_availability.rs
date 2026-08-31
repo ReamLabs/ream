@@ -16,9 +16,6 @@ const OVERLOAD_RETRIES: u32 = 50;
 const OVERLOAD_BACKOFF_MS: u64 = 200;
 
 /// One `(column index, payload)` entry of the SSZ batch-ingest body.
-///
-/// Mirror of `WireIndexedPayload` in `ream-rpc-data-availability` — keep the two in sync (a
-/// shared wire crate is the production answer once the surface settles).
 #[derive(SszEncode, SszDecode)]
 struct WireIndexedPayload {
     index: u64,
@@ -94,9 +91,7 @@ impl DataAvailabilityClient {
     }
 
     /// `POST /data/v0/ingest/block/{block_root}?slot={slot}` — submit a whole
-    /// block's columns as one SSZ batch: raw payload bytes, no hex, no JSON,
-    /// one HTTP round-trip. Backs off and retries while the data node reports
-    /// overload; the batch is queued or refused as one unit.
+    /// block's columns as one SSZ batch: raw payload bytes.
     pub async fn ingest_block(
         &self,
         block_root: B256,

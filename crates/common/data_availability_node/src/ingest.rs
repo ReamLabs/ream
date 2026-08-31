@@ -51,9 +51,6 @@ impl IngestHandle {
     }
 
     /// Submit a whole block's batch, awaiting while the queue is full.
-    ///
-    /// Like [`Self::submit`], applies backpressure instead of dropping work.
-    /// The batch takes a single queue slot, so a block is never half-enqueued.
     pub async fn submit_block(&self, candidate: CandidateBlock) -> Result<(), IngestionError> {
         self.sender
             .send(IngestWorkItem::CandidateBlock(candidate))
@@ -62,11 +59,6 @@ impl IngestHandle {
     }
 
     /// Submit a whole block's batch without waiting.
-    ///
-    /// Like [`Self::try_submit`], returns [`IngestionError::Overloaded`] when
-    /// the queue is full — the whole batch is shed and the caller (e.g. an RPC
-    /// handler answering 503) retries the block as one unit, never tracking
-    /// partial admission.
     pub fn try_submit_block(&self, candidate: CandidateBlock) -> Result<(), IngestionError> {
         self.sender
             .try_send(IngestWorkItem::CandidateBlock(candidate))

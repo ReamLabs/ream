@@ -50,11 +50,6 @@ impl VerifiedColumn {
 }
 
 /// A whole block's worth of candidate columns, submitted as one unit.
-///
-/// The block root and context are stored once, so a batch mixing columns from
-/// different blocks is unrepresentable. Construction validates structure only
-/// — non-empty, in-range, duplicate-free indices — and never reads payload
-/// bytes; content verification is the verifier's job.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CandidateBlock {
     block_root: B256,
@@ -64,8 +59,7 @@ pub struct CandidateBlock {
 
 impl CandidateBlock {
     /// Validate the batch structure: rejects an empty batch, out-of-range
-    /// column indices, and duplicate column indices. A valid batch is
-    /// therefore also bounded by the column count of one block.
+    /// column indices, and duplicate column indices.
     pub fn new(
         block_root: B256,
         context: ColumnContext,
@@ -113,9 +107,6 @@ impl CandidateBlock {
     }
 
     /// Explode into per-column candidates, in submission order.
-    ///
-    /// Id construction cannot fail here: every index was validated by
-    /// [`CandidateBlock::new`].
     pub fn into_columns(self) -> impl Iterator<Item = CandidateColumn> {
         let block_root = self.block_root;
         let context = self.context;
@@ -130,9 +121,7 @@ impl CandidateBlock {
         })
     }
 
-    /// Decompose into `(block_root, context, columns)`, the inverse of
-    /// [`CandidateBlock::new`] — for callers that filter the batch (e.g. drop
-    /// already-held columns) and rebuild it.
+    /// Decompose into `(block_root, context, columns)`
     pub fn into_parts(self) -> (B256, ColumnContext, Vec<(u64, Vec<u8>)>) {
         (self.block_root, self.context, self.columns)
     }

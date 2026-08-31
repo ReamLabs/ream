@@ -59,9 +59,7 @@ enum Command {
         /// Seconds to wait for the data node to verify the submitted columns.
         #[arg(long, default_value_t = 30)]
         wait: u64,
-        /// Submit one JSON request per column through `/ingest` instead of one
-        /// SSZ batch through `/ingest/block` — the legacy path, kept for
-        /// comparing the two end to end.
+        /// Submit one JSON request per column through `/ingest`
         #[arg(long)]
         per_column: bool,
     },
@@ -85,9 +83,7 @@ enum Command {
         /// Seconds to wait for the data node to verify the submitted columns.
         #[arg(long, default_value_t = 30)]
         wait: u64,
-        /// Submit one JSON request per column through `/ingest` instead of one
-        /// SSZ batch through `/ingest/block` — the legacy path, kept for
-        /// comparing the two end to end.
+        /// Submit one JSON request per column through `/ingest`
         #[arg(long)]
         per_column: bool,
     },
@@ -195,10 +191,7 @@ fn payload_hex(sidecar: &DataColumnSidecar) -> String {
 }
 
 /// Submit the sidecars — one SSZ block batch by default, or one JSON request
-/// per column with `--per-column` — then poll availability until every
-/// submitted index is held (verification runs asynchronously behind the
-/// ingest queue). Prints wall-clock timings so the two submission paths can
-/// be compared end to end.
+/// per column with `--per-column`
 async fn submit_and_wait(
     client: &DataAvailabilityClient,
     block_root: B256,

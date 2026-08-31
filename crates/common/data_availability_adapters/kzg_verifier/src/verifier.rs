@@ -324,8 +324,6 @@ mod tests {
         .expect("assemble column sidecars")
     }
 
-    /// A candidate batch built the way the RPC does it: shared root and slot
-    /// from the header, one `(index, payload)` entry per sidecar.
     fn block_of(sidecars: &[DataColumnSidecar]) -> CandidateBlock {
         let header = &sidecars[0].signed_block_header.message;
         CandidateBlock::new(
