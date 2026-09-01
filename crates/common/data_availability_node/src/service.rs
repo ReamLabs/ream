@@ -24,14 +24,10 @@ pub const DEFAULT_RECONSTRUCTION_DELAY: Duration = Duration::from_secs(3);
 pub struct DataAvailabilityVerificationService {
     receiver: mpsc::Receiver<IngestWorkItem>,
     verifier: Arc<dyn ColumnVerifier>,
-    /// Recovers a block's missing columns from the held ones
     reconstructor: Arc<dyn ColumnReconstructor>,
     store: Arc<dyn ColumnWriteStore>,
     executor: ReamExecutor,
-    /// Weak self-handle for the delayed reconstruction triggers.
     self_sender: mpsc::WeakSender<IngestWorkItem>,
-    /// Cap on how long a recoverable-but-incomplete block is given to complete
-    /// naturally before recovery is attempted
     max_reconstruction_delay: Duration,
 }
 
@@ -58,7 +54,7 @@ impl DataAvailabilityVerificationService {
     /// Consume work items until the ingest channel closes.
     ///
     /// A single sequential consumer: each item is fully handled before the next
-    /// is taken. That caps throughput but keeps the store single-writer.
+    /// is taken.
     pub async fn run(mut self) {
         info!("Data-availability verification service started");
         while let Some(item) = self.receiver.recv().await {
@@ -775,10 +771,6 @@ mod tests {
         std::fs::remove_dir_all(&root).ok();
     }
 
-    /// A candidate below the retention floor is dropped before verification.
-    /// The floor gate in `put` is the correctness backstop; the service's
-    /// early skip is the economics — it must not pay for verifying a column
-    /// it already knows the store will refuse.
     #[test]
     fn below_floor_candidate_is_skipped_before_verification() {
         let executor = ReamExecutor::new().expect("create executor");
@@ -817,10 +809,6 @@ mod tests {
         std::fs::remove_dir_all(&root).ok();
     }
 
-    /// Recovers by fabricating a candidate for every index missing from the
-    /// held set — enough to exercise the trigger/worker/re-entry plumbing
-    /// without real erasure coding (that lives in the KZG adapter and is
-    /// tested there).
     struct FillMissingReconstructor {
         calls: AtomicUsize,
     }
@@ -876,10 +864,6 @@ mod tests {
         }
     }
 
-    /// A half-full block batch crosses the recovery threshold: after the
-    /// (zero) settling delay the service recovers the other half by itself,
-    /// and the recovered columns pass through the verifier — the gate is
-    /// never bypassed.
     #[test]
     fn incomplete_block_self_heals_through_the_verify_gate() {
         let executor = ReamExecutor::new().expect("create executor");
@@ -928,8 +912,6 @@ mod tests {
         std::fs::remove_dir_all(&root).ok();
     }
 
-    /// A single trickled column that crosses the threshold triggers recovery
-    /// too — the trigger lives on both ingest paths.
     #[test]
     fn a_trickled_column_crossing_the_threshold_triggers_recovery() {
         let executor = ReamExecutor::new().expect("create executor");
@@ -975,9 +957,6 @@ mod tests {
         std::fs::remove_dir_all(&root).ok();
     }
 
-    /// When the rest of the block arrives during the settling delay, the
-    /// fired trigger re-checks, finds the block complete, and stands down
-    /// without recovering anything.
     #[test]
     fn reconstruction_stands_down_when_the_block_completes_naturally() {
         let executor = ReamExecutor::new().expect("create executor");
@@ -1028,8 +1007,6 @@ mod tests {
         std::fs::remove_dir_all(&root).ok();
     }
 
-    /// Below half the columns recovery is mathematically impossible, so the
-    /// trigger is never armed at all.
     #[test]
     fn no_reconstruction_below_half_the_columns() {
         let executor = ReamExecutor::new().expect("create executor");

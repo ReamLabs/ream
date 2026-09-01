@@ -57,8 +57,6 @@ impl FileColumnStore {
     /// on disk. A missing directory yields an empty store; leftover `*.tmp`
     /// files from an interrupted write are removed.
     pub fn new(root: PathBuf) -> Result<Self, ColumnStoreError> {
-        // The floor must be known before the directory scan, so the scan can
-        // apply it to the column files it finds.
         let retention_floor = Self::load_retention_floor(&root);
         let store = Self {
             root,
@@ -155,9 +153,6 @@ impl FileColumnStore {
                 // A file below the floor survived a prune interrupted between
                 // recording the floor and deleting
                 if self.is_below_retention(slot) {
-                    // A failed removal is a disk leak, not a reason to refuse
-                    // startup: the file stays out of the index either way, so
-                    // it is never served.
                     match fs::remove_file(&path) {
                         Ok(()) => pruned_files += 1,
                         Err(err) => warn!(
@@ -297,8 +292,7 @@ impl ColumnReadStore for FileColumnStore {
 
     fn get_retention_floor(&self) -> u64 {
         // Relaxed is enough: the floor is a monotonic scalar and carries no
-        // ordering relationship with other memory; durability comes from the
-        // persisted file, not the atomic.
+        // ordering relationship with other memory
         self.retention_floor.load(Ordering::Relaxed)
     }
 
@@ -356,9 +350,6 @@ impl ColumnWriteStore for FileColumnStore {
             return Ok(0);
         }
 
-        // Durability first: with the floor recorded before any deletion, a
-        // crash mid-prune re-prunes on the next startup; the reverse order
-        // would delete files and then forget it was supposed to.
         self.persist_retention_floor(slot)?;
         self.retention_floor.fetch_max(slot, Ordering::Relaxed);
 

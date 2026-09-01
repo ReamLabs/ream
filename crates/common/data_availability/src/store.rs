@@ -26,8 +26,7 @@ pub trait ColumnReadStore: Send + Sync {
     fn get_retention_floor(&self) -> u64;
 
     /// Whether a column at `slot` is strictly older than the retention floor
-    /// — the exact predicate [`ColumnWriteStore::put`] refuses on. A column
-    /// exactly at the floor is kept.
+    /// A column exactly at the floor is kept.
     fn is_below_retention(&self, slot: u64) -> bool;
 }
 
@@ -39,9 +38,5 @@ pub trait ColumnWriteStore: ColumnReadStore {
 
     /// Raise the retention floor to `slot` and prune every stored column below
     /// it, returning how many were removed.
-    ///
-    /// The floor is monotonic and durable: a hint below the current floor is a
-    /// no-op, and it must be recorded before any data is deleted so that an
-    /// interrupted prune resumes on the next startup.
     fn prune_below_slot(&self, slot: u64) -> Result<usize, ColumnStoreError>;
 }

@@ -21,11 +21,7 @@ use ssz::{Decode, Encode};
 use tree_hash::TreeHash;
 
 /// The PeerDAS adapter for the DA core's cryptographic capabilities — one type
-/// with two roles sharing one trusted setup: [`ColumnVerifier`] decodes a
-/// candidate's payload as an SSZ `DataColumnSidecar` and admits it only if it is
-/// structurally sound and its cells verify against their KZG commitments;
-/// [`ColumnReconstructor`] erasure-recovers a block's missing columns from any held
-/// half.
+/// with two roles sharing one trusted setup.
 #[derive(Debug, Clone)]
 pub struct KzgAdapter {
     /// BPO schedule `(activation epoch, blob limit)`, ascending; zero-limit

@@ -105,14 +105,6 @@ impl IngestHandle {
     }
 
     // TODO: will be removed after using DB instead file store
-    /// A weak sender for the verification service's own delayed
-    /// reconstruction triggers.
-    ///
-    /// Weak on purpose: the service consuming the queue must not hold a strong
-    /// handle to it, or "every producer dropped" — the shutdown signal that
-    /// ends the service loop — could never happen. Upgrading fails only once
-    /// all real handles are gone, i.e. the node is shutting down and there is
-    /// nothing left worth submitting.
     pub fn downgrade(&self) -> mpsc::WeakSender<IngestWorkItem> {
         self.sender.downgrade()
     }
