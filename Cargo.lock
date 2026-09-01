@@ -6357,6 +6357,7 @@ dependencies = [
  "clap",
  "discv5",
  "ethereum_ssz",
+ "ethereum_ssz_derive",
  "hashbrown 0.17.1",
  "leansig",
  "libp2p-identity",
@@ -7246,12 +7247,15 @@ version = "0.1.0"
 dependencies = [
  "actix-web",
  "alloy-primitives",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
  "ream-api-types-common",
  "ream-data-availability",
  "ream-data-availability-node",
  "ream-rpc-common",
  "serde",
  "serde_json",
+ "ssz_types",
 ]
 
 [[package]]

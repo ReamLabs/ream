@@ -29,6 +29,9 @@ pub enum ApiError {
 
     #[error("Service Unavailable: {0}")]
     ServiceUnavailable(String),
+
+    #[error("Unsupported Media Type: {0}")]
+    UnsupportedMediaType(String),
 }
 
 impl ResponseError for ApiError {
@@ -47,6 +50,7 @@ impl ResponseError for ApiError {
             ApiError::TooManyValidatorsIds => StatusCode::URI_TOO_LONG,
             ApiError::UnderSyncing => StatusCode::SERVICE_UNAVAILABLE,
             ApiError::ServiceUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
+            ApiError::UnsupportedMediaType(_) => StatusCode::UNSUPPORTED_MEDIA_TYPE,
         }
     }
 }
