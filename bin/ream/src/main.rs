@@ -26,6 +26,7 @@ use ream::{
         verbosity::Verbosity,
         voluntary_exit::VoluntaryExitConfig,
     },
+    reth_el,
     startup_message::startup_message,
 };
 use ream_account_manager::{message_types::MessageType, seed::derive_seed_with_user_input};
@@ -83,8 +84,6 @@ use ream_post_quantum_crypto::lean_multisig::type_2::{type_2_setup, type_2_setup
 use ream_post_quantum_crypto::leansig::{
     private_key::PrivateKey as LeanSigPrivateKey, public_key::PublicKey,
 };
-#[cfg(feature = "reth")]
-use ream_reth_engine::handle::{RethHandle, RethNodeConfig, RethP2pConfig};
 use ream_rpc_common::config::RpcServerConfig;
 use ream_rpc_lean::{handlers::test_driver::test_driver_enabled, server::start_test_driver};
 use ream_storage::{
@@ -449,7 +448,6 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     .await
     .expect("Failed to create network service");
 
-    #[cfg_attr(not(feature = "reth"), allow(unused_mut))]
     let mut chain_service = LeanChainService::new(
         lean_chain_writer,
         chain_receiver,
@@ -468,48 +466,22 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         config.http_allow_origin,
     );
 
-    // Start the reth EL embedded in the same process. `start` returns the cloneable
-    // `RethHandle` (given to the lean chain service) and also the owned node.
     #[cfg(feature = "reth")]
-    let (reth_handle, mut reth_node) = {
-        let p2p = config
-            .reth_p2p_port
-            .zip(config.reth_p2p_secret)
-            .map(|(port, secret_key)| RethP2pConfig {
-                address: config.reth_p2p_address,
-                port,
-                secret_key,
-                trusted_peers: config.reth_trusted_peers.clone(),
-            });
-
-        let (handle, node) = RethHandle::start(RethNodeConfig {
-            runtime: Some(executor.runtime().handle().clone()),
-            datadir: config.reth_datadir.clone(),
-            http_rpc: Some(SocketAddr::new(
-                config.reth_rpc_address,
-                config.reth_rpc_port,
-            )),
-            p2p,
-        })
-        .await
-        .expect("failed to boot embedded reth execution layer");
-
-        info!(
-            "Embedded reth is started with genesis hash: {:?}",
-            node.node.chain_spec().genesis_hash()
-        );
-
-        (handle, node)
+    let reth_args = reth_el::Args {
+        datadir: config.reth_datadir,
+        rpc_address: config.reth_rpc_address,
+        rpc_port: config.reth_rpc_port,
+        p2p_address: config.reth_p2p_address,
+        p2p_port: config.reth_p2p_port,
+        p2p_secret: config.reth_p2p_secret,
+        trusted_peers: config.reth_trusted_peers,
     };
-
-    #[cfg(feature = "reth")]
-    chain_service.set_reth_handle(reth_handle).await;
-
-    #[cfg(feature = "reth")]
-    let reth_exit = &mut reth_node.node_exit_future;
-
     #[cfg(not(feature = "reth"))]
-    let reth_exit = std::future::pending::<()>();
+    let reth_args = reth_el::Disabled;
+
+    // Boots the embedded reth EL and hands its handle to the chain service. Without the `reth`
+    // feature this does nothing and the returned future never resolves.
+    let reth_exit = reth_el::start(reth_args, &executor, &mut chain_service).await;
 
     // Start the services concurrently.
     let mut chain_task =
