@@ -35,7 +35,7 @@ use ream_consensus_beacon::{
     matrix_entry::{compute_cells_and_kzg_proofs, das_context},
 };
 use ream_consensus_misc::constants::beacon::{
-    WHISTLEBLOWER_REWARD_QUOTIENT, genesis_validators_root,
+    FULU_FORK_EPOCH, WHISTLEBLOWER_REWARD_QUOTIENT, genesis_validators_root,
 };
 use ream_network_manager::p2p_sender::P2PSender;
 use ream_network_spec::networks::beacon_network_spec;

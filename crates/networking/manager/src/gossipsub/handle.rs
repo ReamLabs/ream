@@ -720,6 +720,7 @@ mod tests {
     use ream_consensus_beacon::data_column_sidecar::{Cell, DataColumnSidecar};
     use ream_consensus_misc::{
         beacon_block_header::SignedBeaconBlockHeader,
+        constants::beacon::FULU_FORK_EPOCH,
         polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
     };
     use ream_network_spec::networks::initialize_test_network_spec;
