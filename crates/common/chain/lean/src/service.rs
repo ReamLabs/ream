@@ -55,8 +55,8 @@ use ream_req_resp::{
 };
 #[cfg(feature = "reth")]
 use ream_reth_engine::{
-    fork_choice::create_ream_payload_attributes, handle::RethHandle,
-    payload::to_ream_execution_payload,
+    handle::RethHandle, payload::to_ream_execution_payload,
+    payload_attributes::build_payload_attributes,
 };
 use ream_storage::{
     errors::StoreError,
@@ -3371,7 +3371,7 @@ impl LeanChainService {
             safe_block_hash: B256::ZERO,
             finalized_block_hash: B256::ZERO,
         };
-        let payload_attributes = create_ream_payload_attributes(
+        let payload_attributes = build_payload_attributes(
             slot,
             parent_lean_root,
             spec.genesis_time,
