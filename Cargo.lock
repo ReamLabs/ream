@@ -8905,6 +8905,7 @@ name = "ream-chain-lean"
 version = "0.1.0"
 dependencies = [
  "alloy-primitives",
+ "alloy-rpc-types-engine",
  "anyhow",
  "futures",
  "libp2p-identity",
@@ -9234,6 +9235,7 @@ dependencies = [
  "alloy-consensus",
  "alloy-primitives",
  "alloy-rlp",
+ "alloy-rpc-types-engine",
  "anyhow",
  "async-trait",
  "ethereum_hashing 0.7.0",
@@ -9577,7 +9579,7 @@ dependencies = [
  "alloy-genesis",
  "alloy-primitives",
  "alloy-rpc-types-engine",
- "eyre",
+ "anyhow",
  "futures-util",
  "ream-consensus-misc",
  "ream-execution-rpc-types",

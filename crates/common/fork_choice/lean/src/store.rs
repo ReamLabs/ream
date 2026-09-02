@@ -6,6 +6,10 @@ use std::{
 };
 
 use alloy_primitives::B256;
+#[cfg(feature = "reth")]
+use alloy_rpc_types_engine::ForkchoiceState;
+#[cfg(feature = "reth")]
+use anyhow::Context;
 use anyhow::{anyhow, ensure};
 #[cfg(feature = "devnet5")]
 use ream_consensus_lean::attestation::SingleMessageAggregate as PayloadProof;
@@ -53,9 +57,7 @@ use ream_post_quantum_crypto::lean_multisig::type_2::{
 use ream_post_quantum_crypto::leansig::public_key::PublicKey;
 use ream_post_quantum_crypto::leansig::signature::Signature;
 #[cfg(feature = "reth")]
-use ream_reth_engine::{
-    fork_choice::create_fork_choice_state, handle::RethHandle, payload::from_ream_execution_payload,
-};
+use ream_reth_engine::{handle::RethHandle, payload::from_ream_execution_payload};
 use ream_storage::{
     db::lean::LeanDB,
     tables::{
@@ -1883,18 +1885,22 @@ impl Store {
             let payload_status = reth_handle
                 .import_payload(execution_data)
                 .await
-                .map_err(|err| anyhow!("EL newPayload failed: {err}"))?;
+                .context("EL newPayload failed")?;
             ensure!(
                 payload_status.is_valid(),
                 "EL rejected execution payload for block {block_root}: {payload_status:?}"
             );
             reth_handle
                 .update_forkchoice(
-                    create_fork_choice_state(head_el_hash, safe_el_hash, finalized_el_hash),
+                    ForkchoiceState {
+                        head_block_hash: head_el_hash,
+                        safe_block_hash: safe_el_hash,
+                        finalized_block_hash: finalized_el_hash,
+                    },
                     None,
                 )
                 .await
-                .map_err(|err| anyhow!("EL forkchoiceUpdated (head) failed: {err}"))?;
+                .context("EL forkchoiceUpdated (head) failed")?;
         }
 
         self.update_head().await?;

@@ -8,6 +8,10 @@ use std::{
 };
 
 use alloy_primitives::B256;
+#[cfg(feature = "reth")]
+use alloy_rpc_types_engine::ForkchoiceState;
+#[cfg(feature = "reth")]
+use anyhow::Context;
 use anyhow::anyhow;
 use futures::stream::{FuturesUnordered, StreamExt};
 use libp2p_identity::PeerId;
@@ -51,8 +55,7 @@ use ream_req_resp::{
 };
 #[cfg(feature = "reth")]
 use ream_reth_engine::{
-    fork_choice::{create_fork_choice_state, create_ream_payload_attributes},
-    handle::RethHandle,
+    fork_choice::create_ream_payload_attributes, handle::RethHandle,
     payload::to_ream_execution_payload,
 };
 use ream_storage::{
@@ -3363,8 +3366,11 @@ impl LeanChainService {
         };
 
         let spec = lean_network_spec();
-        let fork_choice_state =
-            create_fork_choice_state(parent_el_block_hash, B256::ZERO, B256::ZERO);
+        let fork_choice_state = ForkchoiceState {
+            head_block_hash: parent_el_block_hash,
+            safe_block_hash: B256::ZERO,
+            finalized_block_hash: B256::ZERO,
+        };
         let payload_attributes = create_ream_payload_attributes(
             slot,
             parent_lean_root,
@@ -3375,17 +3381,16 @@ impl LeanChainService {
         let forkchoice_updated = reth_handle
             .update_forkchoice(fork_choice_state, Some(payload_attributes))
             .await
-            .map_err(|err| anyhow!("EL forkchoiceUpdated (build) failed: {err}"))?;
+            .context("EL forkchoiceUpdated (build) failed")?;
         let payload_id = forkchoice_updated
             .payload_id
             .ok_or_else(|| anyhow!("EL returned no payload_id for the slot {slot} proposal"))?;
         let execution_data = reth_handle
             .build_payload(payload_id)
             .await
-            .map_err(|err| anyhow!("EL getPayload failed: {err}"))?;
+            .context("EL getPayload failed")?;
 
-        to_ream_execution_payload(&execution_data)
-            .map_err(|err| anyhow!("EL payload conversion failed: {err}"))
+        to_ream_execution_payload(&execution_data).context("EL payload conversion failed")
     }
 }
 

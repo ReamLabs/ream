@@ -88,6 +88,7 @@ alloy-rlp = { version = "0.3.16", default-features = false, features = [
     "derive",
 ] }
 alloy-rpc-types-beacon = "2.2.0"
+alloy-rpc-types-engine = "2.2.0"
 alloy-rpc-types-eth = "2.2.0"
 anyhow = "1.0.104"
 async-trait = "0.1.91"

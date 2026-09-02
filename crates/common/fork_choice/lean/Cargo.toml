@@ -20,6 +20,7 @@ devnet5 = [
     "ream-test-utils/devnet5",
 ]
 reth = [
+    "dep:alloy-rpc-types-engine",
     "ream-consensus-lean/reth",
     "dep:ream-execution-rpc-types",
     "dep:ream-reth-engine",
@@ -38,6 +39,7 @@ optimized-leanvm = [
 alloy-consensus.workspace = true
 alloy-primitives.workspace = true
 alloy-rlp.workspace = true
+alloy-rpc-types-engine = { workspace = true, optional = true }
 anyhow.workspace = true
 async-trait.workspace = true
 ethereum_hashing.workspace = true

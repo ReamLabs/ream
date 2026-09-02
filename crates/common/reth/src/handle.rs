@@ -9,7 +9,7 @@ use std::{
 use alloy_genesis::Genesis;
 use alloy_primitives::B256;
 use alloy_rpc_types_engine::{ExecutionData, ForkchoiceState, ForkchoiceUpdated, PayloadStatus};
-use eyre::eyre;
+use anyhow::{Context, anyhow};
 use reth_ethereum::{
     chainspec::ChainSpec,
     engine::EthPayloadAttributes,
@@ -26,10 +26,8 @@ use reth_ethereum::{
     tasks::{RuntimeBuilder, RuntimeConfig, TokioConfig},
 };
 use reth_network_peers::TrustedPeer;
-use reth_payload_builder::{PayloadBuilderHandle, PayloadId};
+use reth_payload_builder::{PayloadBuilderHandle, PayloadId, PayloadKind};
 use tokio::runtime::Handle;
-
-use crate::{fork_choice, payload};
 
 pub type RethNode = NodeHandleFor<EthereumNode, DatabaseEnv>;
 
@@ -70,7 +68,7 @@ impl std::fmt::Debug for RethHandle {
 
 impl RethHandle {
     // Start a reth node with the given tokio runtime handle.
-    pub async fn start(config: RethNodeConfig) -> eyre::Result<(Self, RethNode)> {
+    pub async fn start(config: RethNodeConfig) -> anyhow::Result<(Self, RethNode)> {
         let RethNodeConfig {
             runtime,
             datadir,
@@ -83,7 +81,9 @@ impl RethHandle {
             runtime_config = runtime_config.with_tokio(TokioConfig::existing_handle(handle));
         }
 
-        let reth_rt = RuntimeBuilder::new(runtime_config).build()?;
+        let reth_rt = RuntimeBuilder::new(runtime_config)
+            .build()
+            .context("failed to build reth runtime")?;
 
         let mut rpc = RpcServerArgs::default();
         if let Some(address) = http_rpc {
@@ -111,12 +111,12 @@ impl RethHandle {
                 .map(|enode| {
                     enode
                         .parse::<TrustedPeer>()
-                        .map_err(|err| eyre!("invalid EL trusted-peer enode {enode}: {err}"))
+                        .map_err(|err| anyhow!("invalid EL trusted-peer enode {enode}: {err}"))
                 })
-                .collect::<eyre::Result<Vec<_>>>()?;
+                .collect::<anyhow::Result<Vec<_>>>()?;
         }
 
-        let node_config = NodeConfig::new(custom_chain())
+        let node_config = NodeConfig::new(dev_chain_spec())
             .with_rpc(rpc)
             .with_network(network)
             .with_datadir_args(DatadirArgs {
@@ -127,14 +127,16 @@ impl RethHandle {
         let database = init_db(
             node_config.datadir().db(),
             DatabaseArguments::new(ClientVersion::default()),
-        )?;
+        )
+        .map_err(|err| anyhow!("failed to open reth database: {err:?}"))?;
 
         let node = NodeBuilder::new(node_config)
             .with_database(database)
             .with_launch_context(reth_rt)
             .node(EthereumNode::default())
             .launch_with_debug_capabilities()
-            .await?;
+            .await
+            .map_err(|err| anyhow!("failed to launch reth node: {err:?}"))?;
 
         let handle = RethHandle {
             payload_builder: node.node.payload_builder_handle.clone(),
@@ -156,28 +158,57 @@ impl RethHandle {
     /// Called with `payload_attributes` to start building a payload for a
     /// proposal (the returned `payload_id` is fed to [`Self::build_payload`]),
     /// and with `None` to canonicalize the head after a block is imported.
+    ///
+    /// This drives the consensus engine handle directly rather than going through
+    /// `engine_forkchoiceUpdated`, so there is no method version and none of the RPC layer's
+    /// version-specific attribute validation runs. The attributes are interpreted by the
+    /// in-process payload builder against the chain spec.
     pub async fn update_forkchoice(
         &self,
         state: ForkchoiceState,
         payload_attributes: Option<EthPayloadAttributes>,
-    ) -> eyre::Result<ForkchoiceUpdated> {
-        fork_choice::update(&self.engine, state, payload_attributes).await
+    ) -> anyhow::Result<ForkchoiceUpdated> {
+        Ok(self
+            .engine
+            .fork_choice_updated(state, payload_attributes)
+            .await?)
     }
 
-    pub async fn build_payload(&self, payload_id: PayloadId) -> eyre::Result<ExecutionData> {
-        payload::build(&self.payload_builder, payload_id).await
+    /// Resolves a payload the EL is building, the in-process equivalent of `engine_getPayload`.
+    pub async fn build_payload(&self, payload_id: PayloadId) -> anyhow::Result<ExecutionData> {
+        let built = self
+            .payload_builder
+            .resolve_kind(payload_id, PayloadKind::WaitForPending)
+            .await
+            .context("payload could not be resolved")??;
+
+        Ok(built.into_execution_data())
     }
 
+    /// Imports an execution payload into the EL, the in-process equivalent of
+    /// `engine_newPayload`.
+    ///
+    /// The returned `PayloadStatus` reports whether the EL accepted the payload (`Valid`,
+    /// `Invalid`, or `Syncing`), so the caller must inspect it.
     pub async fn import_payload(
         &self,
         execution_data: ExecutionData,
-    ) -> eyre::Result<PayloadStatus> {
-        payload::import(&self.engine, execution_data).await
+    ) -> anyhow::Result<PayloadStatus> {
+        Ok(self.engine.new_payload(execution_data).await?)
     }
 }
 
-pub fn custom_chain() -> Arc<ChainSpec> {
-    let custom_genesis = r#"
+/// Hardcoded single-node devnet chain spec: chain id 2600, every fork active at genesis, and
+/// four prefunded development accounts.
+fn dev_chain_spec() -> Arc<ChainSpec> {
+    Arc::new(
+        serde_json::from_str::<Genesis>(DEV_GENESIS)
+            .expect("dev genesis must be valid")
+            .into(),
+    )
+}
+
+const DEV_GENESIS: &str = r#"
 {
     "nonce": "0x42",
     "timestamp": "0x0",
@@ -224,6 +255,3 @@ pub fn custom_chain() -> Arc<ChainSpec> {
     }
 }
 "#;
-    let genesis: Genesis = serde_json::from_str(custom_genesis).expect("genesis failed");
-    Arc::new(genesis.into())
-}
