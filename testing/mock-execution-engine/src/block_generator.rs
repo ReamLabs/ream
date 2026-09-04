@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::OnceLock};
 
-use alloy_primitives::{Address, B64, B256, Bytes, U64, U256};
+use alloy_primitives::{Address, B64, B256, U256};
 use alloy_rlp::Encodable;
 use anyhow::{anyhow, bail, ensure};
 use ream_consensus_misc::polynomial_commitments::{
@@ -13,7 +13,7 @@ use ream_execution_rpc_types::{
     get_blobs::{Blob, BlobAndProofV1},
     get_payload::{BlobsBundleV1, PayloadV4},
     payload_status::{PayloadStatus, PayloadStatusV1},
-    transaction::{AccessList, BlobTransaction, ToAddress},
+    transaction::BlobTransaction,
 };
 use rust_eth_kzg::{DASContext, TrustedSetup, UsePrecomp};
 use ssz_types::{FixedVector, VariableList};
@@ -23,20 +23,8 @@ const BLOB_TRANSACTION_TYPE: u8 = 3;
 
 fn encode_blob_transaction(blob_versioned_hashes: Vec<B256>) -> Vec<u8> {
     let transaction = BlobTransaction {
-        chain_id: U256::ZERO,
-        nonce: U256::ZERO,
-        max_priority_fee_per_gas: U256::ZERO,
-        max_fee_per_gas: U256::ZERO,
-        gas_limit: U256::ZERO,
-        to: ToAddress::Empty,
-        value: U256::ZERO,
-        data: Bytes::new(),
-        access_list: AccessList::default(),
-        max_fee_per_blob_gas: U256::ZERO,
         blob_versioned_hashes,
-        y_parity: U64::ZERO,
-        r: U256::ZERO,
-        s: U256::ZERO,
+        ..Default::default()
     };
     let mut bytes = vec![BLOB_TRANSACTION_TYPE];
     transaction.encode(&mut bytes);
