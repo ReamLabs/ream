@@ -1,5 +1,7 @@
 use std::{net::IpAddr, path::PathBuf};
 
+#[cfg(feature = "reth")]
+use alloy_primitives::B256;
 use clap::{Parser, error::ErrorKind};
 use ream_fork_choice_lean::store::BlockProductionStrategy;
 use ream_network_spec::{cli::lean_network_parser, networks::LeanNetworkSpec};
@@ -10,6 +12,8 @@ use crate::cli::constants::{
     DEFAULT_HTTP_ADDRESS, DEFAULT_HTTP_ALLOW_ORIGIN, DEFAULT_HTTP_PORT, DEFAULT_METRICS_ADDRESS,
     DEFAULT_METRICS_ENABLED, DEFAULT_METRICS_PORT, DEFAULT_SOCKET_ADDRESS, DEFAULT_SOCKET_PORT,
 };
+#[cfg(feature = "reth")]
+use crate::cli::constants::{DEFAULT_RETH_P2P_ADDRESS, DEFAULT_RETH_RPC_PORT};
 
 #[derive(Debug, Parser, Clone)]
 pub struct LeanNodeConfig {
@@ -101,6 +105,52 @@ pub struct LeanNodeConfig {
         help = "Attestation selection strategy for block production: round-based or tiered."
     )]
     pub block_production: BlockProductionStrategy,
+
+    #[cfg(feature = "reth")]
+    #[arg(long, default_value = "./reth-data", help = "Set reth data directory")]
+    pub reth_datadir: PathBuf,
+
+    #[cfg(feature = "reth")]
+    #[arg(long, help = "Set reth eth_* JSON-RPC address", default_value_t = DEFAULT_HTTP_ADDRESS)]
+    pub reth_rpc_address: IpAddr,
+
+    #[cfg(feature = "reth")]
+    #[arg(long, help = "Set reth eth_* JSON-RPC port", default_value_t = DEFAULT_RETH_RPC_PORT)]
+    pub reth_rpc_port: u16,
+
+    #[cfg(feature = "reth")]
+    #[arg(
+        long,
+        help = "Set reth RLPx (devp2p) address",
+        default_value_t = DEFAULT_RETH_P2P_ADDRESS,
+        requires = "reth_p2p_port"
+    )]
+    pub reth_p2p_address: IpAddr,
+
+    #[cfg(feature = "reth")]
+    #[arg(
+        long,
+        help = "Set reth RLPx (devp2p) port, to gossip transactions with other execution layers. Unset means an isolated EL with no peers",
+        requires = "reth_p2p_secret"
+    )]
+    pub reth_p2p_port: Option<u16>,
+
+    #[cfg(feature = "reth")]
+    #[arg(
+        long,
+        help = "Set 32-byte hex secp256k1 key pinning reth's enode identity, so peers can address it deterministically",
+        requires = "reth_p2p_port"
+    )]
+    pub reth_p2p_secret: Option<B256>,
+
+    #[cfg(feature = "reth")]
+    #[arg(
+        long,
+        value_delimiter = ',',
+        help = "Comma-separated enode URLs of other execution layers to dial directly as a static trusted mesh (enode://<pubkey>@<ip>:<port>). Discovery stays off.",
+        requires = "reth_p2p_port"
+    )]
+    pub reth_trusted_peers: Vec<String>,
 
     /// Shadow sim only: replace the XMSS aggregation prover/verifier with a
     /// deterministic stub (no leanVM proving/verifying). Off by default.

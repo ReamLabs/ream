@@ -1,0 +1,39 @@
+[package]
+name = "ream-reth-engine"
+authors.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+alloy-eips = "2.1.0"
+alloy-genesis = "2.1.0"
+alloy-primitives.workspace = true
+alloy-rpc-types-engine.workspace = true
+anyhow.workspace = true
+futures-util = "0.3.32"
+ream-consensus-misc.workspace = true
+ream-execution-rpc-types.workspace = true
+reqwest.workspace = true
+reth-ethereum = { git = "https://github.com/paradigmxyz/reth.git", rev = "5d027e5ff72f31270b862f8e000d1cc79621be2e", features = [
+  "node",
+  "test-utils",
+] }
+reth-network-peers = { git = "https://github.com/paradigmxyz/reth.git", rev = "5d027e5ff72f31270b862f8e000d1cc79621be2e" }
+reth-payload-builder = { git = "https://github.com/paradigmxyz/reth.git", rev = "5d027e5ff72f31270b862f8e000d1cc79621be2e" }
+serde_json.workspace = true
+sha2.workspace = true
+ssz_types.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

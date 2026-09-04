@@ -6,6 +6,10 @@ use std::{
 };
 
 use alloy_primitives::B256;
+#[cfg(feature = "reth")]
+use alloy_rpc_types_engine::ForkchoiceState;
+#[cfg(feature = "reth")]
+use anyhow::Context;
 use anyhow::{anyhow, ensure};
 #[cfg(feature = "devnet5")]
 use ream_consensus_lean::attestation::SingleMessageAggregate as PayloadProof;
@@ -24,6 +28,8 @@ use ream_consensus_misc::constants::lean::{
     GOSSIP_DISPARITY_INTERVALS, INTERVALS_PER_SLOT, MAX_ATTESTATIONS_DATA,
     MAX_HISTORICAL_BLOCK_HASHES, attestation_committee_count,
 };
+#[cfg(feature = "reth")]
+use ream_execution_rpc_types::electra::execution_payload::ExecutionPayload;
 use ream_metrics::{
     ATTESTATION_COMMITTEE_SUBNET, ATTESTATION_VALIDATION_TIME, ATTESTATIONS_INVALID_TOTAL,
     ATTESTATIONS_VALID_TOTAL, BLOCK_AGGREGATED_PAYLOADS, BLOCK_BUILDING_PAYLOAD_AGGREGATION_TIME,
@@ -50,6 +56,8 @@ use ream_post_quantum_crypto::lean_multisig::type_2::{
 #[cfg(feature = "devnet5")]
 use ream_post_quantum_crypto::leansig::public_key::PublicKey;
 use ream_post_quantum_crypto::leansig::signature::Signature;
+#[cfg(feature = "reth")]
+use ream_reth_engine::{handle::RethHandle, payload::from_ream_execution_payload};
 use ream_storage::{
     db::lean::LeanDB,
     tables::{
@@ -178,6 +186,10 @@ pub struct Store {
     pub store: Arc<Mutex<LeanDB>>,
     pub network_state: Arc<NetworkState>,
     pub tick_interval_duration: Option<Instant>,
+    /// Handle to the embedded reth execution layer, used to validate and
+    /// canonicalize the execution payload carried by each imported block.
+    #[cfg(feature = "reth")]
+    pub reth_handle: Option<RethHandle>,
     pub block_production_strategy: BlockProductionStrategy,
 }
 
@@ -244,8 +256,17 @@ impl Store {
             store: Arc::new(Mutex::new(db)),
             network_state: Arc::new(NetworkState::new(anchor_checkpoint, anchor_checkpoint)),
             tick_interval_duration: None,
+            #[cfg(feature = "reth")]
+            reth_handle: None,
             block_production_strategy: BlockProductionStrategy::default(),
         })
+    }
+
+    /// Attach the embedded reth execution-layer handle so [`Self::on_block`] can
+    /// validate and canonicalize the execution payload of each imported block.
+    #[cfg(feature = "reth")]
+    pub fn set_reth_handle(&mut self, reth_handle: RethHandle) {
+        self.reth_handle = Some(reth_handle);
     }
 
     /// Override the block-production strategy. Defaults to round-based.
@@ -1051,6 +1072,7 @@ impl Store {
         proposer_index: u64,
         parent_root: B256,
         attestations: Option<VariableList<AggregatedAttestations, U4096>>,
+        #[cfg(feature = "reth")] execution_payload: ExecutionPayload,
     ) -> anyhow::Result<(Block, Vec<PayloadProof>, LeanState)> {
         let ctx = self.load_build_context(parent_root).await?;
         let extended_historical_block_hashes =
@@ -1063,6 +1085,8 @@ impl Store {
                 slot,
                 proposer_index,
                 parent_root,
+                #[cfg(feature = "reth")]
+                &execution_payload,
             )?,
             BlockProductionStrategy::Tiered => {
                 let selected = Self::select_tiered(
@@ -1083,6 +1107,8 @@ impl Store {
             slot,
             proposer_index,
             parent_root,
+            #[cfg(feature = "reth")]
+            execution_payload,
         )
         .await
     }
@@ -1139,6 +1165,7 @@ impl Store {
         slot: u64,
         proposer_index: u64,
         parent_root: B256,
+        #[cfg(feature = "reth")] execution_payload: &ExecutionPayload,
     ) -> anyhow::Result<(Vec<AggregatedAttestations>, u64)> {
         let head_state = &ctx.head_state;
         let mut attestations: VariableList<AggregatedAttestations, U4096> =
@@ -1309,6 +1336,8 @@ impl Store {
                 state_root: B256::ZERO,
                 body: BlockBody {
                     attestations: attestations_list,
+                    #[cfg(feature = "reth")]
+                    execution_payload: execution_payload.clone(),
                 },
             };
 
@@ -1554,6 +1583,7 @@ impl Store {
         slot: u64,
         proposer_index: u64,
         parent_root: B256,
+        #[cfg(feature = "reth")] execution_payload: ExecutionPayload,
     ) -> anyhow::Result<(Block, Vec<PayloadProof>, LeanState)> {
         let payload_aggregation_timer = start_timer(&BLOCK_BUILDING_PAYLOAD_AGGREGATION_TIME, &[]);
         let aggregator_start = Instant::now();
@@ -1577,6 +1607,8 @@ impl Store {
             state_root: B256::ZERO,
             body: BlockBody {
                 attestations: attestations_list,
+                #[cfg(feature = "reth")]
+                execution_payload,
             },
         };
 
@@ -1608,6 +1640,32 @@ impl Store {
         &mut self,
         slot: u64,
         validator_index: u64,
+    ) -> anyhow::Result<BlockWithSignatures> {
+        self.produce_block_with_signatures_inner(
+            slot,
+            validator_index,
+            #[cfg(feature = "reth")]
+            ExecutionPayload::default(),
+        )
+        .await
+    }
+
+    #[cfg(feature = "reth")]
+    pub async fn produce_block_with_signatures_with_payload(
+        &mut self,
+        slot: u64,
+        validator_index: u64,
+        execution_payload: ExecutionPayload,
+    ) -> anyhow::Result<BlockWithSignatures> {
+        self.produce_block_with_signatures_inner(slot, validator_index, execution_payload)
+            .await
+    }
+
+    async fn produce_block_with_signatures_inner(
+        &mut self,
+        slot: u64,
+        validator_index: u64,
+        #[cfg(feature = "reth")] execution_payload: ExecutionPayload,
     ) -> anyhow::Result<BlockWithSignatures> {
         let (state_provider, latest_known_aggregated_payloads_provider) = {
             let db = self.store.lock().await;
@@ -1662,6 +1720,8 @@ impl Store {
                 validator_index,
                 head_root,
                 Some(attestation_list),
+                #[cfg(feature = "reth")]
+                execution_payload,
             )
             .await?;
 
@@ -1796,6 +1856,51 @@ impl Store {
                     latest_known_aggregated_payloads_provider.insert(key, existing_proofs)?;
                 }
             }
+        }
+
+        // Validate and canonicalize this block's execution payload against the
+        // embedded reth EL: newPayloadV4 executes/verifies it, then
+        // forkchoiceUpdated advances the EL head. Both proposer and
+        // non-proposer blocks flow through `on_block`
+        #[cfg(feature = "reth")]
+        if let Some(reth_handle) = &self.reth_handle {
+            let execution_payload = &block.body.execution_payload;
+            let head_el_hash = execution_payload.block_hash;
+
+            let el_hash_of = |root: B256| {
+                block_provider
+                    .get(root)
+                    .ok()
+                    .flatten()
+                    .map(|signed| signed.block.body.execution_payload.block_hash)
+            };
+            let safe_el_hash = el_hash_of(latest_justified.root).unwrap_or(head_el_hash);
+            let finalized_root = {
+                let db = self.store.lock().await;
+                db.latest_finalized_provider().get()?.root
+            };
+            let finalized_el_hash = el_hash_of(finalized_root).unwrap_or(head_el_hash);
+
+            let execution_data = from_ream_execution_payload(execution_payload, block.parent_root);
+            let payload_status = reth_handle
+                .import_payload(execution_data)
+                .await
+                .context("EL newPayload failed")?;
+            ensure!(
+                payload_status.is_valid(),
+                "EL rejected execution payload for block {block_root}: {payload_status:?}"
+            );
+            reth_handle
+                .update_forkchoice(
+                    ForkchoiceState {
+                        head_block_hash: head_el_hash,
+                        safe_block_hash: safe_el_hash,
+                        finalized_block_hash: finalized_el_hash,
+                    },
+                    None,
+                )
+                .await
+                .context("EL forkchoiceUpdated (head) failed")?;
         }
 
         self.update_head().await?;
@@ -2775,6 +2880,8 @@ mod tests {
             store: test_store.store,
             network_state: test_store.network_state,
             tick_interval_duration: None,
+            #[cfg(feature = "reth")]
+            reth_handle: None,
             block_production_strategy: BlockProductionStrategy::default(),
         }
     }
@@ -2788,6 +2895,8 @@ mod tests {
                 state_root: B256::ZERO,
                 body: BlockBody {
                     attestations: VariableList::empty(),
+                    #[cfg(feature = "reth")]
+                    execution_payload: Default::default(),
                 },
             },
             proof: MultiMessageAggregate {

@@ -14,6 +14,8 @@ fn genesis_block(state_root: B256) -> Block {
         state_root,
         body: BlockBody {
             attestations: Default::default(),
+            #[cfg(feature = "reth")]
+            execution_payload: Default::default(),
         },
     }
 }

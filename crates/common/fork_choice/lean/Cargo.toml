@@ -19,6 +19,12 @@ devnet5 = [
     "ream-storage/devnet5",
     "ream-test-utils/devnet5",
 ]
+reth = [
+    "dep:alloy-rpc-types-engine",
+    "ream-consensus-lean/reth",
+    "dep:ream-execution-rpc-types",
+    "dep:ream-reth-engine",
+]
 optimized-leanvm = [
     "ream-network-spec/optimized-leanvm",
     "devnet5",
@@ -33,6 +39,7 @@ optimized-leanvm = [
 alloy-consensus.workspace = true
 alloy-primitives.workspace = true
 alloy-rlp.workspace = true
+alloy-rpc-types-engine = { workspace = true, optional = true }
 anyhow.workspace = true
 async-trait.workspace = true
 ethereum_hashing.workspace = true
@@ -56,10 +63,12 @@ ream-bls.workspace = true
 ream-consensus-beacon.workspace = true
 ream-consensus-lean.workspace = true
 ream-consensus-misc.workspace = true
+ream-execution-rpc-types = { workspace = true, optional = true }
 ream-metrics.workspace = true
 ream-network-spec.workspace = true
 ream-network-state-lean.workspace = true
 ream-post-quantum-crypto.workspace = true
+ream-reth-engine = { workspace = true, optional = true }
 ream-storage.workspace = true
 ream-sync.workspace = true
 

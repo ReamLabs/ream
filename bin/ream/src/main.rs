@@ -26,6 +26,7 @@ use ream::{
         verbosity::Verbosity,
         voluntary_exit::VoluntaryExitConfig,
     },
+    reth_el,
     startup_message::startup_message,
 };
 use ream_account_manager::{message_types::MessageType, seed::derive_seed_with_user_input};
@@ -450,7 +451,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     .await
     .expect("Failed to create network service");
 
-    let chain_service = LeanChainService::new(
+    let mut chain_service = LeanChainService::new(
         lean_chain_writer,
         chain_receiver,
         outbound_p2p_sender,
@@ -467,6 +468,23 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         config.http_port,
         config.http_allow_origin,
     );
+
+    #[cfg(feature = "reth")]
+    let reth_args = reth_el::Args {
+        datadir: config.reth_datadir,
+        rpc_address: config.reth_rpc_address,
+        rpc_port: config.reth_rpc_port,
+        p2p_address: config.reth_p2p_address,
+        p2p_port: config.reth_p2p_port,
+        p2p_secret: config.reth_p2p_secret,
+        trusted_peers: config.reth_trusted_peers,
+    };
+    #[cfg(not(feature = "reth"))]
+    let reth_args = reth_el::Disabled;
+
+    // Boots the embedded reth EL and hands its handle to the chain service. Without the `reth`
+    // feature this does nothing and the returned future never resolves.
+    let reth_exit = reth_el::start(reth_args, &executor, &mut chain_service).await;
 
     // Start the services concurrently.
     let mut chain_task =
@@ -509,6 +527,9 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         },
         result = &mut http_task.0 => {
             error!("RPC service has stopped unexpectedly: {result:?}");
+        }
+        result = reth_exit => {
+            error!("Embedded reth execution layer has stopped unexpectedly: {result:?}");
         }
     }
 }
