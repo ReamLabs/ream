@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::OnceLock};
 
 use anyhow::{Ok, Result, anyhow, ensure};
 use ream_consensus_misc::{
@@ -9,10 +9,15 @@ use ream_metrics::{
     BEACON_DATA_AVAILABILITY_RECONSTRUCTED_COLUMNS_TOTAL,
     BEACON_DATA_AVAILABILITY_RECONSTRUCTION_TIME_SECONDS,
 };
-use rust_eth_kzg::{Cell as KZGCell, DASContext, KZGProof as Proof};
+use rust_eth_kzg::{Cell as KZGCell, DASContext, KZGProof as Proof, TrustedSetup, UsePrecomp};
 use ssz_types::FixedVector;
 
 use crate::data_column_sidecar::Cell;
+
+pub fn das_context() -> &'static DASContext {
+    static DAS_CONTEXT: OnceLock<DASContext> = OnceLock::new();
+    DAS_CONTEXT.get_or_init(|| DASContext::new(&TrustedSetup::default(), UsePrecomp::No))
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MatrixEntry {

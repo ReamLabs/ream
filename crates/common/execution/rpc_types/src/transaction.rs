@@ -62,7 +62,7 @@ pub struct AccessListItem {
     pub storage_keys: Vec<B256>,
 }
 
-#[derive(Eq, Debug, Clone, PartialEq, RlpDecodable, RlpEncodable)]
+#[derive(Default, Eq, Debug, Clone, PartialEq, RlpDecodable, RlpEncodable)]
 pub struct BlobTransaction {
     pub chain_id: U256,
     pub nonce: U256,
