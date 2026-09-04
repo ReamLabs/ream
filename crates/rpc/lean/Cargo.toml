@@ -18,6 +18,7 @@ devnet5 = [
     "ream-network-state-lean/devnet5",
     "ream-storage/devnet5",
     "ream-test-utils/devnet5",
+    "ream-validator-lean/devnet5",
 ]
 optimized-leanvm = [
     "ream-network-spec/optimized-leanvm",
@@ -57,10 +58,12 @@ ream-post-quantum-crypto.workspace = true
 ream-rpc-common.workspace = true
 ream-storage.workspace = true
 ream-sync.workspace = true
+ream-validator-lean.workspace = true
 ssz_types.workspace = true
 tree_hash.workspace = true
 
 [dev-dependencies]
+ream-keystore.workspace = true
 ream-metrics.workspace = true
 ream-test-utils.workspace = true
 url.workspace = true

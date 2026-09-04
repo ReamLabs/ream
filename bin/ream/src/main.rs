@@ -104,6 +104,7 @@ use ream_validator_beacon::{
 };
 use ream_validator_lean::{
     registry::load_validator_registry, service::ValidatorService as LeanValidatorService,
+    signer::ProposalSigner,
 };
 use ssz_types::VariableList;
 use tokio::{
@@ -275,10 +276,14 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     let keystores = load_validator_registry(&config.validator_registry_path, &config.node_id)
         .expect("Failed to load validator registry");
 
-    if let Some(keystore) = keystores.first() {
+    let proposal_signer = Arc::new(ProposalSigner::new(
+        keystores.into_iter().map(Arc::new).collect(),
+    ));
+
+    if let Some(validator_index) = proposal_signer.first_validator_index() {
         set_int_gauge_vec(
             &ATTESTATION_COMMITTEE_SUBNET,
-            compute_subnet_id(keystore.index, attestation_committee_count()) as i64,
+            compute_subnet_id(validator_index, attestation_committee_count()) as i64,
             &[],
         );
     }
@@ -353,7 +358,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
             anchor_state,
             lean_db,
             None,
-            keystores.first().map(|keystore| keystore.index),
+            proposal_signer.first_validator_index(),
         )
         .expect("Could not get forkchoice store")
         .with_block_production_strategy(config.block_production),
@@ -376,6 +381,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
             lean_chain_writer,
             network_state,
             aggregator_state,
+            proposal_signer.clone(),
         )
         .await
         .expect("Lean test-driver RPC service stopped unexpectedly");
@@ -387,9 +393,9 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
 
     let committee_count = attestation_committee_count();
     let subscribed_subnets = {
-        let mut set: BTreeSet<u64> = keystores
-            .iter()
-            .map(|keystore| keystore.index % committee_count)
+        let mut set: BTreeSet<u64> = proposal_signer
+            .validator_indices()
+            .map(|validator_index| validator_index % committee_count)
             .collect();
 
         if config.is_aggregator {
@@ -458,9 +464,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     )
     .await;
 
-    let arc_keystores: Vec<Arc<_>> = keystores.into_iter().map(Arc::new).collect();
-
-    let validator_service = LeanValidatorService::new(arc_keystores, chain_sender).await;
+    let validator_service = LeanValidatorService::new(proposal_signer, chain_sender).await;
 
     let server_config = RpcServerConfig::new(
         config.http_address,

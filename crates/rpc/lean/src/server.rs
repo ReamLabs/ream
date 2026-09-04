@@ -4,6 +4,7 @@ use actix_web::web::Data;
 use ream_fork_choice_lean::store::{LeanStoreReader, LeanStoreWriter};
 use ream_network_state_lean::{AggregatorState, NetworkState};
 use ream_rpc_common::{config::RpcServerConfig, server::RpcServerBuilder};
+use ream_validator_lean::signer::ProposalSigner;
 
 use crate::routes::{register_routers, register_test_driver_routers};
 
@@ -31,6 +32,7 @@ pub async fn start_test_driver(
     lean_chain_writer: LeanStoreWriter,
     network_state: Arc<NetworkState>,
     aggregator_state: Arc<AggregatorState>,
+    proposal_signer: Arc<ProposalSigner>,
 ) -> Result<()> {
     RpcServerBuilder::new(server_config.http_socket_address)
         .allow_origin(server_config.http_allow_origin)
@@ -38,6 +40,7 @@ pub async fn start_test_driver(
         .with_app_data(Data::new(lean_chain_writer))
         .with_data(network_state)
         .with_data(aggregator_state)
+        .with_app_data(Data::from(proposal_signer))
         .configure(register_test_driver_routers)
         .start()
         .await

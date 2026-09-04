@@ -10,7 +10,7 @@ use crate::handlers::{
     health::get_health,
     state::get_state,
     test_driver::{
-        init_fork_choice, reset_store, run_state_transition, run_verify_signatures,
+        init_fork_choice, reset_store, run_state_transition, run_verify_signatures, sign_proposal,
         snapshot_fork_choice, step_fork_choice,
     },
 };
@@ -39,5 +39,6 @@ pub fn register_test_driver_lean_routes(cfg: &mut ServiceConfig) {
         .service(step_fork_choice)
         .service(snapshot_fork_choice)
         .service(run_state_transition)
-        .service(run_verify_signatures);
+        .service(run_verify_signatures)
+        .service(sign_proposal);
 }
