@@ -88,7 +88,7 @@ impl ProposalSigner {
         let keystore = self
             .keystore(validator_index)
             .ok_or(ProposalSignerError::ValidatorNotFound { validator_index })?;
-        let epoch = u32::try_from(slot).map_err(|_| ProposalSignerError::SlotOverflow { slot })?;
+        let epoch = u32::try_from(slot).or(Err(ProposalSignerError::SlotOverflow { slot }))?;
         let activation_interval = keystore.proposal_private_key.get_activation_interval();
         if !activation_interval.contains(&slot) {
             return Err(ProposalSignerError::SlotOutsideActivationInterval {
@@ -101,10 +101,10 @@ impl ProposalSigner {
         let signature = keystore
             .proposal_private_key
             .sign(block_root, epoch)
-            .map_err(|source| ProposalSignerError::SigningFailed {
+            .map_err(|err| ProposalSignerError::SigningFailed {
                 validator_index,
                 slot,
-                source,
+                source: err,
             })?;
 
         Ok(ProposalSignature {

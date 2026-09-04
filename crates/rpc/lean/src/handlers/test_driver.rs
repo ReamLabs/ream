@@ -733,7 +733,7 @@ pub async fn sign_proposal(
         &request.block_root,
     ) {
         Ok(signed) => SignProposalResponse::signed(request, signed.public_key, signed.signature),
-        Err(error) => SignProposalResponse::rejected(request, error),
+        Err(err) => SignProposalResponse::rejected(request, err),
     };
 
     HttpResponse::Ok().json(response)

@@ -63,8 +63,8 @@ ssz_types.workspace = true
 tree_hash.workspace = true
 
 [dev-dependencies]
-ream-metrics.workspace = true
 ream-keystore.workspace = true
+ream-metrics.workspace = true
 ream-test-utils.workspace = true
 url.workspace = true
 
