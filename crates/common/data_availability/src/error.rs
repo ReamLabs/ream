@@ -48,6 +48,9 @@ pub enum ValidationError {
 
     #[error("duplicate column index {column_index} in block batch")]
     DuplicateColumnIndex { column_index: u64 },
+
+    #[error("reconstruction failed: {0}")]
+    ReconstructionFailure(String),
 }
 
 #[derive(Debug, Error)]

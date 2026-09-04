@@ -1,3 +1,4 @@
+use alloy_primitives::B256;
 use ream_data_availability::column::{CandidateBlock, CandidateColumn};
 use tokio::sync::mpsc;
 use tracing::debug;
@@ -13,6 +14,16 @@ pub enum IngestWorkItem {
     CandidateBlock(CandidateBlock),
     /// A beacon-issued retention boundary.
     Retention(RetentionHint),
+
+    /// A self-issued request to recover one block's missing columns.
+    /// Queued by the verification service itself — with a settling delay
+    Reconstruction(ReconstructionRequest),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReconstructionRequest {
+    /// Root of the block whose missing columns should be recovered.
+    pub block_root: B256,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,6 +102,11 @@ impl IngestHandle {
                 mpsc::error::TrySendError::Full(_) => IngestionError::Overloaded,
                 mpsc::error::TrySendError::Closed(_) => IngestionError::Closed,
             })
+    }
+
+    // TODO: will be removed after using DB instead file store
+    pub fn downgrade(&self) -> mpsc::WeakSender<IngestWorkItem> {
+        self.sender.downgrade()
     }
 }
 

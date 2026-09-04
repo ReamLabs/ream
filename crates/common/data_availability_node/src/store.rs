@@ -2,9 +2,12 @@ use std::{
     collections::HashMap,
     fs,
     io::{self, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     str::FromStr,
-    sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
+    sync::{
+        RwLock, RwLockReadGuard, RwLockWriteGuard,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use alloy_primitives::B256;
@@ -19,6 +22,10 @@ use tracing::{debug, info, trace, warn};
 
 /// Committed column files; in-progress writes use `.tmp` instead.
 const COLUMN_FILE_EXTENSION: &str = "ssz";
+
+/// Kept in `root` next to the column files. The name never matches the
+/// column-file scheme, so the startup scan skips it.
+const RETENTION_FLOOR_FILE: &str = "retention_floor";
 
 /// A block's slot plus a 128-bit bitmap of its stored column indices.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,6 +48,8 @@ pub struct FileColumnStore {
     root: PathBuf,
     index: RwLock<HashMap<B256, BlockEntry>>,
     // TODO: add a payload cache to avoid reading from files every time.
+    /// Beacon-issued retention floor, as a slot; `0` means no floor yet.
+    retention_floor: AtomicU64,
 }
 
 impl FileColumnStore {
@@ -48,12 +57,55 @@ impl FileColumnStore {
     /// on disk. A missing directory yields an empty store; leftover `*.tmp`
     /// files from an interrupted write are removed.
     pub fn new(root: PathBuf) -> Result<Self, ColumnStoreError> {
+        let retention_floor = Self::load_retention_floor(&root);
         let store = Self {
             root,
             index: RwLock::new(HashMap::new()),
+            retention_floor: AtomicU64::new(retention_floor),
         };
         store.rebuild_index()?;
         Ok(store)
+    }
+
+    /// Read the persisted retention floor; `0` (no floor) when the file does
+    /// not exist yet.
+    fn load_retention_floor(root: &Path) -> u64 {
+        let path = root.join(RETENTION_FLOOR_FILE);
+        let contents = match fs::read_to_string(&path) {
+            Ok(contents) => contents,
+            Err(err) if err.kind() == io::ErrorKind::NotFound => return 0,
+            Err(err) => {
+                warn!(
+                    "failed to read the retention floor file {}: {err}; starting with no floor",
+                    path.display()
+                );
+                return 0;
+            }
+        };
+        match contents.trim().parse() {
+            Ok(floor) => floor,
+            Err(err) => {
+                warn!(
+                    "malformed retention floor file {}: {err}; starting with no floor",
+                    path.display()
+                );
+                0
+            }
+        }
+    }
+
+    /// Durably record `floor`: temp file + `sync_all` + atomic rename, the same
+    /// discipline as a column write.
+    fn persist_retention_floor(&self, floor: u64) -> Result<(), ColumnStoreError> {
+        // The first retention hint may arrive before any column was written.
+        fs::create_dir_all(&self.root)?;
+        let path = self.root.join(RETENTION_FLOOR_FILE);
+        let tmp_path = path.with_extension("tmp");
+        let mut file = fs::File::create(&tmp_path)?;
+        file.write_all(floor.to_string().as_bytes())?;
+        file.sync_all()?;
+        fs::rename(&tmp_path, &path)?;
+        Ok(())
     }
 
     /// `{slot:08}_{index:03}_{block_root:x}.ssz` under `root`.
@@ -79,6 +131,7 @@ impl FileColumnStore {
 
         let mut index = self.index_write();
         let mut column_files = 0u64;
+        let mut pruned_files = 0u64;
         for entry in entries {
             let path = entry?.path();
             let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
@@ -97,6 +150,18 @@ impl FileColumnStore {
 
             // Skip anything we did not write: startup must not fail on clutter.
             if let Some((id, slot)) = Self::parse_column_file_name(name) {
+                // A file below the floor survived a prune interrupted between
+                // recording the floor and deleting
+                if self.is_below_retention(slot) {
+                    match fs::remove_file(&path) {
+                        Ok(()) => pruned_files += 1,
+                        Err(err) => warn!(
+                            "failed to remove a below-floor column file {}: {err}",
+                            path.display()
+                        ),
+                    }
+                    continue;
+                }
                 index
                     .entry(id.block_root())
                     .or_insert(BlockEntry { slot, columns: 0 })
@@ -106,8 +171,9 @@ impl FileColumnStore {
         }
 
         info!(
-            "loaded column store index from {root}: {column_files} column files across {} blocks",
-            index.len()
+            "loaded DA store index from {root}: {column_files} column files across {} blocks, retention floor at slot {}, {pruned_files} below-floor files removed",
+            index.len(),
+            self.retention_floor.load(Ordering::Relaxed)
         );
         Ok(())
     }
@@ -213,7 +279,7 @@ impl ColumnReadStore for FileColumnStore {
         )))
     }
 
-    fn availability(&self, block_root: B256) -> Result<ColumnAvailability, ColumnStoreError> {
+    fn availability(&self, block_root: B256) -> ColumnAvailability {
         let held = self
             .index_read()
             .get(&block_root)
@@ -221,7 +287,17 @@ impl ColumnReadStore for FileColumnStore {
             .unwrap_or(0);
         // Full-custody MVP: every column is expected. Custody groups would
         // pass the node's actual custody set here instead.
-        Ok(ColumnAvailability::new(held, ALL_COLUMNS_MASK))
+        ColumnAvailability::new(held, ALL_COLUMNS_MASK)
+    }
+
+    fn get_retention_floor(&self) -> u64 {
+        // Relaxed is enough: the floor is a monotonic scalar and carries no
+        // ordering relationship with other memory
+        self.retention_floor.load(Ordering::Relaxed)
+    }
+
+    fn is_below_retention(&self, slot: u64) -> bool {
+        slot < self.get_retention_floor()
     }
 }
 
@@ -234,6 +310,10 @@ impl ColumnWriteStore for FileColumnStore {
         let slot = column.context().slot;
         let block_root = id.block_root();
         let column_index = id.index();
+
+        if self.is_below_retention(slot) {
+            return Ok(InsertOutcome::BelowRetention);
+        }
 
         let already_stored = self
             .index_read()
@@ -262,6 +342,17 @@ impl ColumnWriteStore for FileColumnStore {
     }
 
     fn prune_below_slot(&self, slot: u64) -> Result<usize, ColumnStoreError> {
+        if self.is_below_retention(slot) {
+            info!(
+                "ignoring retention hint below the current floor: hint slot {slot}, floor {floor}",
+                floor = self.get_retention_floor()
+            );
+            return Ok(0);
+        }
+
+        self.persist_retention_floor(slot)?;
+        self.retention_floor.fetch_max(slot, Ordering::Relaxed);
+
         let entries = self
             .index_read()
             .iter()
@@ -287,7 +378,7 @@ mod tests {
         store::{ColumnReadStore, ColumnWriteStore, InsertOutcome},
     };
 
-    use super::{BlockEntry, FileColumnStore};
+    use super::{BlockEntry, FileColumnStore, RETENTION_FLOOR_FILE};
 
     fn temp_root() -> PathBuf {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -438,6 +529,104 @@ mod tests {
     }
 
     #[test]
+    fn retention_floor_survives_reopen() {
+        let root = temp_root();
+        let store = FileColumnStore::new(root.clone()).expect("open store");
+        // A fresh store starts with no floor.
+        assert_eq!(store.retention_floor.load(Ordering::Relaxed), 0);
+
+        store.persist_retention_floor(42).expect("persist floor");
+        drop(store);
+
+        let reopened = FileColumnStore::new(root.clone()).expect("reopen store");
+        assert_eq!(reopened.retention_floor.load(Ordering::Relaxed), 42);
+
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn malformed_retention_floor_file_degrades_to_no_floor() {
+        let root = temp_root();
+        fs::create_dir_all(&root).expect("create root");
+        fs::write(root.join(RETENTION_FLOOR_FILE), b"not-a-slot").expect("write junk");
+
+        // Fail-open: a corrupt floor file must not brick the store.
+        let store = FileColumnStore::new(root.clone()).expect("open store");
+        assert_eq!(store.retention_floor.load(Ordering::Relaxed), 0);
+
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn put_refuses_columns_below_the_retention_floor() {
+        let root = temp_root();
+        let store = FileColumnStore::new(root.clone()).expect("open store");
+        store.prune_below_slot(15).expect("set floor");
+
+        // Strictly below the floor: refused, and nothing touches disk or index.
+        let stale = sample_column(B256::repeat_byte(1), 0, 14, b"stale");
+        let id = stale.id();
+        assert_eq!(
+            store.put(stale).expect("put"),
+            InsertOutcome::BelowRetention
+        );
+        assert_eq!(store.get(&id).expect("get"), None);
+        assert!(!store.column_path(&id, 14).exists());
+
+        // Exactly at the floor: accepted (the floor keeps slot >= floor).
+        let at_floor = sample_column(B256::repeat_byte(2), 1, 15, b"kept");
+        assert_eq!(store.put(at_floor).expect("put"), InsertOutcome::Inserted);
+
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn retention_hint_below_the_floor_never_lowers_it() {
+        let root = temp_root();
+        let store = FileColumnStore::new(root.clone()).expect("open store");
+        store.prune_below_slot(100).expect("raise floor");
+
+        // A lower hint is a no-op: nothing pruned, floor unchanged...
+        assert_eq!(store.prune_below_slot(50).expect("lower hint"), 0);
+        assert_eq!(store.get_retention_floor(), 100);
+        drop(store);
+
+        // ...including the persisted copy: the lower hint must not rewrite the
+        // file, or the floor would silently fall back after a restart.
+        let reopened = FileColumnStore::new(root.clone()).expect("reopen");
+        assert_eq!(reopened.get_retention_floor(), 100);
+
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn startup_reprunes_columns_below_a_persisted_floor() {
+        let root = temp_root();
+        let store = FileColumnStore::new(root.clone()).expect("open store");
+        let old = sample_column(B256::repeat_byte(1), 0, 10, b"old");
+        let recent = sample_column(B256::repeat_byte(2), 1, 20, b"recent");
+        let old_id = old.id();
+        let recent_id = recent.id();
+        store.put(old).expect("put old");
+        store.put(recent).expect("put recent");
+
+        // Simulate a crash between recording the floor and pruning: the floor
+        // file says 15, but the slot-10 column files are still on disk.
+        store.persist_retention_floor(15).expect("persist floor");
+        drop(store);
+
+        // Startup must finish the interrupted prune: below-floor columns are
+        // deleted, not resurrected into the index and served.
+        let reopened = FileColumnStore::new(root.clone()).expect("reopen");
+        assert_eq!(reopened.get_retention_floor(), 15);
+        assert_eq!(reopened.get(&old_id).expect("get"), None);
+        assert!(!reopened.column_path(&old_id, 10).exists());
+        assert!(reopened.get(&recent_id).expect("get").is_some());
+
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
     fn prune_below_slot_removes_old_keeps_recent() {
         let root = temp_root();
         let store = FileColumnStore::new(root.clone()).expect("open store");
@@ -497,25 +686,13 @@ mod tests {
                 .put(sample_column(block, index, 8, b"x"))
                 .expect("put");
         }
-        assert_eq!(
-            store
-                .availability(block)
-                .expect("availability")
-                .held_count(),
-            3
-        );
+        assert_eq!(store.availability(block).held_count(), 3);
 
         store.prune_below_slot(100).expect("prune");
 
         // The bitmap reached 0, so the whole entry is removed.
         assert!(store.index_read().get(&block).is_none());
-        assert_eq!(
-            store
-                .availability(block)
-                .expect("availability")
-                .held_count(),
-            0
-        );
+        assert_eq!(store.availability(block).held_count(), 0);
         for index in [0u64, 5, 7] {
             let id = ColumnId::new(block, index).expect("valid index");
             assert_eq!(store.get(&id).expect("get"), None);

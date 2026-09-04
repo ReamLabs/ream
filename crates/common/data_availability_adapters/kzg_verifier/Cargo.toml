@@ -13,6 +13,7 @@ version.workspace = true
 alloy-primitives.workspace = true
 anyhow.workspace = true
 ethereum_ssz.workspace = true
+rust_eth_kzg.workspace = true
 tree_hash.workspace = true
 
 # ream dependencies
@@ -24,7 +25,6 @@ ream-polynomial-commitments.workspace = true
 
 [dev-dependencies]
 ream-execution-rpc-types.workspace = true
-rust_eth_kzg.workspace = true
 serde_json.workspace = true
 ssz_types.workspace = true
 

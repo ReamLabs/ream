@@ -6681,6 +6681,7 @@ name = "ream-data-availability-node"
 version = "0.1.0"
 dependencies = [
  "alloy-primitives",
+ "rand 0.10.2",
  "ream-data-availability",
  "ream-executor",
  "serde",

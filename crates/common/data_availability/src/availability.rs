@@ -30,6 +30,12 @@ impl ColumnAvailability {
         index < NUMBER_OF_COLUMNS && self.held & (1u128 << index) != 0
     }
 
+    /// Whether the missing columns can be erasure-recovered locally: at least
+    /// half of the full column set is held, yet some column is still missing.
+    pub fn is_reconstructable(&self) -> bool {
+        (NUMBER_OF_COLUMNS / 2..NUMBER_OF_COLUMNS).contains(&self.held_count())
+    }
+
     /// Column indices expected but not held, ascending.
     pub fn missing_indices(&self) -> Vec<u64> {
         column_indices(self.expected & !self.held)
@@ -98,6 +104,20 @@ mod tests {
         assert!(!availability.is_complete());
         assert_eq!(availability.held_count(), 2);
         assert_eq!(availability.missing_indices(), vec![70, 99]);
+    }
+
+    #[test]
+    fn reconstructable_only_between_half_held_and_full() {
+        let all = u128::MAX;
+        let held_of = |count: u32| (1u128 << count) - 1;
+
+        // 63 of 128: below half, recovery is mathematically impossible.
+        assert!(!ColumnAvailability::new(held_of(63), all).is_reconstructable());
+        // 64 and 127: enough to recover, and something is missing.
+        assert!(ColumnAvailability::new(held_of(64), all).is_reconstructable());
+        assert!(ColumnAvailability::new(held_of(127), all).is_reconstructable());
+        // Full set: nothing to recover.
+        assert!(!ColumnAvailability::new(all, all).is_reconstructable());
     }
 
     #[test]
