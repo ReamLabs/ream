@@ -24,6 +24,14 @@ Don't forget to run the lean node with metrics exporting on. Example:
 cargo run --release lean_node --network ephemery --validator-registry-path ./bin/ream/assets/lean/validator_registry.yml --metrics --metrics-address 0.0.0.0
 ```
 
+## Enable metrics on beacon node
+
+Don't forget to run the beacon node with metrics exporting on. Example:
+
+```bash
+cargo run --release beacon_node --network mainnet --metrics --metrics-address 0.0.0.0 --metrics-port 8008
+```
+
 ## View the Dashboard
 
 View the dashboard at http://localhost:3000

@@ -43,6 +43,12 @@ Options:
           The URL of a service compatible with the MEV-boost API
       --blob-retention-epochs <BLOB_RETENTION_EPOCHS>
           Number of epochs to retain blob sidecars. Defaults to network spec value (4096 epochs for mainnet, ~18 days)
+      --metrics
+          Enable metrics
+      --metrics-address <METRICS_ADDRESS>
+          Set metrics address [default: 0.0.0.0]
+      --metrics-port <METRICS_PORT>
+          Set metrics port [default: 8008]
   -h, --help
           Print help
 ```

@@ -5,13 +5,16 @@ use ream_consensus_beacon::{
     attestation::Attestation, attester_slashing::AttesterSlashing,
     electra::beacon_block::SignedBeaconBlock,
 };
-use ream_consensus_misc::constants::beacon::genesis_validators_root;
+use ream_consensus_misc::{
+    constants::beacon::genesis_validators_root, misc::compute_epoch_at_slot,
+};
 use ream_events_beacon::{BeaconEvent, BeaconEventSender, event::chain::BlockEvent};
 use ream_execution_engine::ExecutionEngine;
 use ream_fork_choice_beacon::{
     handlers::{on_attestation, on_attester_slashing, on_block, on_tick},
     store::Store,
 };
+use ream_metrics::{BEACON_HEAD_EPOCH, BEACON_HEAD_SLOT, BEACON_REORGS_TOTAL};
 use ream_network_spec::networks::beacon_network_spec;
 use ream_operation_pool::OperationPool;
 use ream_req_resp::beacon::messages::status::Status;
@@ -48,6 +51,7 @@ impl BeaconChain {
 
     pub async fn process_block(&self, signed_block: SignedBeaconBlock) -> anyhow::Result<()> {
         let mut store = self.store.lock().await;
+        let previous_head = store.get_head().ok();
 
         on_block(
             &mut store,
@@ -63,7 +67,64 @@ impl BeaconChain {
             }
         }
 
-        // Build and Emit Block event
+        for attestation in signed_block.message.body.attestations.iter() {
+            if let Err(err) = on_attestation(&mut store, attestation.clone(), true) {
+                warn!("Failed to process block attestation through fork choice: {err:?}");
+            }
+        }
+
+        match store.get_head() {
+            Ok(new_head) => {
+                match store.db.block_provider().get(new_head) {
+                    Ok(Some(new_head_block)) => {
+                        let new_head_slot = new_head_block.message.slot;
+                        BEACON_HEAD_SLOT.set(new_head_slot as i64);
+                        BEACON_HEAD_EPOCH.set(compute_epoch_at_slot(new_head_slot) as i64);
+                    }
+                    Ok(None) => {
+                        warn!(
+                            "head block {new_head:?} not found in store; skipping head metrics update"
+                        );
+                    }
+                    Err(err) => {
+                        warn!("Failed to fetch head block for metrics: {err:?}");
+                    }
+                }
+
+                // Detect canonical chain reorgs for beacon_reorgs_total.
+                if let Some(previous_head) = previous_head
+                    && previous_head != new_head
+                {
+                    match store.db.block_provider().get(previous_head) {
+                        Ok(Some(previous_head_block)) => {
+                            let previous_head_slot = previous_head_block.message.slot;
+                            match store.get_ancestor(new_head, previous_head_slot) {
+                                Ok(ancestor) => {
+                                    if ancestor != previous_head {
+                                        BEACON_REORGS_TOTAL.inc();
+                                    }
+                                }
+                                Err(err) => {
+                                    warn!("Failed to check ancestor for reorg detection: {err:?}");
+                                }
+                            }
+                        }
+                        Ok(None) => {
+                            warn!(
+                                "previous head block {previous_head:?} not found in store; skipping reorg check"
+                            );
+                        }
+                        Err(err) => {
+                            warn!("Failed to fetch previous head block for reorg check: {err:?}");
+                        }
+                    }
+                }
+            }
+            Err(err) => {
+                warn!("Failed to get head for metrics/reorg detection: {err:?}");
+            }
+        }
+
         let finalized_checkpoint = store.db.finalized_checkpoint_provider().get().ok();
         let block_event =
             BlockEvent::from_block(&signed_block, finalized_checkpoint, |block_root, epoch| {

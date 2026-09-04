@@ -1,8 +1,14 @@
+use std::collections::HashSet;
+
 use anyhow::{Ok, Result, anyhow, ensure};
 use ream_consensus_misc::{
     constants::beacon::CELLS_PER_EXT_BLOB, polynomial_commitments::kzg_proof::KZGProof,
 };
 use ream_execution_rpc_types::get_blobs::Blob;
+use ream_metrics::{
+    BEACON_DATA_AVAILABILITY_RECONSTRUCTED_COLUMNS_TOTAL,
+    BEACON_DATA_AVAILABILITY_RECONSTRUCTION_TIME_SECONDS,
+};
 use rust_eth_kzg::{Cell as KZGCell, DASContext, KZGProof as Proof};
 use ssz_types::FixedVector;
 
@@ -40,7 +46,9 @@ pub fn recover_matrix(
     blob_count: u64,
     das_context: &DASContext,
 ) -> Result<Vec<MatrixEntry>> {
+    let _timer = BEACON_DATA_AVAILABILITY_RECONSTRUCTION_TIME_SECONDS.start_timer();
     let mut matrix = Vec::new();
+    let mut reconstructed_columns: HashSet<u64> = HashSet::new();
 
     for blob_index in 0..blob_count {
         let (cell_indices, cells): (Vec<u64>, Vec<Cell>) = partial_matrix
@@ -48,6 +56,8 @@ pub fn recover_matrix(
             .filter(|entry| entry.row_index == blob_index)
             .map(|entry| (entry.column_index, entry.cell.clone()))
             .unzip();
+
+        let known_indices: HashSet<u64> = cell_indices.iter().copied().collect();
 
         let (recovered_cells, recovered_proofs) =
             recover_cells_and_kzg_proofs(cell_indices, cells, das_context)?;
@@ -57,14 +67,21 @@ pub fn recover_matrix(
             .zip(recovered_proofs)
             .enumerate()
         {
+            let cell_index = cell_index as u64;
+            if !known_indices.contains(&cell_index) {
+                reconstructed_columns.insert(cell_index);
+            }
+
             matrix.push(MatrixEntry {
                 cell,
                 kzg_proof,
-                column_index: cell_index as u64,
+                column_index: cell_index,
                 row_index: blob_index,
             });
         }
     }
+
+    BEACON_DATA_AVAILABILITY_RECONSTRUCTED_COLUMNS_TOTAL.inc_by(reconstructed_columns.len() as u64);
 
     Ok(matrix)
 }
