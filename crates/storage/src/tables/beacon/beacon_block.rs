@@ -109,7 +109,7 @@ impl REDBTable for BeaconBlockTable {
             cache_lock.pop(&key);
         }
 
-        let mut write_txn = self.db.begin_write()?;
+        let write_txn = self.db.begin_write()?;
         let value = {
             let mut table = write_txn.open_table(Self::TABLE_DEFINITION)?;
             table.remove(key)?.map(|v| v.value())

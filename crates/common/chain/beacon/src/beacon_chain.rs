@@ -8,12 +8,9 @@ use ream_consensus_beacon::{
     electra::beacon_block::SignedBeaconBlock,
 };
 use ream_consensus_misc::{
-    constants::beacon::{
-        FULU_FORK_EPOCH, genesis_validators_root, MAX_BLOBS_PER_BLOCK_ELECTRA,
-    },
+    constants::beacon::{genesis_validators_root, MAX_BLOBS_PER_BLOCK_ELECTRA},
     misc::compute_epoch_at_slot,
 };
-use tree_hash::TreeHash;
 use ream_events_beacon::{BeaconEvent, BeaconEventSender, event::chain::BlockEvent};
 use ream_execution_engine::ExecutionEngine;
 use ream_execution_rpc_types::forkchoice_update::ForkchoiceStateV1;
@@ -29,8 +26,8 @@ use ream_storage::{
     db::beacon::BeaconDB,
     tables::{field::REDBField, table::{CustomTable, REDBTable}},
 };
-use tree_hash::TreeHash;
 use ream_sync_committee_pool::SyncCommitteePool;
+use tree_hash::TreeHash;
 use tokio::sync::{Mutex, broadcast};
 use tracing::{debug, info, warn};
 
@@ -159,34 +156,57 @@ impl BeaconChain {
             "Handling invalid payload: invalid_root={:?}, latest_valid_hash={:?}",
             invalid_root, latest_valid_hash
         );
-        let mut to_remove = vec![];
+        // Collect (block_root, parent_root, slot) for all invalid blocks so we can
+        // clean up all index tables without calling store.get_head() after removal.
+        let mut to_remove: Vec<(B256, B256, u64)> = vec![];
+        let mut last_valid_root = B256::ZERO;
         let mut current = store.get_head()?;
+
         loop {
             let block = store
                 .db
                 .block_provider()
                 .get(current)?
-                .ok_or_else(|| anyhow!("Missing block"))?;
+                .ok_or_else(|| anyhow!("Missing block for root {:?}", current))?;
+
+            let parent_root = block.message.parent_root;
+            let slot = block.message.slot;
+
             if latest_valid_hash != B256::ZERO
                 && (current == latest_valid_hash
                     || block.message.body.execution_payload.block_hash == latest_valid_hash)
             {
+                // current block is the latest valid — it stays, record it as new head
+                last_valid_root = current;
                 break;
             }
-            to_remove.push(current);
+
+            to_remove.push((current, parent_root, slot));
+
             if current == invalid_root {
+                // Parent of invalid_root becomes the new head
+                last_valid_root = parent_root;
                 break;
             }
-            current = block.message.parent_root;
+
+            current = parent_root;
             if current == B256::ZERO {
                 break;
             }
         }
 
-        for root in to_remove {
+        for (root, parent_root, slot) in to_remove {
             debug!("Removing invalid block and components for root {:?}", root);
+
+            // Remove from all DB tables so filter_block_tree() stays consistent
             store.db.block_provider().remove(root)?;
             store.db.state_provider().remove(root)?;
+            let _ = store.db.slot_index_provider().remove(slot);
+            let _ = store
+                .db
+                .parent_root_index_multimap_provider()
+                .remove_child(parent_root, root);
+            let _ = store.db.unrealized_justifications_provider().remove(root);
             let _ = store.db.optimistic_roots_provider().remove(root);
 
             for index in 0..MAX_BLOBS_PER_BLOCK_ELECTRA {
@@ -195,18 +215,29 @@ impl BeaconChain {
             }
 
             for index in 0..NUMBER_OF_COLUMNS {
-                let col_id = ream_consensus_beacon::data_column_sidecar::ColumnIdentifier::new(root, index);
+                let col_id =
+                    ream_consensus_beacon::data_column_sidecar::ColumnIdentifier::new(root, index);
                 let _ = store.db.column_sidecars_provider().remove(col_id);
             }
         }
 
-        let new_head = store.get_head()?;
-        info!("New head computed after invalid payload rollback: {:?}", new_head);
+        // Use last_valid_root computed during traversal — avoids calling store.get_head()
+        // after removal, which would fail if the removed block is still referenced in
+        // filter_block_tree's multimap traversal.
+        let new_head = last_valid_root;
+        info!("New head after invalid payload rollback: {:?}", new_head);
+
+        // If we couldn't determine a valid head, skip EL notification
+        if new_head == B256::ZERO {
+            drop(store);
+            return Ok(());
+        }
+
         let new_head_block = store
             .db
             .block_provider()
             .get(new_head)?
-            .ok_or_else(|| anyhow!("New head block not found"))?;
+            .ok_or_else(|| anyhow!("New head block not found after rollback: {:?}", new_head))?;
         let head_block_hash = new_head_block.message.body.execution_payload.block_hash;
 
         let justified_checkpoint = store.db.justified_checkpoint_provider().get()?;
@@ -583,6 +614,179 @@ mod tests {
         assert!(store_lock.db.block_provider().get(b2_root)?.is_some());
         assert!(store_lock.db.block_provider().get(b1_root)?.is_some());
         println!("[TEST] Test completed successfully!");
+
+        Ok(())
+    }
+
+    /// Test: optimistic block root is stored in the optimistic_roots table when
+    /// `optimistic_roots_provider().insert()` is called (as done by process_block_optimistic).
+    #[tokio::test]
+    async fn test_optimistic_root_storage() -> anyhow::Result<()> {
+        initialize_test_network_spec();
+        let tmp = TempDir::new("beacon_chain_test_opt")?;
+        let ream_db = ReamDB::new(tmp.path().to_path_buf())?;
+        let db = ream_db.init_beacon_db()?;
+
+        let anchor_state = create_dummy_state();
+        let state_root = anchor_state.tree_hash_root();
+        let anchor_block = BeaconBlock {
+            slot: 0,
+            proposer_index: 0,
+            parent_root: B256::ZERO,
+            state_root,
+            body: Default::default(),
+        };
+        let anchor_root = anchor_block.tree_hash_root();
+
+        let store = ream_fork_choice_beacon::store::get_forkchoice_store(
+            anchor_state,
+            anchor_block,
+            db.clone(),
+        )?;
+
+        let chain = BeaconChain {
+            store: tokio::sync::Mutex::new(store),
+            execution_engine: None,
+            event_sender: None,
+        };
+
+        // Insert a block and mark it as optimistic
+        let b1 = create_dummy_block(1, anchor_root, B256::from([11u8; 32]));
+        let b1_root = b1.message.tree_hash_root();
+        {
+            let store_lock = chain.store.lock().await;
+            store_lock.db.block_provider().insert(b1_root, b1.clone())?;
+            store_lock.db.state_provider().insert(b1_root, create_dummy_state())?;
+            // Simulate what process_block_optimistic does: insert root into optimistic table
+            store_lock.db.optimistic_roots_provider().insert(b1_root, true)?;
+        }
+
+        // Verify the optimistic root is stored
+        {
+            let store_lock = chain.store.lock().await;
+            let is_optimistic = store_lock
+                .db
+                .optimistic_roots_provider()
+                .get(b1_root)?;
+            assert_eq!(is_optimistic, Some(true), "Block should be marked as optimistic");
+        }
+
+        // Verify it can be removed (simulating validation)
+        {
+            let store_lock = chain.store.lock().await;
+            store_lock.db.optimistic_roots_provider().remove(b1_root)?;
+            let is_optimistic = store_lock
+                .db
+                .optimistic_roots_provider()
+                .get(b1_root)?;
+            assert!(is_optimistic.is_none(), "Optimistic root should be removed after validation");
+        }
+
+        Ok(())
+    }
+
+    /// Test: invalid payload with multiple descendants — A→B→C→D, C invalid.
+    /// Expected: C and D removed, B is the new head, A still exists.
+    #[tokio::test]
+    async fn test_invalid_payload_multi_descendant_rollback() -> anyhow::Result<()> {
+        initialize_test_network_spec();
+        let tmp = TempDir::new("beacon_chain_test_multi")?;
+        let ream_db = ReamDB::new(tmp.path().to_path_buf())?;
+        let db = ream_db.init_beacon_db()?;
+
+        let mut anchor_state = create_dummy_state();
+        anchor_state.genesis_time = 1000;
+        anchor_state.slot = 0;
+        let state_root = anchor_state.tree_hash_root();
+        let anchor_block = BeaconBlock {
+            slot: 0,
+            proposer_index: 0,
+            parent_root: B256::ZERO,
+            state_root,
+            body: Default::default(),
+        };
+        let anchor_root = anchor_block.tree_hash_root();
+
+        let store = ream_fork_choice_beacon::store::get_forkchoice_store(
+            anchor_state,
+            anchor_block,
+            db.clone(),
+        )?;
+
+        let chain = BeaconChain {
+            store: tokio::sync::Mutex::new(store),
+            execution_engine: None,
+            event_sender: None,
+        };
+
+        // Chain: anchor → b1 (valid) → b2 (valid) → b3 (invalid) → b4 (descendant of invalid)
+        let b1 = create_dummy_block(1, anchor_root, B256::from([11u8; 32]));
+        let b1_root = b1.message.tree_hash_root();
+        let b2 = create_dummy_block(2, b1_root, B256::from([22u8; 32]));
+        let b2_root = b2.message.tree_hash_root();
+        let b3 = create_dummy_block(3, b2_root, B256::from([33u8; 32]));
+        let b3_root = b3.message.tree_hash_root();
+        let b4 = create_dummy_block(4, b3_root, B256::from([44u8; 32]));
+        let b4_root = b4.message.tree_hash_root();
+
+        {
+            let store_lock = chain.store.lock().await;
+
+            for (root, block) in [
+                (b1_root, b1.clone()),
+                (b2_root, b2.clone()),
+                (b3_root, b3.clone()),
+                (b4_root, b4.clone()),
+            ] {
+                store_lock.db.block_provider().insert(root, block)?;
+                store_lock.db.state_provider().insert(root, create_dummy_state())?;
+                store_lock.db.unrealized_justifications_provider().insert(
+                    root,
+                    Checkpoint { epoch: 0, root: anchor_root },
+                )?;
+            }
+
+            store_lock.db.parent_root_index_multimap_provider().insert(anchor_root, b1_root)?;
+            store_lock.db.parent_root_index_multimap_provider().insert(b1_root, b2_root)?;
+            store_lock.db.parent_root_index_multimap_provider().insert(b2_root, b3_root)?;
+            store_lock.db.parent_root_index_multimap_provider().insert(b3_root, b4_root)?;
+
+            store_lock.db.slot_index_provider().insert(1, b1_root)?;
+            store_lock.db.slot_index_provider().insert(2, b2_root)?;
+            store_lock.db.slot_index_provider().insert(3, b3_root)?;
+            store_lock.db.slot_index_provider().insert(4, b4_root)?;
+
+            // Mark b3 and b4 as optimistic
+            store_lock.db.optimistic_roots_provider().insert(b3_root, true)?;
+            store_lock.db.optimistic_roots_provider().insert(b4_root, true)?;
+        }
+
+        // Head should be b4
+        {
+            let store_lock = chain.store.lock().await;
+            assert_eq!(store_lock.get_head()?, b4_root, "Head should be b4 before rollback");
+        }
+
+        // b3 invalid, latest valid = b2 (exec hash [22u8;32])
+        let store_guard = chain.store.lock().await;
+        chain.handle_invalid_payload(store_guard, b3_root, B256::from([22u8; 32])).await?;
+
+        // Verify b3 and b4 removed, b2 is head, b1 still present
+        let store_lock = chain.store.lock().await;
+        let new_head = store_lock.get_head()?;
+        assert_eq!(new_head, b2_root, "Head should revert to b2 after rollback");
+
+        assert!(store_lock.db.block_provider().get(b3_root)?.is_none(), "b3 should be removed");
+        assert!(store_lock.db.state_provider().get(b3_root)?.is_none(), "b3 state should be removed");
+        assert!(store_lock.db.optimistic_roots_provider().get(b3_root)?.is_none(), "b3 optimistic root should be cleaned");
+
+        // Note: b4 removal depends on handle_invalid_payload traversal from head downward.
+        // The current impl traverses from head to invalid_root, so b4 (head) is removed first.
+        assert!(store_lock.db.block_provider().get(b4_root)?.is_none(), "b4 descendant should be removed");
+        assert!(store_lock.db.optimistic_roots_provider().get(b4_root)?.is_none(), "b4 optimistic root should be cleaned");
+
+        assert!(store_lock.db.block_provider().get(b2_root)?.is_some(), "b2 should remain");
+        assert!(store_lock.db.block_provider().get(b1_root)?.is_some(), "b1 should remain");
 
         Ok(())
     }
