@@ -1,5 +1,6 @@
 use ream_consensus_beacon::electra::beacon_block::SignedBeaconBlock;
 use ream_fork_choice_beacon::store::Store;
+use ream_storage::tables::table::REDBTable;
 
 pub const SAFE_SLOTS_TO_IMPORT_OPTIMISTICALLY: u64 = 128;
 
@@ -17,7 +18,7 @@ pub fn is_optimistic_candidate_block(
         // Electra blocks always have an execution payload
         return true;
     }
-    
+
     // Within safe distance from head?
     let distance = current_head_slot.saturating_sub(block.message.slot);
     distance <= SAFE_SLOTS_TO_IMPORT_OPTIMISTICALLY

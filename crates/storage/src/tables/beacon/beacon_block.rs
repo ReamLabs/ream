@@ -116,11 +116,13 @@ impl REDBTable for BeaconBlockTable {
         };
         if let Some(block) = &value {
             {
-                let mut slot_table = write_txn.open_table(<BeaconSlotIndexTable as REDBTable>::TABLE_DEFINITION)?;
+                let mut slot_table =
+                    write_txn.open_table(<BeaconSlotIndexTable as REDBTable>::TABLE_DEFINITION)?;
                 slot_table.remove(block.message.slot)?;
             }
             {
-                let mut state_root_table = write_txn.open_table(<BeaconStateRootIndexTable as REDBTable>::TABLE_DEFINITION)?;
+                let mut state_root_table = write_txn
+                    .open_table(<BeaconStateRootIndexTable as REDBTable>::TABLE_DEFINITION)?;
                 state_root_table.remove(block.message.state_root)?;
             }
         }

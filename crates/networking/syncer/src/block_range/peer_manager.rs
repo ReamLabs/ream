@@ -131,9 +131,7 @@ impl PeerManager {
 
         for peer in self.peers.values() {
             if let Some(status) = &peer.peer.status {
-                *frequencies
-                    .entry(status.head_slot)
-                    .or_insert(0) += 1;
+                *frequencies.entry(status.head_slot).or_insert(0) += 1;
             }
         }
 

@@ -7383,6 +7383,7 @@ dependencies = [
  "ream-consensus-beacon",
  "ream-consensus-misc",
  "ream-executor",
+ "ream-fork-choice-beacon",
  "ream-network-spec",
  "ream-p2p",
  "ream-req-resp",

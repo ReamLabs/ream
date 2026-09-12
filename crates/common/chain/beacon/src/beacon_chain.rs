@@ -4,11 +4,10 @@ use alloy_primitives::B256;
 use anyhow::{anyhow, bail};
 use ream_consensus_beacon::{
     attestation::Attestation, attester_slashing::AttesterSlashing,
-    data_column_sidecar::NUMBER_OF_COLUMNS,
-    electra::beacon_block::SignedBeaconBlock,
+    data_column_sidecar::NUMBER_OF_COLUMNS, electra::beacon_block::SignedBeaconBlock,
 };
 use ream_consensus_misc::{
-    constants::beacon::{genesis_validators_root, MAX_BLOBS_PER_BLOCK_ELECTRA},
+    constants::beacon::{MAX_BLOBS_PER_BLOCK_ELECTRA, genesis_validators_root},
     misc::compute_epoch_at_slot,
 };
 use ream_events_beacon::{BeaconEvent, BeaconEventSender, event::chain::BlockEvent};
@@ -24,12 +23,15 @@ use ream_operation_pool::OperationPool;
 use ream_req_resp::beacon::messages::status::Status;
 use ream_storage::{
     db::beacon::BeaconDB,
-    tables::{field::REDBField, table::{CustomTable, REDBTable}},
+    tables::{
+        field::REDBField,
+        table::{CustomTable, REDBTable},
+    },
 };
 use ream_sync_committee_pool::SyncCommitteePool;
-use tree_hash::TreeHash;
 use tokio::sync::{Mutex, broadcast};
 use tracing::{debug, info, warn};
+use tree_hash::TreeHash;
 
 /// BeaconChain is the main struct which manages the nodes local beacon chain.
 pub struct BeaconChain {
@@ -72,11 +74,14 @@ impl BeaconChain {
             if err_str.starts_with("INVALID_PAYLOAD") {
                 let block_root = signed_block.message.tree_hash_root();
                 let latest_valid = if let Some((_, hash_str)) = err_str.split_once(':') {
-                    hash_str.parse::<alloy_primitives::B256>().unwrap_or(B256::ZERO)
+                    hash_str
+                        .parse::<alloy_primitives::B256>()
+                        .unwrap_or(B256::ZERO)
                 } else {
                     B256::ZERO
                 };
-                self.handle_invalid_payload(store, block_root, latest_valid).await?;
+                self.handle_invalid_payload(store, block_root, latest_valid)
+                    .await?;
                 bail!("Block payload is invalid");
             }
             return Err(e);
@@ -101,7 +106,10 @@ impl BeaconChain {
         Ok(())
     }
 
-    pub async fn process_block_optimistic(&self, signed_block: SignedBeaconBlock) -> anyhow::Result<()> {
+    pub async fn process_block_optimistic(
+        &self,
+        signed_block: SignedBeaconBlock,
+    ) -> anyhow::Result<()> {
         let mut store = self.store.lock().await;
         let previous_head = store.get_head().ok();
 
@@ -116,7 +124,10 @@ impl BeaconChain {
 
         // Insert the root as optimistic in the database
         let block_root = signed_block.message.tree_hash_root();
-        store.db.optimistic_roots_provider().insert(block_root, true)?;
+        store
+            .db
+            .optimistic_roots_provider()
+            .insert(block_root, true)?;
 
         for attestation in signed_block.message.body.attestations.iter() {
             if let Err(err) = on_attestation(&mut store, attestation.clone(), true) {
@@ -233,11 +244,10 @@ impl BeaconChain {
             return Ok(());
         }
 
-        let new_head_block = store
-            .db
-            .block_provider()
-            .get(new_head)?
-            .ok_or_else(|| anyhow!("New head block not found after rollback: {:?}", new_head))?;
+        let new_head_block =
+            store.db.block_provider().get(new_head)?.ok_or_else(|| {
+                anyhow!("New head block not found after rollback: {:?}", new_head)
+            })?;
         let head_block_hash = new_head_block.message.body.execution_payload.block_hash;
 
         let justified_checkpoint = store.db.justified_checkpoint_provider().get()?;
@@ -401,21 +411,22 @@ mod tests {
         data_column_sidecar::{ColumnIdentifier, DataColumnSidecar},
         electra::{
             beacon_block::{BeaconBlock, SignedBeaconBlock},
-            beacon_state::BeaconState,
             beacon_block_body::BeaconBlockBody,
+            beacon_state::BeaconState,
         },
     };
     use ream_consensus_misc::checkpoint::Checkpoint;
     use ream_network_spec::networks::beacon::initialize_test_network_spec;
-    use ream_storage::{
-        db::ReamDB,
-        tables::multimap_table::MultimapTable,
-    };
-    use tempdir::TempDir;
+    use ream_storage::{db::ReamDB, tables::multimap_table::MultimapTable};
     use ssz_types::VariableList;
+    use tempdir::TempDir;
     use tree_hash::TreeHash;
 
-    fn create_dummy_block(slot: u64, parent_root: B256, exec_block_hash: B256) -> SignedBeaconBlock {
+    fn create_dummy_block(
+        slot: u64,
+        parent_root: B256,
+        exec_block_hash: B256,
+    ) -> SignedBeaconBlock {
         let mut signed = SignedBeaconBlock {
             message: BeaconBlock {
                 slot,
@@ -469,10 +480,12 @@ mod tests {
             current_justified_checkpoint: Default::default(),
             finalized_checkpoint: Default::default(),
             inactivity_scores: Default::default(),
-            current_sync_committee: Arc::new(ream_consensus_beacon::sync_committee::SyncCommittee {
-                public_keys: Default::default(),
-                aggregate_public_key: Default::default(),
-            }),
+            current_sync_committee: Arc::new(
+                ream_consensus_beacon::sync_committee::SyncCommittee {
+                    public_keys: Default::default(),
+                    aggregate_public_key: Default::default(),
+                },
+            ),
             next_sync_committee: Arc::new(ream_consensus_beacon::sync_committee::SyncCommittee {
                 public_keys: Default::default(),
                 aggregate_public_key: Default::default(),
@@ -529,7 +542,7 @@ mod tests {
             db.clone(),
         )?;
         println!("[TEST] Forkchoice store created");
-        
+
         let chain = BeaconChain {
             store: tokio::sync::Mutex::new(store),
             execution_engine: None,
@@ -559,13 +572,31 @@ mod tests {
             store_lock.db.block_provider().insert(b2_root, b2.clone())?;
             store_lock.db.block_provider().insert(b3_root, b3.clone())?;
 
-            store_lock.db.state_provider().insert(b1_root, create_dummy_state())?;
-            store_lock.db.state_provider().insert(b2_root, create_dummy_state())?;
-            store_lock.db.state_provider().insert(b3_root, create_dummy_state())?;
+            store_lock
+                .db
+                .state_provider()
+                .insert(b1_root, create_dummy_state())?;
+            store_lock
+                .db
+                .state_provider()
+                .insert(b2_root, create_dummy_state())?;
+            store_lock
+                .db
+                .state_provider()
+                .insert(b3_root, create_dummy_state())?;
 
-            store_lock.db.parent_root_index_multimap_provider().insert(anchor_root, b1_root)?;
-            store_lock.db.parent_root_index_multimap_provider().insert(b1_root, b2_root)?;
-            store_lock.db.parent_root_index_multimap_provider().insert(b2_root, b3_root)?;
+            store_lock
+                .db
+                .parent_root_index_multimap_provider()
+                .insert(anchor_root, b1_root)?;
+            store_lock
+                .db
+                .parent_root_index_multimap_provider()
+                .insert(b1_root, b2_root)?;
+            store_lock
+                .db
+                .parent_root_index_multimap_provider()
+                .insert(b2_root, b3_root)?;
 
             store_lock.db.slot_index_provider().insert(1, b1_root)?;
             store_lock.db.slot_index_provider().insert(2, b2_root)?;
@@ -573,14 +604,38 @@ mod tests {
 
             // Insert blobs and columns to ensure they are cleaned up
             let blob_id_b3 = BlobIdentifier::new(b3_root, 0);
-            store_lock.db.blobs_and_proofs_provider().insert(blob_id_b3, Default::default())?;
+            store_lock
+                .db
+                .blobs_and_proofs_provider()
+                .insert(blob_id_b3, Default::default())?;
 
             let col_id_b3 = ColumnIdentifier::new(b3_root, 0);
-            store_lock.db.column_sidecars_provider().insert(col_id_b3, create_dummy_column_sidecar())?;
+            store_lock
+                .db
+                .column_sidecars_provider()
+                .insert(col_id_b3, create_dummy_column_sidecar())?;
 
-            store_lock.db.unrealized_justifications_provider().insert(b1_root, Checkpoint { epoch: 0, root: anchor_root })?;
-            store_lock.db.unrealized_justifications_provider().insert(b2_root, Checkpoint { epoch: 0, root: anchor_root })?;
-            store_lock.db.unrealized_justifications_provider().insert(b3_root, Checkpoint { epoch: 0, root: anchor_root })?;
+            store_lock.db.unrealized_justifications_provider().insert(
+                b1_root,
+                Checkpoint {
+                    epoch: 0,
+                    root: anchor_root,
+                },
+            )?;
+            store_lock.db.unrealized_justifications_provider().insert(
+                b2_root,
+                Checkpoint {
+                    epoch: 0,
+                    root: anchor_root,
+                },
+            )?;
+            store_lock.db.unrealized_justifications_provider().insert(
+                b3_root,
+                Checkpoint {
+                    epoch: 0,
+                    root: anchor_root,
+                },
+            )?;
             println!("[TEST] Mock data inserted");
         }
 
@@ -596,7 +651,9 @@ mod tests {
         // Call handle_invalid_payload where b3 is invalid, and b2 is the latest valid hash (execution hash 22)
         println!("[TEST] Calling handle_invalid_payload...");
         let store_guard = chain.store.lock().await;
-        chain.handle_invalid_payload(store_guard, b3_root, B256::from([22u8; 32])).await?;
+        chain
+            .handle_invalid_payload(store_guard, b3_root, B256::from([22u8; 32]))
+            .await?;
         println!("[TEST] handle_invalid_payload returned!");
 
         // Verify that b3 was removed, along with state, blobs and columns, and b2 is now the head
@@ -607,8 +664,20 @@ mod tests {
         assert_eq!(new_head, b2_root);
         assert!(store_lock.db.block_provider().get(b3_root)?.is_none());
         assert!(store_lock.db.state_provider().get(b3_root)?.is_none());
-        assert!(store_lock.db.blobs_and_proofs_provider().get(BlobIdentifier::new(b3_root, 0))?.is_none());
-        assert!(store_lock.db.column_sidecars_provider().get(ColumnIdentifier::new(b3_root, 0))?.is_none());
+        assert!(
+            store_lock
+                .db
+                .blobs_and_proofs_provider()
+                .get(BlobIdentifier::new(b3_root, 0))?
+                .is_none()
+        );
+        assert!(
+            store_lock
+                .db
+                .column_sidecars_provider()
+                .get(ColumnIdentifier::new(b3_root, 0))?
+                .is_none()
+        );
 
         // Verify b2 and b1 still exist
         assert!(store_lock.db.block_provider().get(b2_root)?.is_some());
@@ -656,30 +725,37 @@ mod tests {
         {
             let store_lock = chain.store.lock().await;
             store_lock.db.block_provider().insert(b1_root, b1.clone())?;
-            store_lock.db.state_provider().insert(b1_root, create_dummy_state())?;
+            store_lock
+                .db
+                .state_provider()
+                .insert(b1_root, create_dummy_state())?;
             // Simulate what process_block_optimistic does: insert root into optimistic table
-            store_lock.db.optimistic_roots_provider().insert(b1_root, true)?;
+            store_lock
+                .db
+                .optimistic_roots_provider()
+                .insert(b1_root, true)?;
         }
 
         // Verify the optimistic root is stored
         {
             let store_lock = chain.store.lock().await;
-            let is_optimistic = store_lock
-                .db
-                .optimistic_roots_provider()
-                .get(b1_root)?;
-            assert_eq!(is_optimistic, Some(true), "Block should be marked as optimistic");
+            let is_optimistic = store_lock.db.optimistic_roots_provider().get(b1_root)?;
+            assert_eq!(
+                is_optimistic,
+                Some(true),
+                "Block should be marked as optimistic"
+            );
         }
 
         // Verify it can be removed (simulating validation)
         {
             let store_lock = chain.store.lock().await;
             store_lock.db.optimistic_roots_provider().remove(b1_root)?;
-            let is_optimistic = store_lock
-                .db
-                .optimistic_roots_provider()
-                .get(b1_root)?;
-            assert!(is_optimistic.is_none(), "Optimistic root should be removed after validation");
+            let is_optimistic = store_lock.db.optimistic_roots_provider().get(b1_root)?;
+            assert!(
+                is_optimistic.is_none(),
+                "Optimistic root should be removed after validation"
+            );
         }
 
         Ok(())
@@ -739,17 +815,35 @@ mod tests {
                 (b4_root, b4.clone()),
             ] {
                 store_lock.db.block_provider().insert(root, block)?;
-                store_lock.db.state_provider().insert(root, create_dummy_state())?;
+                store_lock
+                    .db
+                    .state_provider()
+                    .insert(root, create_dummy_state())?;
                 store_lock.db.unrealized_justifications_provider().insert(
                     root,
-                    Checkpoint { epoch: 0, root: anchor_root },
+                    Checkpoint {
+                        epoch: 0,
+                        root: anchor_root,
+                    },
                 )?;
             }
 
-            store_lock.db.parent_root_index_multimap_provider().insert(anchor_root, b1_root)?;
-            store_lock.db.parent_root_index_multimap_provider().insert(b1_root, b2_root)?;
-            store_lock.db.parent_root_index_multimap_provider().insert(b2_root, b3_root)?;
-            store_lock.db.parent_root_index_multimap_provider().insert(b3_root, b4_root)?;
+            store_lock
+                .db
+                .parent_root_index_multimap_provider()
+                .insert(anchor_root, b1_root)?;
+            store_lock
+                .db
+                .parent_root_index_multimap_provider()
+                .insert(b1_root, b2_root)?;
+            store_lock
+                .db
+                .parent_root_index_multimap_provider()
+                .insert(b2_root, b3_root)?;
+            store_lock
+                .db
+                .parent_root_index_multimap_provider()
+                .insert(b3_root, b4_root)?;
 
             store_lock.db.slot_index_provider().insert(1, b1_root)?;
             store_lock.db.slot_index_provider().insert(2, b2_root)?;
@@ -757,36 +851,77 @@ mod tests {
             store_lock.db.slot_index_provider().insert(4, b4_root)?;
 
             // Mark b3 and b4 as optimistic
-            store_lock.db.optimistic_roots_provider().insert(b3_root, true)?;
-            store_lock.db.optimistic_roots_provider().insert(b4_root, true)?;
+            store_lock
+                .db
+                .optimistic_roots_provider()
+                .insert(b3_root, true)?;
+            store_lock
+                .db
+                .optimistic_roots_provider()
+                .insert(b4_root, true)?;
         }
 
         // Head should be b4
         {
             let store_lock = chain.store.lock().await;
-            assert_eq!(store_lock.get_head()?, b4_root, "Head should be b4 before rollback");
+            assert_eq!(
+                store_lock.get_head()?,
+                b4_root,
+                "Head should be b4 before rollback"
+            );
         }
 
         // b3 invalid, latest valid = b2 (exec hash [22u8;32])
         let store_guard = chain.store.lock().await;
-        chain.handle_invalid_payload(store_guard, b3_root, B256::from([22u8; 32])).await?;
+        chain
+            .handle_invalid_payload(store_guard, b3_root, B256::from([22u8; 32]))
+            .await?;
 
         // Verify b3 and b4 removed, b2 is head, b1 still present
         let store_lock = chain.store.lock().await;
         let new_head = store_lock.get_head()?;
         assert_eq!(new_head, b2_root, "Head should revert to b2 after rollback");
 
-        assert!(store_lock.db.block_provider().get(b3_root)?.is_none(), "b3 should be removed");
-        assert!(store_lock.db.state_provider().get(b3_root)?.is_none(), "b3 state should be removed");
-        assert!(store_lock.db.optimistic_roots_provider().get(b3_root)?.is_none(), "b3 optimistic root should be cleaned");
+        assert!(
+            store_lock.db.block_provider().get(b3_root)?.is_none(),
+            "b3 should be removed"
+        );
+        assert!(
+            store_lock.db.state_provider().get(b3_root)?.is_none(),
+            "b3 state should be removed"
+        );
+        assert!(
+            store_lock
+                .db
+                .optimistic_roots_provider()
+                .get(b3_root)?
+                .is_none(),
+            "b3 optimistic root should be cleaned"
+        );
 
         // Note: b4 removal depends on handle_invalid_payload traversal from head downward.
         // The current impl traverses from head to invalid_root, so b4 (head) is removed first.
-        assert!(store_lock.db.block_provider().get(b4_root)?.is_none(), "b4 descendant should be removed");
-        assert!(store_lock.db.optimistic_roots_provider().get(b4_root)?.is_none(), "b4 optimistic root should be cleaned");
+        assert!(
+            store_lock.db.block_provider().get(b4_root)?.is_none(),
+            "b4 descendant should be removed"
+        );
+        assert!(
+            store_lock
+                .db
+                .optimistic_roots_provider()
+                .get(b4_root)?
+                .is_none(),
+            "b4 optimistic root should be cleaned"
+        );
 
-        assert!(store_lock.db.block_provider().get(b2_root)?.is_some(), "b2 should remain");
-        assert!(store_lock.db.block_provider().get(b1_root)?.is_some(), "b1 should remain");
+        assert!(
+            store_lock.db.block_provider().get(b2_root)?.is_some(),
+            "b2 should remain"
+        );
+        assert!(
+            store_lock.db.block_provider().get(b1_root)?.is_some(),
+            "b1 should remain"
+        );
 
         Ok(())
     }

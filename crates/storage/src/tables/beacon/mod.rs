@@ -1,5 +1,4 @@
 pub mod beacon_block;
-pub mod optimistic_roots;
 pub mod beacon_state;
 pub mod blobs_and_proofs;
 pub mod block_timeliness;
@@ -10,6 +9,7 @@ pub mod finalized_checkpoint;
 pub mod genesis_time;
 pub mod justified_checkpoint;
 pub mod latest_messages;
+pub mod optimistic_roots;
 pub mod parent_root_index;
 pub mod previous_justified_checkpoint;
 pub mod proposer_boost_root;

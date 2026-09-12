@@ -2724,10 +2724,10 @@ impl BeaconState {
                     execution_payload: payload.clone(),
                     versioned_hashes,
                     parent_beacon_block_root: self.latest_block_header.parent_root,
-                    execution_requests: body.execution_requests.clone()
+                    execution_requests: body.execution_requests.clone(),
                 })
                 .await?;
-            
+
             use ream_execution_rpc_types::payload_status::PayloadStatus;
             match status.status {
                 PayloadStatus::Invalid => {
