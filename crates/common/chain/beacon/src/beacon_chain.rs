@@ -4,14 +4,19 @@ use alloy_primitives::B256;
 use anyhow::{anyhow, bail};
 use ream_consensus_beacon::{
     attestation::Attestation, attester_slashing::AttesterSlashing,
+    data_column_sidecar::NUMBER_OF_COLUMNS,
     electra::beacon_block::SignedBeaconBlock,
 };
 use ream_consensus_misc::{
-    constants::beacon::genesis_validators_root, misc::compute_epoch_at_slot,
+    constants::beacon::{
+        FULU_FORK_EPOCH, genesis_validators_root, MAX_BLOBS_PER_BLOCK_ELECTRA,
+    },
+    misc::compute_epoch_at_slot,
 };
 use tree_hash::TreeHash;
 use ream_events_beacon::{BeaconEvent, BeaconEventSender, event::chain::BlockEvent};
 use ream_execution_engine::ExecutionEngine;
+use ream_execution_rpc_types::forkchoice_update::ForkchoiceStateV1;
 use ream_fork_choice_beacon::{
     handlers::{on_attestation, on_attester_slashing, on_block, on_tick},
     store::Store,
@@ -22,8 +27,9 @@ use ream_operation_pool::OperationPool;
 use ream_req_resp::beacon::messages::status::Status;
 use ream_storage::{
     db::beacon::BeaconDB,
-    tables::{field::REDBField, table::REDBTable},
+    tables::{field::REDBField, table::{CustomTable, REDBTable}},
 };
+use tree_hash::TreeHash;
 use ream_sync_committee_pool::SyncCommitteePool;
 use tokio::sync::{Mutex, broadcast};
 use tracing::warn;
@@ -67,12 +73,11 @@ impl BeaconChain {
         if let Err(e) = result {
             let err_str = e.to_string();
             if err_str.starts_with("INVALID_PAYLOAD") {
-                drop(store);
                 let block_root = signed_block.message.tree_hash_root();
                 let parts: Vec<&str> = err_str.split(':').collect();
                 if parts.len() == 2 {
                     if let core::result::Result::Ok(latest_valid) = parts[1].parse::<alloy_primitives::B256>() {
-                        self.handle_invalid_payload(block_root, latest_valid).await?;
+                        self.handle_invalid_payload(store, block_root, latest_valid).await?;
                     }
                 }
                 bail!("Block payload is invalid");
@@ -146,30 +151,92 @@ impl BeaconChain {
 
     pub async fn handle_invalid_payload(
         &self,
+        store: tokio::sync::MutexGuard<'_, Store>,
         invalid_root: B256,
         latest_valid_hash: B256,
     ) -> anyhow::Result<()> {
-        let mut store = self.store.lock().await;
+        println!("[HANDLE_INVALID] handle_invalid_payload called. invalid_root={:?}, latest_valid_hash={:?}", invalid_root, latest_valid_hash);
         let mut to_remove = vec![];
         let mut current = store.get_head()?;
+        println!("[HANDLE_INVALID] Start head is: {:?}", current);
         loop {
-            if current == latest_valid_hash {
-                break;
-            }
+            println!("[HANDLE_INVALID] Loop iteration: current={:?}", current);
             let block = store.db.block_provider().get(current)?.ok_or(anyhow!("Missing block"))?;
-            to_remove.push(current);
-            current = block.message.parent_root;
-            if current == invalid_root {
-                to_remove.push(invalid_root);
+            println!("[HANDLE_INVALID] Current block execution hash={:?}", block.message.body.execution_payload.block_hash);
+            if block.message.body.execution_payload.block_hash == latest_valid_hash {
+                println!("[HANDLE_INVALID] Found latest valid hash, breaking");
                 break;
             }
+            to_remove.push(current);
+            if current == invalid_root {
+                println!("[HANDLE_INVALID] Reached invalid_root, breaking");
+                break;
+            }
+            current = block.message.parent_root;
         }
+        println!("[HANDLE_INVALID] to_remove: {:?}", to_remove);
         for root in to_remove {
+            println!("[HANDLE_INVALID] Removing block: {:?}", root);
             store.db.block_provider().remove(root)?;
+            println!("[HANDLE_INVALID] Removing state: {:?}", root);
+            store.db.state_provider().remove(root)?;
+            println!("[HANDLE_INVALID] Removing optimistic roots: {:?}", root);
             let _ = store.db.optimistic_roots_provider().remove(root);
+
+            println!("[HANDLE_INVALID] Removing blobs...");
+            for index in 0..MAX_BLOBS_PER_BLOCK_ELECTRA {
+                let blob_id = ream_consensus_beacon::blob_sidecar::BlobIdentifier::new(root, index);
+                let _ = store.db.blobs_and_proofs_provider().remove(blob_id);
+            }
+
+            println!("[HANDLE_INVALID] Removing columns...");
+            for index in 0..NUMBER_OF_COLUMNS {
+                let col_id = ream_consensus_beacon::data_column_sidecar::ColumnIdentifier::new(root, index);
+                let _ = store.db.column_sidecars_provider().remove(col_id);
+            }
+            println!("[HANDLE_INVALID] Finished removing components for: {:?}", root);
         }
-        // Actually Store doesn't have `set_head` directly, it is determined by fork choice, 
-        // but we assume get_head() will now compute it correctly after invalid branches are pruned.
+
+        println!("[HANDLE_INVALID] Computing new head...");
+        let new_head = store.get_head()?;
+        println!("[HANDLE_INVALID] New head computed: {:?}", new_head);
+        let new_head_block = store.db.block_provider().get(new_head)?
+            .ok_or_else(|| anyhow!("New head block not found"))?;
+        let head_block_hash = new_head_block.message.body.execution_payload.block_hash;
+
+        let justified_checkpoint = store.db.justified_checkpoint_provider().get()?;
+        let safe_block_hash = if justified_checkpoint.root == B256::ZERO {
+            B256::ZERO
+        } else {
+            store.db.block_provider().get(justified_checkpoint.root)?
+                .map(|b| b.message.body.execution_payload.block_hash)
+                .unwrap_or(B256::ZERO)
+        };
+
+        let finalized_checkpoint = store.db.finalized_checkpoint_provider().get()?;
+        let finalized_block_hash = if finalized_checkpoint.root == B256::ZERO {
+            B256::ZERO
+        } else {
+            store.db.block_provider().get(finalized_checkpoint.root)?
+                .map(|b| b.message.body.execution_payload.block_hash)
+                .unwrap_or(B256::ZERO)
+        };
+
+        let forkchoice_state = ForkchoiceStateV1 {
+            head_block_hash,
+            safe_block_hash,
+            finalized_block_hash,
+        };
+
+        println!("[HANDLE_INVALID] Dropping store guard...");
+        drop(store);
+
+        if let Some(ref execution_engine) = self.execution_engine {
+            println!("[HANDLE_INVALID] Sending forkchoiceUpdated to execution engine...");
+            execution_engine.engine_forkchoice_updated_v3(forkchoice_state, None).await?;
+        }
+
+        println!("[HANDLE_INVALID] Done handle_invalid_payload");
         Ok(())
     }
 
@@ -284,3 +351,229 @@ fn update_head_metrics_and_reorg(store: &Store, previous_head: Option<B256>) {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy_primitives::{B256, aliases::B32};
+    use ream_consensus_beacon::{
+        blob_sidecar::BlobIdentifier,
+        data_column_sidecar::{ColumnIdentifier, DataColumnSidecar},
+        electra::{
+            beacon_block::{BeaconBlock, SignedBeaconBlock},
+            beacon_state::BeaconState,
+            beacon_block_body::BeaconBlockBody,
+        },
+    };
+    use ream_consensus_misc::checkpoint::Checkpoint;
+    use ream_network_spec::networks::beacon::initialize_test_network_spec;
+    use ream_storage::{
+        db::ReamDB,
+        tables::multimap_table::MultimapTable,
+    };
+    use tempdir::TempDir;
+    use ssz_types::VariableList;
+    use tree_hash::TreeHash;
+
+    fn create_dummy_block(slot: u64, parent_root: B256, exec_block_hash: B256) -> SignedBeaconBlock {
+        let mut signed = SignedBeaconBlock {
+            message: BeaconBlock {
+                slot,
+                proposer_index: 0,
+                parent_root,
+                state_root: B256::ZERO,
+                body: BeaconBlockBody::default(),
+            },
+            signature: Default::default(),
+        };
+        signed.message.body.execution_payload.block_hash = exec_block_hash;
+        signed
+    }
+
+    fn create_dummy_column_sidecar() -> DataColumnSidecar {
+        DataColumnSidecar {
+            index: 0,
+            column: VariableList::empty(),
+            kzg_commitments: VariableList::empty(),
+            kzg_proofs: VariableList::empty(),
+            signed_block_header: Default::default(),
+            kzg_commitments_inclusion_proof: Default::default(),
+        }
+    }
+
+    fn create_dummy_state() -> BeaconState {
+        BeaconState {
+            genesis_time: 0,
+            genesis_validators_root: B256::ZERO,
+            slot: 0,
+            fork: ream_consensus_misc::fork::Fork {
+                previous_version: B32::ZERO,
+                current_version: B32::ZERO,
+                epoch: 0,
+            },
+            latest_block_header: Default::default(),
+            block_roots: Default::default(),
+            state_roots: Default::default(),
+            historical_roots: Default::default(),
+            eth1_data: Default::default(),
+            eth1_data_votes: Default::default(),
+            eth1_deposit_index: 0,
+            validators: Default::default(),
+            balances: Default::default(),
+            randao_mixes: Default::default(),
+            slashings: Default::default(),
+            previous_epoch_participation: Default::default(),
+            current_epoch_participation: Default::default(),
+            justification_bits: Default::default(),
+            previous_justified_checkpoint: Default::default(),
+            current_justified_checkpoint: Default::default(),
+            finalized_checkpoint: Default::default(),
+            inactivity_scores: Default::default(),
+            current_sync_committee: Arc::new(ream_consensus_beacon::sync_committee::SyncCommittee {
+                public_keys: Default::default(),
+                aggregate_public_key: Default::default(),
+            }),
+            next_sync_committee: Arc::new(ream_consensus_beacon::sync_committee::SyncCommittee {
+                public_keys: Default::default(),
+                aggregate_public_key: Default::default(),
+            }),
+            latest_execution_payload_header: Default::default(),
+            next_withdrawal_index: 0,
+            next_withdrawal_validator_index: 0,
+            historical_summaries: Default::default(),
+            deposit_requests_start_index: 0,
+            deposit_balance_to_consume: 0,
+            exit_balance_to_consume: 0,
+            earliest_exit_epoch: 0,
+            consolidation_balance_to_consume: 0,
+            earliest_consolidation_epoch: 0,
+            pending_deposits: Default::default(),
+            pending_partial_withdrawals: Default::default(),
+            pending_consolidations: Default::default(),
+            proposer_lookahead: Default::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_invalid_payload_cleanup() -> anyhow::Result<()> {
+        println!("[TEST] Starting test_handle_invalid_payload_cleanup");
+        initialize_test_network_spec();
+        println!("[TEST] Network spec initialized");
+        let tmp = TempDir::new("beacon_chain_test")?;
+        let ream_db = ReamDB::new(tmp.path().to_path_buf())?;
+        let db = ream_db.init_beacon_db()?;
+        println!("[TEST] DB initialized");
+
+        // Setup base / anchor block
+        let mut anchor_state = create_dummy_state();
+        anchor_state.genesis_time = 1000;
+        anchor_state.slot = 0;
+        println!("[TEST] Computing anchor state tree hash root...");
+        let state_root = anchor_state.tree_hash_root();
+        println!("[TEST] Anchor state tree hash root: {:?}", state_root);
+        let anchor_block = BeaconBlock {
+            slot: 0,
+            proposer_index: 0,
+            parent_root: B256::ZERO,
+            state_root,
+            body: Default::default(),
+        };
+        println!("[TEST] Computing anchor block tree hash root...");
+        let anchor_root = anchor_block.tree_hash_root();
+        println!("[TEST] Anchor block tree hash root: {:?}", anchor_root);
+
+        println!("[TEST] Creating forkchoice store...");
+        let store = ream_fork_choice_beacon::store::get_forkchoice_store(
+            anchor_state,
+            anchor_block,
+            db.clone(),
+        )?;
+        println!("[TEST] Forkchoice store created");
+        
+        let chain = BeaconChain {
+            store: tokio::sync::Mutex::new(store),
+            execution_engine: None,
+            event_sender: None,
+        };
+
+        // Insert some blocks building on top of anchor_root
+        // Block 1 (valid block)
+        let b1 = create_dummy_block(1, anchor_root, B256::from([11u8; 32]));
+        let b1_root = b1.message.tree_hash_root();
+
+        // Block 2 (valid block)
+        let b2 = create_dummy_block(2, b1_root, B256::from([22u8; 32]));
+        let b2_root = b2.message.tree_hash_root();
+
+        // Block 3 (invalid block)
+        let b3 = create_dummy_block(3, b2_root, B256::from([33u8; 32]));
+        let b3_root = b3.message.tree_hash_root();
+        println!("[TEST] Blocks created");
+
+        // Add blocks to block_provider and multimap
+        {
+            println!("[TEST] Locking store to insert mock data...");
+            let store_lock = chain.store.lock().await;
+            println!("[TEST] Store locked, inserting blocks...");
+            store_lock.db.block_provider().insert(b1_root, b1.clone())?;
+            store_lock.db.block_provider().insert(b2_root, b2.clone())?;
+            store_lock.db.block_provider().insert(b3_root, b3.clone())?;
+
+            store_lock.db.state_provider().insert(b1_root, create_dummy_state())?;
+            store_lock.db.state_provider().insert(b2_root, create_dummy_state())?;
+            store_lock.db.state_provider().insert(b3_root, create_dummy_state())?;
+
+            store_lock.db.parent_root_index_multimap_provider().insert(anchor_root, b1_root)?;
+            store_lock.db.parent_root_index_multimap_provider().insert(b1_root, b2_root)?;
+            store_lock.db.parent_root_index_multimap_provider().insert(b2_root, b3_root)?;
+
+            store_lock.db.slot_index_provider().insert(1, b1_root)?;
+            store_lock.db.slot_index_provider().insert(2, b2_root)?;
+            store_lock.db.slot_index_provider().insert(3, b3_root)?;
+
+            // Insert blobs and columns to ensure they are cleaned up
+            let blob_id_b3 = BlobIdentifier::new(b3_root, 0);
+            store_lock.db.blobs_and_proofs_provider().insert(blob_id_b3, Default::default())?;
+
+            let col_id_b3 = ColumnIdentifier::new(b3_root, 0);
+            store_lock.db.column_sidecars_provider().insert(col_id_b3, create_dummy_column_sidecar())?;
+
+            store_lock.db.unrealized_justifications_provider().insert(b1_root, Checkpoint { epoch: 0, root: anchor_root })?;
+            store_lock.db.unrealized_justifications_provider().insert(b2_root, Checkpoint { epoch: 0, root: anchor_root })?;
+            store_lock.db.unrealized_justifications_provider().insert(b3_root, Checkpoint { epoch: 0, root: anchor_root })?;
+            println!("[TEST] Mock data inserted");
+        }
+
+        // Verify that store.get_head() is b3_root
+        {
+            println!("[TEST] Verifying get_head is b3_root...");
+            let store_lock = chain.store.lock().await;
+            let head = store_lock.get_head()?;
+            println!("[TEST] Head is: {:?}", head);
+            assert_eq!(head, b3_root);
+        }
+
+        // Call handle_invalid_payload where b3 is invalid, and b2 is the latest valid hash (execution hash 22)
+        println!("[TEST] Calling handle_invalid_payload...");
+        let store_guard = chain.store.lock().await;
+        chain.handle_invalid_payload(store_guard, b3_root, B256::from([22u8; 32])).await?;
+        println!("[TEST] handle_invalid_payload returned!");
+
+        // Verify that b3 was removed, along with state, blobs and columns, and b2 is now the head
+        let store_lock = chain.store.lock().await;
+        println!("[TEST] Verifying new head is b2_root...");
+        let new_head = store_lock.get_head()?;
+        println!("[TEST] New head is: {:?}", new_head);
+        assert_eq!(new_head, b2_root);
+        assert!(store_lock.db.block_provider().get(b3_root)?.is_none());
+        assert!(store_lock.db.state_provider().get(b3_root)?.is_none());
+        assert!(store_lock.db.blobs_and_proofs_provider().get(BlobIdentifier::new(b3_root, 0))?.is_none());
+        assert!(store_lock.db.column_sidecars_provider().get(ColumnIdentifier::new(b3_root, 0))?.is_none());
+
+        // Verify b2 and b1 still exist
+        assert!(store_lock.db.block_provider().get(b2_root)?.is_some());
+        assert!(store_lock.db.block_provider().get(b1_root)?.is_some());
+        println!("[TEST] Test completed successfully!");
+
+        Ok(())
+    }
+}

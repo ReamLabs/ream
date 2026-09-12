@@ -109,20 +109,21 @@ impl REDBTable for BeaconBlockTable {
             cache_lock.pop(&key);
         }
 
-        let write_txn = self.db.begin_write()?;
-        let mut table = write_txn.open_table(Self::TABLE_DEFINITION)?;
-        let value = table.remove(key)?.map(|v| v.value());
+        let mut write_txn = self.db.begin_write()?;
+        let value = {
+            let mut table = write_txn.open_table(Self::TABLE_DEFINITION)?;
+            table.remove(key)?.map(|v| v.value())
+        };
         if let Some(block) = &value {
-            let slot_index_table = BeaconSlotIndexTable {
-                db: self.db.clone(),
-            };
-            slot_index_table.remove(block.message.slot)?;
-            let state_root_index_table = BeaconStateRootIndexTable {
-                db: self.db.clone(),
-            };
-            state_root_index_table.remove(block.message.state_root)?;
+            {
+                let mut slot_table = write_txn.open_table(<BeaconSlotIndexTable as REDBTable>::TABLE_DEFINITION)?;
+                slot_table.remove(block.message.slot)?;
+            }
+            {
+                let mut state_root_table = write_txn.open_table(<BeaconStateRootIndexTable as REDBTable>::TABLE_DEFINITION)?;
+                state_root_table.remove(block.message.state_root)?;
+            }
         }
-        drop(table);
         write_txn.commit()?;
         Ok(value)
     }
