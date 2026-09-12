@@ -32,7 +32,7 @@ use ream_storage::{
 use tree_hash::TreeHash;
 use ream_sync_committee_pool::SyncCommitteePool;
 use tokio::sync::{Mutex, broadcast};
-use tracing::warn;
+use tracing::{debug, info, warn};
 
 /// BeaconChain is the main struct which manages the nodes local beacon chain.
 pub struct BeaconChain {
@@ -74,12 +74,12 @@ impl BeaconChain {
             let err_str = e.to_string();
             if err_str.starts_with("INVALID_PAYLOAD") {
                 let block_root = signed_block.message.tree_hash_root();
-                let parts: Vec<&str> = err_str.split(':').collect();
-                if parts.len() == 2 {
-                    if let core::result::Result::Ok(latest_valid) = parts[1].parse::<alloy_primitives::B256>() {
-                        self.handle_invalid_payload(store, block_root, latest_valid).await?;
-                    }
-                }
+                let latest_valid = if let Some((_, hash_str)) = err_str.split_once(':') {
+                    hash_str.parse::<alloy_primitives::B256>().unwrap_or(B256::ZERO)
+                } else {
+                    B256::ZERO
+                };
+                self.handle_invalid_payload(store, block_root, latest_valid).await?;
                 bail!("Block payload is invalid");
             }
             return Err(e);
@@ -155,52 +155,57 @@ impl BeaconChain {
         invalid_root: B256,
         latest_valid_hash: B256,
     ) -> anyhow::Result<()> {
-        println!("[HANDLE_INVALID] handle_invalid_payload called. invalid_root={:?}, latest_valid_hash={:?}", invalid_root, latest_valid_hash);
+        info!(
+            "Handling invalid payload: invalid_root={:?}, latest_valid_hash={:?}",
+            invalid_root, latest_valid_hash
+        );
         let mut to_remove = vec![];
         let mut current = store.get_head()?;
-        println!("[HANDLE_INVALID] Start head is: {:?}", current);
         loop {
-            println!("[HANDLE_INVALID] Loop iteration: current={:?}", current);
-            let block = store.db.block_provider().get(current)?.ok_or(anyhow!("Missing block"))?;
-            println!("[HANDLE_INVALID] Current block execution hash={:?}", block.message.body.execution_payload.block_hash);
-            if block.message.body.execution_payload.block_hash == latest_valid_hash {
-                println!("[HANDLE_INVALID] Found latest valid hash, breaking");
+            let block = store
+                .db
+                .block_provider()
+                .get(current)?
+                .ok_or_else(|| anyhow!("Missing block"))?;
+            if latest_valid_hash != B256::ZERO
+                && (current == latest_valid_hash
+                    || block.message.body.execution_payload.block_hash == latest_valid_hash)
+            {
                 break;
             }
             to_remove.push(current);
             if current == invalid_root {
-                println!("[HANDLE_INVALID] Reached invalid_root, breaking");
                 break;
             }
             current = block.message.parent_root;
+            if current == B256::ZERO {
+                break;
+            }
         }
-        println!("[HANDLE_INVALID] to_remove: {:?}", to_remove);
+
         for root in to_remove {
-            println!("[HANDLE_INVALID] Removing block: {:?}", root);
+            debug!("Removing invalid block and components for root {:?}", root);
             store.db.block_provider().remove(root)?;
-            println!("[HANDLE_INVALID] Removing state: {:?}", root);
             store.db.state_provider().remove(root)?;
-            println!("[HANDLE_INVALID] Removing optimistic roots: {:?}", root);
             let _ = store.db.optimistic_roots_provider().remove(root);
 
-            println!("[HANDLE_INVALID] Removing blobs...");
             for index in 0..MAX_BLOBS_PER_BLOCK_ELECTRA {
                 let blob_id = ream_consensus_beacon::blob_sidecar::BlobIdentifier::new(root, index);
                 let _ = store.db.blobs_and_proofs_provider().remove(blob_id);
             }
 
-            println!("[HANDLE_INVALID] Removing columns...");
             for index in 0..NUMBER_OF_COLUMNS {
                 let col_id = ream_consensus_beacon::data_column_sidecar::ColumnIdentifier::new(root, index);
                 let _ = store.db.column_sidecars_provider().remove(col_id);
             }
-            println!("[HANDLE_INVALID] Finished removing components for: {:?}", root);
         }
 
-        println!("[HANDLE_INVALID] Computing new head...");
         let new_head = store.get_head()?;
-        println!("[HANDLE_INVALID] New head computed: {:?}", new_head);
-        let new_head_block = store.db.block_provider().get(new_head)?
+        info!("New head computed after invalid payload rollback: {:?}", new_head);
+        let new_head_block = store
+            .db
+            .block_provider()
+            .get(new_head)?
             .ok_or_else(|| anyhow!("New head block not found"))?;
         let head_block_hash = new_head_block.message.body.execution_payload.block_hash;
 
@@ -208,7 +213,10 @@ impl BeaconChain {
         let safe_block_hash = if justified_checkpoint.root == B256::ZERO {
             B256::ZERO
         } else {
-            store.db.block_provider().get(justified_checkpoint.root)?
+            store
+                .db
+                .block_provider()
+                .get(justified_checkpoint.root)?
                 .map(|b| b.message.body.execution_payload.block_hash)
                 .unwrap_or(B256::ZERO)
         };
@@ -217,7 +225,10 @@ impl BeaconChain {
         let finalized_block_hash = if finalized_checkpoint.root == B256::ZERO {
             B256::ZERO
         } else {
-            store.db.block_provider().get(finalized_checkpoint.root)?
+            store
+                .db
+                .block_provider()
+                .get(finalized_checkpoint.root)?
                 .map(|b| b.message.body.execution_payload.block_hash)
                 .unwrap_or(B256::ZERO)
         };
@@ -228,15 +239,14 @@ impl BeaconChain {
             finalized_block_hash,
         };
 
-        println!("[HANDLE_INVALID] Dropping store guard...");
         drop(store);
 
         if let Some(ref execution_engine) = self.execution_engine {
-            println!("[HANDLE_INVALID] Sending forkchoiceUpdated to execution engine...");
-            execution_engine.engine_forkchoice_updated_v3(forkchoice_state, None).await?;
+            execution_engine
+                .engine_forkchoice_updated_v3(forkchoice_state, None)
+                .await?;
         }
 
-        println!("[HANDLE_INVALID] Done handle_invalid_payload");
         Ok(())
     }
 
