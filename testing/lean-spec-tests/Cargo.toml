@@ -18,6 +18,7 @@ devnet5 = [
     "ream-fork-choice-lean/devnet5",
     "ream-storage/devnet5",
 ]
+reth = ["ream-consensus-lean/reth", "ream-fork-choice-lean/reth"]
 optimized-leanvm = [
     "ream-network-spec/optimized-leanvm",
     "devnet5",

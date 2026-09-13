@@ -32,6 +32,14 @@ devnet5 = [
     "ream-storage/devnet5",
     "ream-validator-lean/devnet5",
 ]
+reth = [
+    "dep:ream-reth-engine",
+    "ream-chain-lean/reth",
+    "ream-checkpoint-sync-lean/reth",
+    "ream-consensus-lean/reth",
+    "ream-fork-choice-lean/reth",
+    "ream-rpc-lean/reth",
+]
 jemalloc = ["dep:tikv-jemallocator"]
 shadow-integration = [
     "ream-executor/shadow-integration",
@@ -121,6 +129,7 @@ ream-node.workspace = true
 ream-operation-pool.workspace = true
 ream-p2p.workspace = true
 ream-post-quantum-crypto.workspace = true
+ream-reth-engine = { workspace = true, optional = true }
 ream-rpc-beacon.workspace = true
 ream-rpc-common.workspace = true
 ream-rpc-data-availability.workspace = true

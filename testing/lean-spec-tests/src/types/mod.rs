@@ -275,7 +275,12 @@ impl TryFrom<&Block> for ReamBlock {
             proposer_index: block.proposer_index,
             parent_root: block.parent_root,
             state_root: block.state_root,
-            body: ReamBlockBody { attestations },
+            body: ReamBlockBody {
+                attestations,
+                // EL payload is not in LeanSpec
+                #[cfg(feature = "reth")]
+                execution_payload: Default::default(),
+            },
         })
     }
 }
