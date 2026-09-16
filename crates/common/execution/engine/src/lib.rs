@@ -508,7 +508,7 @@ impl ExecutionApi for ExecutionEngine {
             });
         }
 
-        return Ok(self.notify_new_payload(new_payload_request).await?);
+        self.notify_new_payload(new_payload_request).await
     }
 
     async fn engine_get_blobs_v1(

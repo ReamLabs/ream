@@ -2732,7 +2732,7 @@ impl BeaconState {
             match status.status {
                 PayloadStatus::Invalid => {
                     if let Some(latest_valid) = status.latest_valid_hash {
-                        anyhow::bail!("INVALID_PAYLOAD:{}", latest_valid);
+                        anyhow::bail!("INVALID_PAYLOAD:{latest_valid}");
                     } else {
                         anyhow::bail!("INVALID_PAYLOAD");
                     }

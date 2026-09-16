@@ -126,17 +126,17 @@ impl BlockRangeSyncer {
             loop {
                 poll_ready_tasks(&mut task_handles, &mut block_cache, &mut self.peer_manager)?;
 
-                let target_slot = match if self.optimistic_mode { self.peer_manager.head_slot() } else { self.peer_manager.finalized_slot() } {
-                    Some(slot) => slot,
+                let finalized_slot = match self.peer_manager.finalized_slot() {
+                    Some(finalized_slot) => finalized_slot,
                     None => {
-                        warn!("No peers available to determine target slot, retrying...");
+                        warn!("No peers available to determine finalized slot, retrying...");
                         sleep(SLEEP_DURATION).await;
                         self.peer_manager.update_peer_set();
                         continue;
                     }
                 };
 
-                let data_to_fetch = block_cache.data_to_fetch(target_slot);
+                let data_to_fetch = block_cache.data_to_fetch(finalized_slot);
                 info!(
                     "Forward sync status: Downloaded Blocks {}, Downloaded Blobs {}/{}, Stage {data_to_fetch}",
                     block_cache.block_count(),
@@ -245,7 +245,7 @@ impl BlockRangeSyncer {
                     let store = self.beacon_chain.store.lock().await;
                     let current_head_slot = store.get_current_slot().unwrap_or(0);
                     let is_optimistic = crate::block_range::optimistic::is_optimistic_candidate_block(
-                        &*store,
+                        &store,
                         current_head_slot,
                         &block,
                     );

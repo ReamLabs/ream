@@ -167,18 +167,46 @@ impl BeaconChain {
             "Handling invalid payload: invalid_root={:?}, latest_valid_hash={:?}",
             invalid_root, latest_valid_hash
         );
+
+        // Safety guard: if the invalid block was rejected before being imported into the store,
+        // and latest_valid_hash is either not provided or already matches the canonical head,
+        // the existing chain in the store is unaffected and does not need rollback.
+        let is_imported = store.db.block_provider().get(invalid_root)?.is_some();
+        if !is_imported {
+            if latest_valid_hash == B256::ZERO {
+                debug!(
+                    "Invalid block {:?} was never imported into store; skipping rollback",
+                    invalid_root
+                );
+                return Ok(());
+            }
+
+            if let Ok(head_root) = store.get_head()
+                && let Ok(Some(head_block)) = store.db.block_provider().get(head_root)
+                && (head_root == latest_valid_hash
+                    || head_block.message.body.execution_payload.block_hash == latest_valid_hash)
+            {
+                debug!(
+                    "Invalid block {:?} was not imported and current head {:?} matches latest_valid_hash; skipping rollback",
+                    invalid_root, head_root
+                );
+                return Ok(());
+            }
+        }
+
         // Collect (block_root, parent_root, slot) for all invalid blocks so we can
         // clean up all index tables without calling store.get_head() after removal.
         let mut to_remove: Vec<(B256, B256, u64)> = vec![];
         let mut last_valid_root = B256::ZERO;
         let mut current = store.get_head()?;
+        let mut found_target = false;
 
         loop {
             let block = store
                 .db
                 .block_provider()
                 .get(current)?
-                .ok_or_else(|| anyhow!("Missing block for root {:?}", current))?;
+                .ok_or_else(|| anyhow!("Missing block for root {current:?}"))?;
 
             let parent_root = block.message.parent_root;
             let slot = block.message.slot;
@@ -189,6 +217,7 @@ impl BeaconChain {
             {
                 // current block is the latest valid — it stays, record it as new head
                 last_valid_root = current;
+                found_target = true;
                 break;
             }
 
@@ -197,6 +226,7 @@ impl BeaconChain {
             if current == invalid_root {
                 // Parent of invalid_root becomes the new head
                 last_valid_root = parent_root;
+                found_target = true;
                 break;
             }
 
@@ -204,6 +234,16 @@ impl BeaconChain {
             if current == B256::ZERO {
                 break;
             }
+        }
+
+        // Safety guard: if we traversed all the way to genesis without finding invalid_root or
+        // latest_valid_hash, the head chain does not contain the invalid block. Do NOT delete to_remove!
+        if !found_target {
+            warn!(
+                "Neither invalid_root {:?} nor latest_valid_hash {:?} was found in head chain; aborting rollback to prevent data loss",
+                invalid_root, latest_valid_hash
+            );
+            return Ok(());
         }
 
         for (root, parent_root, slot) in to_remove {
@@ -246,7 +286,7 @@ impl BeaconChain {
 
         let new_head_block =
             store.db.block_provider().get(new_head)?.ok_or_else(|| {
-                anyhow!("New head block not found after rollback: {:?}", new_head)
+                anyhow!("New head block not found after rollback: {new_head:?}")
             })?;
         let head_block_hash = new_head_block.message.body.execution_payload.block_hash;
 
@@ -922,6 +962,89 @@ mod tests {
             store_lock.db.block_provider().get(b1_root)?.is_some(),
             "b1 should remain"
         );
+
+        Ok(())
+    }
+
+    /// Test: when an invalid block was never imported into the store (e.g. failed in on_block),
+    /// handle_invalid_payload must NOT wipe the existing head or canonical chain.
+    #[tokio::test]
+    async fn test_handle_invalid_payload_unimported_block_preserves_head() -> anyhow::Result<()> {
+        initialize_test_network_spec();
+        let tmp = TempDir::new("beacon_chain_test_unimported")?;
+        let ream_db = ReamDB::new(tmp.path().to_path_buf())?;
+        let db = ream_db.init_beacon_db()?;
+
+        let mut anchor_state = create_dummy_state();
+        anchor_state.genesis_time = 1000;
+        anchor_state.slot = 0;
+        let state_root = anchor_state.tree_hash_root();
+        let anchor_block = BeaconBlock {
+            slot: 0,
+            proposer_index: 0,
+            parent_root: B256::ZERO,
+            state_root,
+            body: Default::default(),
+        };
+        let anchor_root = anchor_block.tree_hash_root();
+
+        let store = ream_fork_choice_beacon::store::get_forkchoice_store(
+            anchor_state,
+            anchor_block,
+            db.clone(),
+        )?;
+
+        let chain = BeaconChain {
+            store: tokio::sync::Mutex::new(store),
+            execution_engine: None,
+            event_sender: None,
+        };
+
+        // Valid block 1
+        let b1 = create_dummy_block(1, anchor_root, B256::from([11u8; 32]));
+        let b1_root = b1.message.tree_hash_root();
+
+        {
+            let store_lock = chain.store.lock().await;
+            store_lock.db.block_provider().insert(b1_root, b1.clone())?;
+            store_lock
+                .db
+                .state_provider()
+                .insert(b1_root, create_dummy_state())?;
+            store_lock
+                .db
+                .parent_root_index_multimap_provider()
+                .insert(anchor_root, b1_root)?;
+            store_lock.db.slot_index_provider().insert(1, b1_root)?;
+            store_lock.db.unrealized_justifications_provider().insert(
+                b1_root,
+                Checkpoint {
+                    epoch: 0,
+                    root: anchor_root,
+                },
+            )?;
+        }
+
+        // Head is b1
+        {
+            let store_lock = chain.store.lock().await;
+            assert_eq!(store_lock.get_head()?, b1_root);
+        }
+
+        // An invalid block that was rejected during on_block (never added to block_provider)
+        let unimported_invalid_root = B256::from([99u8; 32]);
+
+        // Calling handle_invalid_payload should safely return without deleting b1 or anchor
+        let store_guard = chain.store.lock().await;
+        chain
+            .handle_invalid_payload(store_guard, unimported_invalid_root, B256::ZERO)
+            .await?;
+
+        // Head and blocks must still exist intact
+        let store_lock = chain.store.lock().await;
+        assert_eq!(store_lock.get_head()?, b1_root);
+        assert!(store_lock.db.block_provider().get(b1_root)?.is_some());
+        assert!(store_lock.db.block_provider().get(anchor_root)?.is_some());
 
         Ok(())
     }

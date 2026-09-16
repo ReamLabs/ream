@@ -19,9 +19,9 @@ pub fn is_optimistic_candidate_block(
         return true;
     }
 
-    // Within safe distance from head?
-    let distance = current_head_slot.saturating_sub(block.message.slot);
-    distance <= SAFE_SLOTS_TO_IMPORT_OPTIMISTICALLY
+    // Within safe distance from head? Per Ethereum spec, the block must be
+    // at least SAFE_SLOTS_TO_IMPORT_OPTIMISTICALLY slots deep into the past.
+    block.message.slot + SAFE_SLOTS_TO_IMPORT_OPTIMISTICALLY <= current_head_slot
 }
 
 #[cfg(test)]
@@ -46,31 +46,29 @@ mod tests {
         }
     }
 
-    /// Block within SAFE_SLOTS_TO_IMPORT_OPTIMISTICALLY distance of head_slot
+    /// Block at least SAFE_SLOTS_TO_IMPORT_OPTIMISTICALLY slots behind head_slot
     /// should be a candidate even if parent is not in store.
     #[test]
     fn test_within_safe_distance_is_candidate() {
-        // We can't easily construct a real Store without a DB, so we test the distance logic
-        // indirectly: slot distance = head_slot - block.slot <= 128
         let block_slot = 100u64;
-        let head_slot = 200u64;
+        let head_slot = block_slot + SAFE_SLOTS_TO_IMPORT_OPTIMISTICALLY + 10;
         let distance = head_slot.saturating_sub(block_slot);
         assert!(
-            distance <= SAFE_SLOTS_TO_IMPORT_OPTIMISTICALLY,
-            "Block at slot {block_slot} with head {head_slot} should be within safe distance"
+            distance >= SAFE_SLOTS_TO_IMPORT_OPTIMISTICALLY,
+            "Block at slot {block_slot} with head {head_slot} should be deep enough to be an optimistic candidate"
         );
     }
 
-    /// Block beyond SAFE_SLOTS_TO_IMPORT_OPTIMISTICALLY distance (and no parent in store)
+    /// Block closer than SAFE_SLOTS_TO_IMPORT_OPTIMISTICALLY to head_slot (and no parent in store)
     /// should NOT be a candidate based on distance alone.
     #[test]
     fn test_beyond_safe_distance_not_candidate_by_distance() {
         let block_slot = 100u64;
-        let head_slot = block_slot + SAFE_SLOTS_TO_IMPORT_OPTIMISTICALLY + 1;
+        let head_slot = block_slot + SAFE_SLOTS_TO_IMPORT_OPTIMISTICALLY - 1;
         let distance = head_slot.saturating_sub(block_slot);
         assert!(
-            distance > SAFE_SLOTS_TO_IMPORT_OPTIMISTICALLY,
-            "Block at slot {block_slot} with head {head_slot} should be outside safe distance"
+            distance < SAFE_SLOTS_TO_IMPORT_OPTIMISTICALLY,
+            "Block at slot {block_slot} with head {head_slot} is too close to head"
         );
     }
 
