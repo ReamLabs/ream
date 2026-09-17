@@ -72,12 +72,18 @@ pub async fn calculate_sync_status(
         None => true,
     };
 
+    let is_optimistic = db
+        .optimistic_roots_provider()
+        .get(head)
+        .unwrap_or(None)
+        .unwrap_or(false);
+
     Ok(SyncStatus {
         head_slot,
         sync_distance,
         is_syncing: sync_distance > 1,
         el_offline,
-        is_optimistic: EXECUTION_OPTIMISTIC,
+        is_optimistic,
     })
 }
 

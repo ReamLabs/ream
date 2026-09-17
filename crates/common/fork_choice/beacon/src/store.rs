@@ -245,6 +245,22 @@ impl Store {
         }
     }
 
+    /// Returns true if the block with `root` was imported optimistically and has not yet been fully validated.
+    pub fn is_optimistic(&self, root: B256) -> bool {
+        self.db
+            .optimistic_roots_provider()
+            .get(root)
+            .unwrap_or(None)
+            .unwrap_or(false)
+    }
+
+    /// Returns true if the current head block is optimistic.
+    pub fn is_head_optimistic(&self) -> bool {
+        self.get_head()
+            .map(|head| self.is_optimistic(head))
+            .unwrap_or(false)
+    }
+
     /// Update checkpoints in store if necessary
     pub fn update_checkpoints(
         &mut self,

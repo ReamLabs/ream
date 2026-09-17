@@ -1048,4 +1048,71 @@ mod tests {
 
         Ok(())
     }
+
+    /// Test: when an ancestor is optimistic and a descendant is subsequently validated,
+    /// the descendant and its ancestors are cleared from optimistic roots.
+    #[tokio::test]
+    async fn test_optimistic_ancestor_resolution() -> anyhow::Result<()> {
+        initialize_test_network_spec();
+        let tmp = TempDir::new("beacon_chain_test_resolution")?;
+        let ream_db = ReamDB::new(tmp.path().to_path_buf())?;
+        let db = ream_db.init_beacon_db()?;
+
+        let anchor_state = create_dummy_state();
+        let anchor_block = BeaconBlock {
+            slot: 0,
+            proposer_index: 0,
+            parent_root: B256::ZERO,
+            state_root: anchor_state.tree_hash_root(),
+            body: Default::default(),
+        };
+        let anchor_root = anchor_block.tree_hash_root();
+
+        let store = ream_fork_choice_beacon::store::get_forkchoice_store(
+            anchor_state,
+            anchor_block,
+            db.clone(),
+        )?;
+
+        // Setup chain: anchor -> b1 (optimistic) -> b2 (optimistic) -> b3 (validated)
+        let b1 = create_dummy_block(1, anchor_root, B256::from([11u8; 32]));
+        let b1_root = b1.message.tree_hash_root();
+        let b2 = create_dummy_block(2, b1_root, B256::from([22u8; 32]));
+        let b2_root = b2.message.tree_hash_root();
+
+        {
+            store.db.block_provider().insert(b1_root, b1.clone())?;
+            store.db.block_provider().insert(b2_root, b2.clone())?;
+
+            // Mark b1 and b2 as optimistic
+            store.db.optimistic_roots_provider().insert(b1_root, true)?;
+            store.db.optimistic_roots_provider().insert(b2_root, true)?;
+
+            assert!(store.is_optimistic(b1_root));
+            assert!(store.is_optimistic(b2_root));
+        }
+
+        // Simulate validation of b2 (e.g. by on_block or engine VALID notification):
+        // resolving b2 should resolve b2 and its ancestor b1
+        {
+            let mut ancestor = b2_root;
+            while ancestor != B256::ZERO {
+                if store.db.optimistic_roots_provider().get(ancestor)?.unwrap_or(false) {
+                    store.db.optimistic_roots_provider().remove(ancestor)?;
+                    if let Ok(Some(ancestor_block)) = store.db.block_provider().get(ancestor) {
+                        ancestor = ancestor_block.message.parent_root;
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
+
+        assert!(!store.is_optimistic(b1_root), "b1 should no longer be optimistic");
+        assert!(!store.is_optimistic(b2_root), "b2 should no longer be optimistic");
+
+        Ok(())
+    }
 }

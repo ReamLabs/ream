@@ -246,7 +246,7 @@ pub async fn validate_beacon_block(
             })
             .await?;
 
-        match payload_verification_status {
+        match payload_verification_status.status {
             // If execution_payload verification of block's parent by an execution node is not
             // complete: [REJECT] The block's parent passes all validation (excluding
             // execution node verification of the block.body.execution_payload)

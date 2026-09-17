@@ -10,6 +10,11 @@ rust-version.workspace = true
 version.workspace = true
 
 [features]
+devnet5 = [
+    "ream-storage/devnet5",
+    "ream-network-spec/devnet5",
+    "ream-fork-choice-beacon/devnet5",
+]
 optimized-leanvm = [
     "ream-network-spec/optimized-leanvm",
     "ream-fork-choice-beacon/optimized-leanvm",

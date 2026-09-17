@@ -65,8 +65,11 @@ use ream_consensus_misc::{
     withdrawal_request::WithdrawalRequest,
 };
 use ream_execution_engine::{engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest};
-use ream_execution_rpc_types::electra::{
-    execution_payload::ExecutionPayload, execution_payload_header::ExecutionPayloadHeader,
+use ream_execution_rpc_types::{
+    electra::{
+        execution_payload::ExecutionPayload, execution_payload_header::ExecutionPayloadHeader,
+    },
+    payload_status::PayloadStatus,
 };
 use ream_merkle::{generate_proof, is_valid_merkle_branch, merkle_tree};
 use ream_network_spec::networks::beacon_network_spec;
@@ -2692,7 +2695,7 @@ impl BeaconState {
         &mut self,
         body: &BeaconBlockBody,
         execution_engine: &Option<impl ExecutionApi>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Option<PayloadStatus>> {
         let payload = &body.execution_payload;
 
         // Verify consistency of the parent hash with respect to the previous execution payload
@@ -2718,6 +2721,7 @@ impl BeaconState {
             versioned_hashes.push(commitment.calculate_versioned_hash());
         }
 
+        let mut payload_status = None;
         if let Some(execution_engine) = execution_engine {
             let status = execution_engine
                 .verify_and_notify_new_payload(NewPayloadRequest {
@@ -2728,7 +2732,6 @@ impl BeaconState {
                 })
                 .await?;
 
-            use ream_execution_rpc_types::payload_status::PayloadStatus;
             match status.status {
                 PayloadStatus::Invalid => {
                     if let Some(latest_valid) = status.latest_valid_hash {
@@ -2745,29 +2748,31 @@ impl BeaconState {
                     // Syncing is technically fine, we can treat it as valid for now or wait
                 }
             }
+            payload_status = Some(status.status);
         }
 
         // Cache execution payload header
         self.latest_execution_payload_header = payload.to_execution_payload_header();
 
-        Ok(())
+        Ok(payload_status)
     }
 
     pub async fn process_block(
         &mut self,
         block: &BeaconBlock,
         execution_engine: &Option<impl ExecutionApi>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Option<PayloadStatus>> {
         self.process_block_header(block)?;
         self.process_withdrawals(&block.body.execution_payload)?;
-        self.process_execution_payload(&block.body, execution_engine)
+        let payload_status = self
+            .process_execution_payload(&block.body, execution_engine)
             .await?;
         self.process_randao(&block.body)?;
         self.process_eth1_data(&block.body)?;
         self.process_operations(&block.body)?;
         self.process_sync_aggregate(&block.body.sync_aggregate)?;
 
-        Ok(())
+        Ok(payload_status)
     }
 
     pub async fn state_transition(
@@ -2775,7 +2780,7 @@ impl BeaconState {
         signed_block: &SignedBeaconBlock,
         validate_result: bool,
         execution_engine: &Option<impl ExecutionApi>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Option<PayloadStatus>> {
         let block = &signed_block.message;
         // Process slots (including those with no blocks) since block
         self.process_slots(block.slot)?;
@@ -2785,12 +2790,12 @@ impl BeaconState {
             ensure!(self.verify_block_header_signature(&signed_block.signed_header())?)
         }
         // Process block
-        self.process_block(block, execution_engine).await?;
+        let payload_status = self.process_block(block, execution_engine).await?;
         // Verify state root
         if validate_result {
             ensure!(block.state_root == self.tree_hash_root())
         }
-        Ok(())
+        Ok(payload_status)
     }
 
     /// Return the churn limit for the current epoch.
