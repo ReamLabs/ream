@@ -13,6 +13,7 @@ version.workspace = true
 devnet5 = ["dep:lean-multisig-type2"]
 shadow-integration = []
 optimized-leanvm = ["devnet5", "dep:lean-multisig-optimized", "dep:postcard"]
+optimized-leanvm-b = ["devnet5", "dep:leanvm-b", "dep:postcard"]
 
 [dependencies]
 alloy-primitives.workspace = true
@@ -23,6 +24,7 @@ lean-multisig.workspace = true
 lean-multisig-optimized = { workspace = true, optional = true }
 lean-multisig-type2 = { workspace = true, optional = true }
 leansig.workspace = true
+leanvm-b = { workspace = true, optional = true }
 postcard = { workspace = true, optional = true }
 rand_0_10 = { package = "rand", version = "0.10" }
 serde.workspace = true

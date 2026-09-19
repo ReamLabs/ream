@@ -11,6 +11,7 @@ version.workspace = true
 
 [features]
 optimized-leanvm = ["ream-validator-beacon/optimized-leanvm"]
+optimized-leanvm-b = ["ream-validator-beacon/optimized-leanvm-b"]
 
 [dependencies]
 alloy-primitives.workspace = true

@@ -20,6 +20,14 @@ optimized-leanvm = [
     "ream-req-resp/optimized-leanvm",
     "ream-storage/optimized-leanvm",
 ]
+optimized-leanvm-b = [
+    "ream-network-spec/optimized-leanvm-b",
+    "devnet5",
+    "ream-chain-beacon/optimized-leanvm-b",
+    "ream-p2p/optimized-leanvm-b",
+    "ream-req-resp/optimized-leanvm-b",
+    "ream-storage/optimized-leanvm-b",
+]
 
 [dependencies]
 alloy-primitives.workspace = true

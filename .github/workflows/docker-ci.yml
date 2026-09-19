@@ -22,6 +22,9 @@ jobs:
           - variant: devnet5-leanvm-main
             features: optimized-leanvm
             tags: devnet5-leanvm-main
+          - variant: devnet5-leanvm-main-b-version
+            features: optimized-leanvm-b
+            tags: devnet5-leanvm-main-b-version
     steps:
       - uses: actions/checkout@v6
       - uses: rui314/setup-mold@v1

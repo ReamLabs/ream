@@ -23,6 +23,13 @@ optimized-leanvm = [
     "ream-fork-choice-beacon/optimized-leanvm",
     "ream-storage/optimized-leanvm",
 ]
+optimized-leanvm-b = [
+    "ream-network-spec/optimized-leanvm-b",
+    "devnet5",
+    "ream-consensus-lean/optimized-leanvm-b",
+    "ream-fork-choice-beacon/optimized-leanvm-b",
+    "ream-storage/optimized-leanvm-b",
+]
 ef-tests = []
 
 [dependencies]

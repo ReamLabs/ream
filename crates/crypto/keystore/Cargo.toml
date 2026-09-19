@@ -13,6 +13,7 @@ version.workspace = true
 default = ["devnet5"]
 devnet5 = []
 optimized-leanvm = ["devnet5", "ream-post-quantum-crypto/optimized-leanvm"]
+optimized-leanvm-b = ["devnet5", "ream-post-quantum-crypto/optimized-leanvm-b"]
 
 [dependencies]
 aes.workspace = true

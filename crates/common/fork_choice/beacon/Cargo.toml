@@ -16,6 +16,12 @@ optimized-leanvm = [
     "ream-storage/optimized-leanvm",
     "ream-sync-committee-pool/optimized-leanvm",
 ]
+optimized-leanvm-b = [
+    "ream-network-spec/optimized-leanvm-b",
+    "ream-consensus-lean/optimized-leanvm-b",
+    "ream-storage/optimized-leanvm-b",
+    "ream-sync-committee-pool/optimized-leanvm-b",
+]
 
 [dependencies]
 alloy-consensus.workspace = true

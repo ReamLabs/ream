@@ -17,6 +17,11 @@ optimized-leanvm = [
     "devnet5",
     "ream-consensus-lean/optimized-leanvm",
 ]
+optimized-leanvm-b = [
+    "ream-network-spec/optimized-leanvm-b",
+    "devnet5",
+    "ream-consensus-lean/optimized-leanvm-b",
+]
 
 [dependencies]
 alloy-primitives.workspace = true

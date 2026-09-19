@@ -24,6 +24,18 @@ optimized-leanvm = [
     "ream-syncer/optimized-leanvm",
     "ream-validator-beacon/optimized-leanvm",
 ]
+optimized-leanvm-b = [
+    "ream-network-spec/optimized-leanvm-b",
+    "devnet5",
+    "ream-chain-beacon/optimized-leanvm-b",
+    "ream-fork-choice-beacon/optimized-leanvm-b",
+    "ream-p2p/optimized-leanvm-b",
+    "ream-req-resp/optimized-leanvm-b",
+    "ream-storage/optimized-leanvm-b",
+    "ream-sync-committee-pool/optimized-leanvm-b",
+    "ream-syncer/optimized-leanvm-b",
+    "ream-validator-beacon/optimized-leanvm-b",
+]
 disable_ancestor_validation = []
 
 [dependencies]
