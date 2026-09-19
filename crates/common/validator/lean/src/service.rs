@@ -341,6 +341,13 @@ fn sign_block(
             attestation_public_keys.len()
         ));
     }
+    if signatures.len() != block.body.attestations.len() {
+        return Err(anyhow!(
+            "Attestation proof count ({}) does not match block attestation count ({})",
+            signatures.len(),
+            block.body.attestations.len()
+        ));
+    }
 
     let block_root = block.tree_hash_root();
     let block_root_bytes: [u8; 32] = block_root.into();
@@ -351,7 +358,26 @@ fn sign_block(
     inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_TOTAL, &[]);
 
     let mut components = Vec::with_capacity(signatures.len() + 1);
-    for (proof, public_keys) in signatures.iter().zip(attestation_public_keys.iter()) {
+    for (index, (proof, public_keys)) in signatures
+        .iter()
+        .zip(attestation_public_keys.iter())
+        .enumerate()
+    {
+        #[cfg(not(feature = "optimized-leanvm-b"))]
+        let _ = index;
+        #[cfg(feature = "optimized-leanvm-b")]
+        let attestation = &block.body.attestations[index];
+        #[cfg(feature = "optimized-leanvm-b")]
+        let component = type_1_from_wire(
+            &proof.proof,
+            public_keys,
+            &attestation.message.tree_hash_root().0,
+            attestation.message.slot as u32,
+        )
+        .map_err(|err| {
+            anyhow!("Failed to reconstruct attestation single-message aggregate proof: {err}")
+        })?;
+        #[cfg(not(feature = "optimized-leanvm-b"))]
         let component = type_1_from_wire(&proof.proof, public_keys).map_err(|err| {
             anyhow!("Failed to reconstruct attestation single-message aggregate proof: {err}")
         })?;

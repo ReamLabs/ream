@@ -1289,7 +1289,32 @@ impl LeanChainService {
         };
         public_keys_per_component.push(vec![proposer_public_key]);
 
-        let type_two = match type_2_from_wire(block.proof.as_ref(), &public_keys_per_component) {
+        #[cfg(feature = "optimized-leanvm-b")]
+        let expected_bindings = block
+            .block
+            .body
+            .attestations
+            .iter()
+            .map(|attestation| {
+                (
+                    attestation.message.tree_hash_root().into(),
+                    attestation.message.slot as u32,
+                )
+            })
+            .chain(std::iter::once((
+                block.block.tree_hash_root().into(),
+                block.block.slot as u32,
+            )))
+            .collect::<Vec<_>>();
+        #[cfg(feature = "optimized-leanvm-b")]
+        let decoded = type_2_from_wire(
+            block.proof.as_ref(),
+            &public_keys_per_component,
+            &expected_bindings,
+        );
+        #[cfg(not(feature = "optimized-leanvm-b"))]
+        let decoded = type_2_from_wire(block.proof.as_ref(), &public_keys_per_component);
+        let type_two = match decoded {
             Ok(proof) => proof,
             Err(err) => {
                 debug!("Post-block multi-message aggregate decode failed: {err}");
@@ -1350,7 +1375,16 @@ impl LeanChainService {
                                 .map(|v| v.attestation_public_key)
                         })
                         .collect();
-                    match type_1_from_wire(&proof.proof, &pubkeys) {
+                    #[cfg(feature = "optimized-leanvm-b")]
+                    let decoded = type_1_from_wire(
+                        &proof.proof,
+                        &pubkeys,
+                        &data_root.0,
+                        attestation.message.slot as u32,
+                    );
+                    #[cfg(not(feature = "optimized-leanvm-b"))]
+                    let decoded = type_1_from_wire(&proof.proof, &pubkeys);
+                    match decoded {
                         Ok(local_single_message_aggregate) => {
                             for validator_id in validator_indices {
                                 let _ = union_bits.set(validator_id as usize, true);

@@ -11,6 +11,7 @@ version.workspace = true
 
 [features]
 optimized-leanvm = ["ream-network-spec/optimized-leanvm", "ream-keystore/optimized-leanvm"]
+optimized-leanvm-b = ["ream-network-spec/optimized-leanvm-b", "ream-keystore/optimized-leanvm-b"]
 
 [dependencies]
 alloy-primitives.workspace = true

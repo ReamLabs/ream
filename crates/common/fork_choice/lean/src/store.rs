@@ -152,7 +152,12 @@ pub fn prove_aggregation_jobs(
         let children = job
             .child_wires
             .iter()
-            .map(|(wire, public_keys)| type_1_from_wire(wire, public_keys))
+            .map(|(wire, public_keys)| {
+                #[cfg(feature = "optimized-leanvm-b")]
+                return type_1_from_wire(wire, public_keys, &job.data_root.0, job.data.slot as u32);
+                #[cfg(not(feature = "optimized-leanvm-b"))]
+                type_1_from_wire(wire, public_keys)
+            })
             .collect::<anyhow::Result<Vec<_>>>()?;
         let type_one = type_1_aggregate(
             &children,
@@ -954,6 +959,14 @@ impl Store {
                                     })
                             })
                             .collect::<anyhow::Result<Vec<_>>>()?;
+                        #[cfg(feature = "optimized-leanvm-b")]
+                        return type_1_from_wire(
+                            &child.proof,
+                            &public_keys,
+                            &data_root.0,
+                            data.slot as u32,
+                        );
+                        #[cfg(not(feature = "optimized-leanvm-b"))]
                         type_1_from_wire(&child.proof, &public_keys)
                     })
                     .collect::<anyhow::Result<Vec<_>>>()?;
@@ -2135,9 +2148,17 @@ impl Store {
                 let verification_timer =
                     start_timer(&PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME, &[]);
 
-                #[cfg(feature = "devnet5")]
+                #[cfg(all(feature = "devnet5", not(feature = "optimized-leanvm-b")))]
                 let verification_result = type_1_from_wire(proof.proof.as_ref(), &public_keys)
                     .and_then(|type_one| type_1_verify(&type_one));
+                #[cfg(feature = "optimized-leanvm-b")]
+                let verification_result = type_1_from_wire(
+                    proof.proof.as_ref(),
+                    &public_keys,
+                    &data_root.0,
+                    data.slot as u32,
+                )
+                .and_then(|type_one| type_1_verify(&type_one));
 
                 match verification_result {
                     Ok(()) => {

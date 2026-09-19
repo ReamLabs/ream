@@ -28,6 +28,15 @@ optimized-leanvm = [
     "ream-keystore/optimized-leanvm",
     "ream-post-quantum-crypto/optimized-leanvm",
 ]
+optimized-leanvm-b = [
+    "ream-network-spec/optimized-leanvm-b",
+    "devnet5",
+    "ream-chain-lean/optimized-leanvm-b",
+    "ream-consensus-lean/optimized-leanvm-b",
+    "ream-fork-choice-lean/optimized-leanvm-b",
+    "ream-keystore/optimized-leanvm-b",
+    "ream-post-quantum-crypto/optimized-leanvm-b",
+]
 
 [dependencies]
 alloy-primitives.workspace = true
