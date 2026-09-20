@@ -6779,6 +6779,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "ssz_types",
+ "thiserror 2.0.19",
  "tokio",
  "tree_hash",
  "tree_hash_derive",

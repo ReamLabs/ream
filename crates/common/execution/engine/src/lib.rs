@@ -38,8 +38,11 @@ use ssz_types::VariableList;
 use utils::{Claims, JsonRpcRequest, JsonRpcResponse, blob_versioned_hashes, strip_prefix};
 
 pub mod engine_trait;
+pub mod error;
 pub mod mock_engine;
 pub mod new_payload_request;
+
+pub use error::EngineError;
 
 use crate::{engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest};
 

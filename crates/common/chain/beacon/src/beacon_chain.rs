@@ -11,7 +11,7 @@ use ream_consensus_misc::{
     misc::compute_epoch_at_slot,
 };
 use ream_events_beacon::{BeaconEvent, BeaconEventSender, event::chain::BlockEvent};
-use ream_execution_engine::ExecutionEngine;
+use ream_execution_engine::{EngineError, ExecutionEngine};
 use ream_execution_rpc_types::forkchoice_update::ForkchoiceStateV1;
 use ream_fork_choice_beacon::{
     handlers::{on_attestation, on_attester_slashing, on_block, on_tick},
@@ -23,6 +23,7 @@ use ream_operation_pool::OperationPool;
 use ream_req_resp::beacon::messages::status::Status;
 use ream_storage::{
     db::beacon::BeaconDB,
+    errors::StoreError,
     tables::{
         field::REDBField,
         table::{CustomTable, REDBTable},
@@ -69,22 +70,16 @@ impl BeaconChain {
         )
         .await;
 
-        if let Err(e) = result {
-            let err_str = e.to_string();
-            if err_str.starts_with("INVALID_PAYLOAD") {
+        if let Err(err) = result {
+            if let Some(EngineError::InvalidPayload { latest_valid_hash }) =
+                err.downcast_ref::<EngineError>()
+            {
                 let block_root = signed_block.message.tree_hash_root();
-                let latest_valid = if let Some((_, hash_str)) = err_str.split_once(':') {
-                    hash_str
-                        .parse::<alloy_primitives::B256>()
-                        .unwrap_or(B256::ZERO)
-                } else {
-                    B256::ZERO
-                };
-                self.handle_invalid_payload(store, block_root, latest_valid)
+                self.handle_invalid_payload(store, block_root, *latest_valid_hash)
                     .await?;
                 bail!("Block payload is invalid");
             }
-            return Err(e);
+            return Err(err);
         }
 
         for attestation in signed_block.message.body.attestations.iter() {
@@ -122,13 +117,6 @@ impl BeaconChain {
         )
         .await?;
 
-        // Insert the root as optimistic in the database
-        let block_root = signed_block.message.tree_hash_root();
-        store
-            .db
-            .optimistic_roots_provider()
-            .insert(block_root, true)?;
-
         for attestation in signed_block.message.body.attestations.iter() {
             if let Err(err) = on_attestation(&mut store, attestation.clone(), true) {
                 warn!("Failed to process block attestation through fork choice: {err:?}");
@@ -161,11 +149,10 @@ impl BeaconChain {
         &self,
         store: tokio::sync::MutexGuard<'_, Store>,
         invalid_root: B256,
-        latest_valid_hash: B256,
+        latest_valid_hash: Option<B256>,
     ) -> anyhow::Result<()> {
         info!(
-            "Handling invalid payload: invalid_root={:?}, latest_valid_hash={:?}",
-            invalid_root, latest_valid_hash
+            "Handling invalid payload: invalid_root={invalid_root:?}, latest_valid_hash={latest_valid_hash:?}"
         );
 
         // Safety guard: if the invalid block was rejected before being imported into the store,
@@ -173,22 +160,21 @@ impl BeaconChain {
         // the existing chain in the store is unaffected and does not need rollback.
         let is_imported = store.db.block_provider().get(invalid_root)?.is_some();
         if !is_imported {
-            if latest_valid_hash == B256::ZERO {
+            if latest_valid_hash.is_none() || latest_valid_hash == Some(B256::ZERO) {
                 debug!(
-                    "Invalid block {:?} was never imported into store; skipping rollback",
-                    invalid_root
+                    "Invalid block {invalid_root:?} was never imported into store; skipping rollback"
                 );
                 return Ok(());
             }
 
             if let Ok(head_root) = store.get_head()
                 && let Ok(Some(head_block)) = store.db.block_provider().get(head_root)
-                && (head_root == latest_valid_hash
-                    || head_block.message.body.execution_payload.block_hash == latest_valid_hash)
+                && (Some(head_root) == latest_valid_hash
+                    || Some(head_block.message.body.execution_payload.block_hash)
+                        == latest_valid_hash)
             {
                 debug!(
-                    "Invalid block {:?} was not imported and current head {:?} matches latest_valid_hash; skipping rollback",
-                    invalid_root, head_root
+                    "Invalid block {invalid_root:?} was not imported and current head {head_root:?} matches latest_valid_hash; skipping rollback"
                 );
                 return Ok(());
             }
@@ -211,9 +197,10 @@ impl BeaconChain {
             let parent_root = block.message.parent_root;
             let slot = block.message.slot;
 
-            if latest_valid_hash != B256::ZERO
-                && (current == latest_valid_hash
-                    || block.message.body.execution_payload.block_hash == latest_valid_hash)
+            if let Some(target_hash) = latest_valid_hash
+                && target_hash != B256::ZERO
+                && (current == target_hash
+                    || block.message.body.execution_payload.block_hash == target_hash)
             {
                 // current block is the latest valid — it stays, record it as new head
                 last_valid_root = current;
@@ -237,38 +224,54 @@ impl BeaconChain {
         }
 
         // Safety guard: if we traversed all the way to genesis without finding invalid_root or
-        // latest_valid_hash, the head chain does not contain the invalid block. Do NOT delete to_remove!
+        // latest_valid_hash, the head chain does not contain the invalid block. Do NOT delete
+        // to_remove!
         if !found_target {
             warn!(
-                "Neither invalid_root {:?} nor latest_valid_hash {:?} was found in head chain; aborting rollback to prevent data loss",
-                invalid_root, latest_valid_hash
+                "Neither invalid_root {invalid_root:?} nor latest_valid_hash {latest_valid_hash:?} was found in head chain; aborting rollback to prevent data loss"
             );
             return Ok(());
         }
 
         for (root, parent_root, slot) in to_remove {
-            debug!("Removing invalid block and components for root {:?}", root);
+            debug!("Removing invalid block and components for root {root:?}");
 
             // Remove from all DB tables so filter_block_tree() stays consistent
             store.db.block_provider().remove(root)?;
             store.db.state_provider().remove(root)?;
-            let _ = store.db.slot_index_provider().remove(slot);
-            let _ = store
+            store.db.slot_index_provider().remove(slot)?;
+            store
                 .db
                 .parent_root_index_multimap_provider()
-                .remove_child(parent_root, root);
-            let _ = store.db.unrealized_justifications_provider().remove(root);
-            let _ = store.db.optimistic_roots_provider().remove(root);
+                .remove_child(parent_root, root)?;
+            store.db.unrealized_justifications_provider().remove(root)?;
+            store.db.optimistic_roots_provider().remove(root)?;
 
             for index in 0..MAX_BLOBS_PER_BLOCK_ELECTRA {
                 let blob_id = ream_consensus_beacon::blob_sidecar::BlobIdentifier::new(root, index);
-                let _ = store.db.blobs_and_proofs_provider().remove(blob_id);
+                if let Err(err) = store.db.blobs_and_proofs_provider().remove(blob_id) {
+                    if let StoreError::Io(ref io_err) = err
+                        && io_err.kind() == std::io::ErrorKind::NotFound
+                    {
+                        // Blob file was not present for this index, nothing to clean up
+                    } else {
+                        return Err(err.into());
+                    }
+                }
             }
 
             for index in 0..NUMBER_OF_COLUMNS {
                 let col_id =
                     ream_consensus_beacon::data_column_sidecar::ColumnIdentifier::new(root, index);
-                let _ = store.db.column_sidecars_provider().remove(col_id);
+                if let Err(err) = store.db.column_sidecars_provider().remove(col_id) {
+                    if let StoreError::Io(ref io_err) = err
+                        && io_err.kind() == std::io::ErrorKind::NotFound
+                    {
+                        // Column file was not present for this index, nothing to clean up
+                    } else {
+                        return Err(err.into());
+                    }
+                }
             }
         }
 
@@ -276,7 +279,7 @@ impl BeaconChain {
         // after removal, which would fail if the removed block is still referenced in
         // filter_block_tree's multimap traversal.
         let new_head = last_valid_root;
-        info!("New head after invalid payload rollback: {:?}", new_head);
+        info!("New head after invalid payload rollback: {new_head:?}");
 
         // If we couldn't determine a valid head, skip EL notification
         if new_head == B256::ZERO {
@@ -284,10 +287,11 @@ impl BeaconChain {
             return Ok(());
         }
 
-        let new_head_block =
-            store.db.block_provider().get(new_head)?.ok_or_else(|| {
-                anyhow!("New head block not found after rollback: {new_head:?}")
-            })?;
+        let new_head_block = store
+            .db
+            .block_provider()
+            .get(new_head)?
+            .ok_or_else(|| anyhow!("New head block not found after rollback: {new_head:?}"))?;
         let head_block_hash = new_head_block.message.body.execution_payload.block_hash;
 
         let justified_checkpoint = store.db.justified_checkpoint_provider().get()?;
@@ -298,7 +302,7 @@ impl BeaconChain {
                 .db
                 .block_provider()
                 .get(justified_checkpoint.root)?
-                .map(|b| b.message.body.execution_payload.block_hash)
+                .map(|beacon_block| beacon_block.message.body.execution_payload.block_hash)
                 .unwrap_or(B256::ZERO)
         };
 
@@ -310,7 +314,7 @@ impl BeaconChain {
                 .db
                 .block_provider()
                 .get(finalized_checkpoint.root)?
-                .map(|b| b.message.body.execution_payload.block_hash)
+                .map(|beacon_block| beacon_block.message.body.execution_payload.block_hash)
                 .unwrap_or(B256::ZERO)
         };
 
@@ -444,7 +448,6 @@ fn update_head_metrics_and_reorg(store: &Store, previous_head: Option<B256>) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use alloy_primitives::{B256, aliases::B32};
     use ream_consensus_beacon::{
         blob_sidecar::BlobIdentifier,
@@ -461,6 +464,8 @@ mod tests {
     use ssz_types::VariableList;
     use tempdir::TempDir;
     use tree_hash::TreeHash;
+
+    use super::*;
 
     fn create_dummy_block(
         slot: u64,
@@ -549,21 +554,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_invalid_payload_cleanup() -> anyhow::Result<()> {
-        println!("[TEST] Starting test_handle_invalid_payload_cleanup");
         initialize_test_network_spec();
-        println!("[TEST] Network spec initialized");
         let tmp = TempDir::new("beacon_chain_test")?;
         let ream_db = ReamDB::new(tmp.path().to_path_buf())?;
         let db = ream_db.init_beacon_db()?;
-        println!("[TEST] DB initialized");
 
         // Setup base / anchor block
         let mut anchor_state = create_dummy_state();
         anchor_state.genesis_time = 1000;
         anchor_state.slot = 0;
-        println!("[TEST] Computing anchor state tree hash root...");
         let state_root = anchor_state.tree_hash_root();
-        println!("[TEST] Anchor state tree hash root: {:?}", state_root);
         let anchor_block = BeaconBlock {
             slot: 0,
             proposer_index: 0,
@@ -571,17 +571,13 @@ mod tests {
             state_root,
             body: Default::default(),
         };
-        println!("[TEST] Computing anchor block tree hash root...");
         let anchor_root = anchor_block.tree_hash_root();
-        println!("[TEST] Anchor block tree hash root: {:?}", anchor_root);
 
-        println!("[TEST] Creating forkchoice store...");
         let store = ream_fork_choice_beacon::store::get_forkchoice_store(
             anchor_state,
             anchor_block,
             db.clone(),
         )?;
-        println!("[TEST] Forkchoice store created");
 
         let chain = BeaconChain {
             store: tokio::sync::Mutex::new(store),
@@ -601,13 +597,10 @@ mod tests {
         // Block 3 (invalid block)
         let b3 = create_dummy_block(3, b2_root, B256::from([33u8; 32]));
         let b3_root = b3.message.tree_hash_root();
-        println!("[TEST] Blocks created");
 
         // Add blocks to block_provider and multimap
         {
-            println!("[TEST] Locking store to insert mock data...");
             let store_lock = chain.store.lock().await;
-            println!("[TEST] Store locked, inserting blocks...");
             store_lock.db.block_provider().insert(b1_root, b1.clone())?;
             store_lock.db.block_provider().insert(b2_root, b2.clone())?;
             store_lock.db.block_provider().insert(b3_root, b3.clone())?;
@@ -676,31 +669,25 @@ mod tests {
                     root: anchor_root,
                 },
             )?;
-            println!("[TEST] Mock data inserted");
         }
 
         // Verify that store.get_head() is b3_root
         {
-            println!("[TEST] Verifying get_head is b3_root...");
             let store_lock = chain.store.lock().await;
             let head = store_lock.get_head()?;
-            println!("[TEST] Head is: {:?}", head);
             assert_eq!(head, b3_root);
         }
 
-        // Call handle_invalid_payload where b3 is invalid, and b2 is the latest valid hash (execution hash 22)
-        println!("[TEST] Calling handle_invalid_payload...");
+        // Call handle_invalid_payload where b3 is invalid, and b2 is the latest valid hash
+        // (execution hash 22)
         let store_guard = chain.store.lock().await;
         chain
-            .handle_invalid_payload(store_guard, b3_root, B256::from([22u8; 32]))
+            .handle_invalid_payload(store_guard, b3_root, Some(B256::from([22u8; 32])))
             .await?;
-        println!("[TEST] handle_invalid_payload returned!");
 
         // Verify that b3 was removed, along with state, blobs and columns, and b2 is now the head
         let store_lock = chain.store.lock().await;
-        println!("[TEST] Verifying new head is b2_root...");
         let new_head = store_lock.get_head()?;
-        println!("[TEST] New head is: {:?}", new_head);
         assert_eq!(new_head, b2_root);
         assert!(store_lock.db.block_provider().get(b3_root)?.is_none());
         assert!(store_lock.db.state_provider().get(b3_root)?.is_none());
@@ -722,7 +709,6 @@ mod tests {
         // Verify b2 and b1 still exist
         assert!(store_lock.db.block_provider().get(b2_root)?.is_some());
         assert!(store_lock.db.block_provider().get(b1_root)?.is_some());
-        println!("[TEST] Test completed successfully!");
 
         Ok(())
     }
@@ -914,7 +900,7 @@ mod tests {
         // b3 invalid, latest valid = b2 (exec hash [22u8;32])
         let store_guard = chain.store.lock().await;
         chain
-            .handle_invalid_payload(store_guard, b3_root, B256::from([22u8; 32]))
+            .handle_invalid_payload(store_guard, b3_root, Some(B256::from([22u8; 32])))
             .await?;
 
         // Verify b3 and b4 removed, b2 is head, b1 still present
@@ -1037,7 +1023,7 @@ mod tests {
         // Calling handle_invalid_payload should safely return without deleting b1 or anchor
         let store_guard = chain.store.lock().await;
         chain
-            .handle_invalid_payload(store_guard, unimported_invalid_root, B256::ZERO)
+            .handle_invalid_payload(store_guard, unimported_invalid_root, None)
             .await?;
 
         // Head and blocks must still exist intact
@@ -1088,8 +1074,8 @@ mod tests {
             store.db.optimistic_roots_provider().insert(b1_root, true)?;
             store.db.optimistic_roots_provider().insert(b2_root, true)?;
 
-            assert!(store.is_optimistic(b1_root));
-            assert!(store.is_optimistic(b2_root));
+            assert!(store.is_optimistic(b1_root)?);
+            assert!(store.is_optimistic(b2_root)?);
         }
 
         // Simulate validation of b2 (e.g. by on_block or engine VALID notification):
@@ -1097,7 +1083,12 @@ mod tests {
         {
             let mut ancestor = b2_root;
             while ancestor != B256::ZERO {
-                if store.db.optimistic_roots_provider().get(ancestor)?.unwrap_or(false) {
+                if store
+                    .db
+                    .optimistic_roots_provider()
+                    .get(ancestor)?
+                    .unwrap_or(false)
+                {
                     store.db.optimistic_roots_provider().remove(ancestor)?;
                     if let Ok(Some(ancestor_block)) = store.db.block_provider().get(ancestor) {
                         ancestor = ancestor_block.message.parent_root;
@@ -1110,8 +1101,169 @@ mod tests {
             }
         }
 
-        assert!(!store.is_optimistic(b1_root), "b1 should no longer be optimistic");
-        assert!(!store.is_optimistic(b2_root), "b2 should no longer be optimistic");
+        assert!(
+            !store.is_optimistic(b1_root)?,
+            "b1 should no longer be optimistic"
+        );
+        assert!(
+            !store.is_optimistic(b2_root)?,
+            "b2 should no longer be optimistic"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_engine_error_downcast_and_variants() {
+        let payload_err: anyhow::Error = EngineError::InvalidPayload {
+            latest_valid_hash: Some(B256::from([0xaa; 32])),
+        }
+        .into();
+
+        let downcast = payload_err.downcast_ref::<EngineError>();
+        assert_eq!(
+            downcast,
+            Some(&EngineError::InvalidPayload {
+                latest_valid_hash: Some(B256::from([0xaa; 32]))
+            })
+        );
+
+        let none_hash_err: anyhow::Error = EngineError::InvalidPayload {
+            latest_valid_hash: None,
+        }
+        .into();
+        assert_eq!(
+            none_hash_err.downcast_ref::<EngineError>(),
+            Some(&EngineError::InvalidPayload {
+                latest_valid_hash: None
+            })
+        );
+
+        let block_hash_err: anyhow::Error = EngineError::InvalidBlockHash.into();
+        assert_eq!(
+            block_hash_err.downcast_ref::<EngineError>(),
+            Some(&EngineError::InvalidBlockHash)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_handle_invalid_payload_with_none_latest_valid_hash() -> anyhow::Result<()> {
+        initialize_test_network_spec();
+        let tmp = TempDir::new("beacon_chain_test_none_hash")?;
+        let ream_db = ReamDB::new(tmp.path().to_path_buf())?;
+        let db = ream_db.init_beacon_db()?;
+
+        let mut anchor_state = create_dummy_state();
+        anchor_state.genesis_time = 1000;
+        anchor_state.slot = 0;
+        let state_root = anchor_state.tree_hash_root();
+        let anchor_block = BeaconBlock {
+            slot: 0,
+            proposer_index: 0,
+            parent_root: B256::ZERO,
+            state_root,
+            body: Default::default(),
+        };
+        let anchor_root = anchor_block.tree_hash_root();
+
+        let store = ream_fork_choice_beacon::store::get_forkchoice_store(
+            anchor_state,
+            anchor_block,
+            db.clone(),
+        )?;
+
+        let chain = BeaconChain {
+            store: tokio::sync::Mutex::new(store),
+            execution_engine: None,
+            event_sender: None,
+        };
+
+        let b1 = create_dummy_block(1, anchor_root, B256::from([11u8; 32]));
+        let b1_root = b1.message.tree_hash_root();
+        let b2 = create_dummy_block(2, b1_root, B256::from([22u8; 32]));
+        let b2_root = b2.message.tree_hash_root();
+        let b3 = create_dummy_block(3, b2_root, B256::from([33u8; 32]));
+        let b3_root = b3.message.tree_hash_root();
+
+        {
+            let store_lock = chain.store.lock().await;
+            store_lock.db.block_provider().insert(b1_root, b1.clone())?;
+            store_lock.db.block_provider().insert(b2_root, b2.clone())?;
+            store_lock.db.block_provider().insert(b3_root, b3.clone())?;
+            store_lock
+                .db
+                .parent_root_index_multimap_provider()
+                .insert(anchor_root, b1_root)?;
+            store_lock
+                .db
+                .parent_root_index_multimap_provider()
+                .insert(b1_root, b2_root)?;
+            store_lock
+                .db
+                .parent_root_index_multimap_provider()
+                .insert(b2_root, b3_root)?;
+
+            store_lock.db.slot_index_provider().insert(1, b1_root)?;
+            store_lock.db.slot_index_provider().insert(2, b2_root)?;
+            store_lock.db.slot_index_provider().insert(3, b3_root)?;
+
+            store_lock
+                .db
+                .state_provider()
+                .insert(b1_root, create_dummy_state())?;
+            store_lock
+                .db
+                .state_provider()
+                .insert(b2_root, create_dummy_state())?;
+            store_lock
+                .db
+                .state_provider()
+                .insert(b3_root, create_dummy_state())?;
+
+            store_lock.db.unrealized_justifications_provider().insert(
+                b1_root,
+                Checkpoint {
+                    epoch: 0,
+                    root: anchor_root,
+                },
+            )?;
+            store_lock.db.unrealized_justifications_provider().insert(
+                b2_root,
+                Checkpoint {
+                    epoch: 0,
+                    root: anchor_root,
+                },
+            )?;
+            store_lock.db.unrealized_justifications_provider().insert(
+                b3_root,
+                Checkpoint {
+                    epoch: 0,
+                    root: anchor_root,
+                },
+            )?;
+        }
+
+        // Verify head is b3
+        {
+            let store_lock = chain.store.lock().await;
+            assert_eq!(store_lock.get_head()?, b3_root);
+        }
+
+        // Call handle_invalid_payload with latest_valid_hash: None
+        // When latest_valid_hash is None, rollback traverses to invalid_root (b3) and rolls back
+        // to its parent (b2).
+        let store_guard = chain.store.lock().await;
+        chain
+            .handle_invalid_payload(store_guard, b3_root, None)
+            .await?;
+
+        // Verify b3 was removed, and b2 is now the head
+        let store_lock = chain.store.lock().await;
+        let new_head = store_lock.get_head()?;
+        assert_eq!(new_head, b2_root);
+        assert!(store_lock.db.block_provider().get(b3_root)?.is_none());
+        assert!(store_lock.db.block_provider().get(b2_root)?.is_some());
+        assert!(store_lock.db.block_provider().get(b1_root)?.is_some());
 
         Ok(())
     }

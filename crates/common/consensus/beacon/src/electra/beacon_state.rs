@@ -64,7 +64,9 @@ use ream_consensus_misc::{
     withdrawal::Withdrawal,
     withdrawal_request::WithdrawalRequest,
 };
-use ream_execution_engine::{engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest};
+use ream_execution_engine::{
+    EngineError, engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest,
+};
 use ream_execution_rpc_types::{
     electra::{
         execution_payload::ExecutionPayload, execution_payload_header::ExecutionPayloadHeader,
@@ -2721,8 +2723,7 @@ impl BeaconState {
             versioned_hashes.push(commitment.calculate_versioned_hash());
         }
 
-        let mut payload_status = None;
-        if let Some(execution_engine) = execution_engine {
+        let payload_status = if let Some(execution_engine) = execution_engine {
             let status = execution_engine
                 .verify_and_notify_new_payload(NewPayloadRequest {
                     execution_payload: payload.clone(),
@@ -2734,22 +2735,23 @@ impl BeaconState {
 
             match status.status {
                 PayloadStatus::Invalid => {
-                    if let Some(latest_valid) = status.latest_valid_hash {
-                        anyhow::bail!("INVALID_PAYLOAD:{latest_valid}");
-                    } else {
-                        anyhow::bail!("INVALID_PAYLOAD");
+                    return Err(EngineError::InvalidPayload {
+                        latest_valid_hash: status.latest_valid_hash,
                     }
+                    .into());
                 }
                 PayloadStatus::InvalidBlockHash => {
-                    anyhow::bail!("INVALID_PAYLOAD_BLOCK_HASH");
+                    return Err(EngineError::InvalidBlockHash.into());
                 }
                 PayloadStatus::Valid | PayloadStatus::Accepted => {}
                 PayloadStatus::Syncing => {
                     // Syncing is technically fine, we can treat it as valid for now or wait
                 }
             }
-            payload_status = Some(status.status);
-        }
+            Some(status.status)
+        } else {
+            None
+        };
 
         // Cache execution payload header
         self.latest_execution_payload_header = payload.to_execution_payload_header();

@@ -75,7 +75,9 @@ pub async fn calculate_sync_status(
     let is_optimistic = db
         .optimistic_roots_provider()
         .get(head)
-        .unwrap_or(None)
+        .map_err(|err| {
+            ApiError::InternalError(format!("Failed to get optimistic status, error: {err:?}"))
+        })?
         .unwrap_or(false);
 
     Ok(SyncStatus {
