@@ -60,19 +60,14 @@ fn claim(public_keys: &[PublicKey], message: [u8; 32], epoch: u32) -> Result<Xms
     })
 }
 
-fn claims(components: &[XmssClaimGroup]) -> Result<SignatureClaims> {
+fn claims(components: &[XmssClaimGroup]) -> SignatureClaims {
     let mut groups = components.to_vec();
-    groups.sort_unstable_by_key(|group| group.epoch);
+    groups.sort_unstable_by_key(|group| (group.epoch, group.message));
     let mut combined: Vec<XmssClaimGroup> = Vec::with_capacity(groups.len());
     for group in groups {
         if let Some(previous) = combined.last_mut()
-            && previous.epoch == group.epoch
+            && (previous.epoch, previous.message) == (group.epoch, group.message)
         {
-            ensure!(
-                previous.message == group.message,
-                "LeanVM-B cannot aggregate different messages at epoch {}",
-                group.epoch
-            );
             previous.keys.extend(group.keys);
             previous.keys.sort_unstable();
             previous.keys.dedup();
@@ -80,10 +75,10 @@ fn claims(components: &[XmssClaimGroup]) -> Result<SignatureClaims> {
             combined.push(group);
         }
     }
-    Ok(SignatureClaims {
+    SignatureClaims {
         xmss: combined,
         sphincs: Vec::new(),
-    })
+    }
 }
 
 pub fn type_1_from_wire(
@@ -168,7 +163,7 @@ pub fn type_2_merge(parts: Vec<SingleMessageAggregate>) -> Result<MultiMessageAg
         .iter()
         .map(|part| part.claim.clone())
         .collect::<Vec<_>>();
-    claims(&components)?;
+    claims(&components);
     let children = parts.into_iter().map(|part| part.proof).collect::<Vec<_>>();
     let proof = aggregate(&children, Vec::new(), Vec::new(), &[], None, LOG_INV_RATE)
         .map_err(|err| anyhow!("multi-message LeanVM-B merge failed: {err}"))?;
@@ -194,7 +189,7 @@ pub fn type_2_from_wire(
         .zip(expected_bindings)
         .map(|(public_keys, (message, epoch))| claim(public_keys, *message, *epoch))
         .collect::<Result<Vec<_>>>()?;
-    let proof = EthereumProof::from_bytes_without_pubkeys(wire, claims(&components)?)
+    let proof = EthereumProof::from_bytes_without_pubkeys(wire, claims(&components))
         .map_err(|err| anyhow!("Failed to decode LeanVM-B aggregate proof: {err}"))?;
     Ok(MultiMessageAggregate { proof, components })
 }
@@ -202,7 +197,7 @@ pub fn type_2_from_wire(
 pub fn type_2_verify(proof: &MultiMessageAggregate) -> Result<()> {
     type_2_setup_verifier();
     ensure!(
-        proof.proof.xmss_signers() == claims(&proof.components)?.xmss,
+        proof.proof.xmss_signers() == claims(&proof.components).xmss,
         "LeanVM-B proof claims do not match expected block components"
     );
     proof
@@ -265,24 +260,42 @@ mod tests {
     fn aggregate_round_trip_verification_and_split_are_bound() {
         let message_a = [7u8; 32];
         let message_b = [8u8; 32];
-        let (public_key_a, signature_a) = signed(1, message_a, 0);
-        let (public_key_b, signature_b) = signed(2, message_b, 1);
-        let (wrong_public_key, _) = signed(3, message_a, 0);
+        let epoch = 0;
+        let (public_key_a, signature_a) = signed(1, message_a, epoch);
+        let (public_key_a_2, signature_a_2) = signed(2, message_a, epoch);
+        let (public_key_b, signature_b) = signed(3, message_b, epoch);
+        let (wrong_public_key, _) = signed(4, message_a, epoch);
 
-        let proof_a = type_1_aggregate(&[], &[(public_key_a, signature_a)], &message_a, 0)
-            .expect("first aggregation failed");
-        let proof_b = type_1_aggregate(&[], &[(public_key_b, signature_b)], &message_b, 1)
+        let proof_a = type_1_aggregate(
+            &[],
+            &[(public_key_a, signature_a), (public_key_a_2, signature_a_2)],
+            &message_a,
+            epoch,
+        )
+        .expect("first aggregation failed");
+        let proof_b = type_1_aggregate(&[], &[(public_key_b, signature_b)], &message_b, epoch)
             .expect("second aggregation failed");
         type_1_verify(&proof_a).expect("first aggregate must verify");
 
         let wire_a = type_1_to_wire(&proof_a);
-        let decoded_a = type_1_from_wire(&wire_a, &[public_key_a], &message_a, 0)
-            .expect("first aggregate decode failed");
+        let decoded_a =
+            type_1_from_wire(&wire_a, &[public_key_a, public_key_a_2], &message_a, epoch)
+                .expect("first aggregate decode failed");
         type_1_verify(&decoded_a).expect("decoded first aggregate must verify");
         for invalid in [
-            type_1_from_wire(&wire_a, &[wrong_public_key], &message_a, 0),
-            type_1_from_wire(&wire_a, &[public_key_a], &message_b, 0),
-            type_1_from_wire(&wire_a, &[public_key_a], &message_a, 1),
+            type_1_from_wire(
+                &wire_a,
+                &[wrong_public_key, public_key_a_2],
+                &message_a,
+                epoch,
+            ),
+            type_1_from_wire(&wire_a, &[public_key_a, public_key_a_2], &message_b, epoch),
+            type_1_from_wire(
+                &wire_a,
+                &[public_key_a, public_key_a_2],
+                &message_a,
+                epoch + 1,
+            ),
         ] {
             assert!(
                 invalid.is_err() || type_1_verify(&invalid.unwrap()).is_err(),
@@ -290,24 +303,56 @@ mod tests {
             );
         }
 
-        let merged = type_2_merge(vec![proof_a, proof_b]).expect("merge failed");
+        let merged = type_2_merge(vec![proof_b, proof_a]).expect("merge failed");
         type_2_verify(&merged).expect("merged aggregate must verify");
+        assert_eq!(
+            merged
+                .proof
+                .xmss_signers()
+                .iter()
+                .map(|group| (group.epoch, group.message, group.keys.len()))
+                .collect::<Vec<_>>(),
+            vec![(epoch, message_a, 2), (epoch, message_b, 1)]
+        );
         let wire = type_2_to_wire(&merged);
-        let keys = vec![vec![public_key_a], vec![public_key_b]];
-        let bindings = vec![(message_a, 0), (message_b, 1)];
+        let keys = vec![vec![public_key_b], vec![public_key_a, public_key_a_2]];
+        let bindings = vec![(message_b, epoch), (message_a, epoch)];
         let decoded = type_2_from_wire(&wire, &keys, &bindings).expect("merged decode failed");
         type_2_verify(&decoded).expect("decoded merged aggregate must verify");
 
-        let split = type_2_split(decoded, 1).expect("claim-selection split failed");
-        type_1_verify(&split).expect("split aggregate must verify");
-        assert_eq!(split.claim.message, message_b);
-        assert_eq!(split.claim.epoch, 1);
+        for (index, public_keys, message) in [
+            (0, vec![public_key_b], message_b),
+            (1, vec![public_key_a, public_key_a_2], message_a),
+        ] {
+            let split = type_2_split(decoded.clone(), index).expect("claim-selection split failed");
+            type_1_verify(&split).expect("split aggregate must verify");
+            assert_eq!(split.claim.message, message);
+            assert_eq!(split.claim.epoch, epoch);
+            let split_wire = type_1_to_wire(&split);
+            let decoded_split = type_1_from_wire(&split_wire, &public_keys, &message, epoch)
+                .expect("split aggregate decode failed");
+            type_1_verify(&decoded_split).expect("decoded split aggregate must verify");
+        }
+        assert!(type_2_split(decoded, 2).is_err());
 
-        let wrong_bindings = vec![(message_a, 0), (message_a, 1)];
-        let invalid = type_2_from_wire(&wire, &keys, &wrong_bindings);
-        assert!(
-            invalid.is_err() || type_2_verify(&invalid.unwrap()).is_err(),
-            "a merged aggregate reconstructed with an incorrect message must not verify"
-        );
+        for (invalid_keys, invalid_bindings) in [
+            (keys.clone(), vec![(message_a, epoch), (message_b, epoch)]),
+            (
+                keys.clone(),
+                vec![(message_b, epoch + 1), (message_a, epoch)],
+            ),
+            (
+                vec![vec![wrong_public_key], vec![public_key_a, public_key_a_2]],
+                bindings.clone(),
+            ),
+        ] {
+            let invalid = type_2_from_wire(&wire, &invalid_keys, &invalid_bindings);
+            assert!(
+                invalid.is_err() || type_2_verify(&invalid.unwrap()).is_err(),
+                "an aggregate reconstructed with an incorrect claim must not verify"
+            );
+        }
+
+        assert!(type_2_from_wire(&wire[..wire.len() / 2], &keys, &bindings).is_err());
     }
 }

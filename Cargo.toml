@@ -115,7 +115,7 @@ lean-multisig = { git = "https://github.com/leanEthereum/leanVM.git", rev = "249
 lean-multisig-optimized = { package = "lean-multisig", git = "https://github.com/leanEthereum/leanVM.git", rev = "a5909d18647de6aed38640c098d9177fab2bf36a" }
 lean-multisig-type2 = { package = "lean-multisig", git = "https://github.com/leanEthereum/leanMultisig.git", rev = "e2592df4e30fdddbbf8ae26a333116c68cec7026" }
 leansig = { git = "https://github.com/leanEthereum//leanSig.git", branch = "devnet4" }
-leanvm-b = { package = "leanvm", git = "https://github.com/leanEthereum/leanVM.git", rev = "022ec377a39de6c6982cb0d88799d54b05d5c981" }
+leanvm-b = { package = "leanvm", git = "https://github.com/leanEthereum/leanVM.git", rev = "48a904208d682848dac0e18ef8b01ebfc40df9ad" }
 libp2p = { version = "0.56", default-features = false, features = [
     "identify",
     "yamux",
