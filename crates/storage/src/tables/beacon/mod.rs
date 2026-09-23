@@ -9,6 +9,7 @@ pub mod finalized_checkpoint;
 pub mod genesis_time;
 pub mod justified_checkpoint;
 pub mod latest_messages;
+pub mod optimistic_roots;
 pub mod parent_root_index;
 pub mod previous_justified_checkpoint;
 pub mod proposer_boost_root;
