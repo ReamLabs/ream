@@ -3745,9 +3745,9 @@ dependencies = [
 [[package]]
 name = "fiat_shamir"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanVM.git?rev=022ec377a39de6c6982cb0d88799d54b05d5c981#022ec377a39de6c6982cb0d88799d54b05d5c981"
+source = "git+https://github.com/leanEthereum/leanVM.git?rev=48a904208d682848dac0e18ef8b01ebfc40df9ad#48a904208d682848dac0e18ef8b01ebfc40df9ad"
 dependencies = [
- "parallel 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=022ec377a39de6c6982cb0d88799d54b05d5c981)",
+ "parallel 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=48a904208d682848dac0e18ef8b01ebfc40df9ad)",
  "primitives",
  "serde",
 ]
@@ -3826,10 +3826,10 @@ dependencies = [
 [[package]]
 name = "flock"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanVM.git?rev=022ec377a39de6c6982cb0d88799d54b05d5c981#022ec377a39de6c6982cb0d88799d54b05d5c981"
+source = "git+https://github.com/leanEthereum/leanVM.git?rev=48a904208d682848dac0e18ef8b01ebfc40df9ad#48a904208d682848dac0e18ef8b01ebfc40df9ad"
 dependencies = [
  "fiat_shamir",
- "parallel 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=022ec377a39de6c6982cb0d88799d54b05d5c981)",
+ "parallel 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=48a904208d682848dac0e18ef8b01ebfc40df9ad)",
  "pcs",
  "primitives",
  "zk_alloc",
@@ -5707,15 +5707,6 @@ dependencies = [
 [[package]]
 name = "lean_compiler"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanVM.git?rev=022ec377a39de6c6982cb0d88799d54b05d5c981#022ec377a39de6c6982cb0d88799d54b05d5c981"
-dependencies = [
- "lean_vm 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=022ec377a39de6c6982cb0d88799d54b05d5c981)",
- "primitives",
-]
-
-[[package]]
-name = "lean_compiler"
-version = "0.1.0"
 source = "git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553#2498896ca4d32a545a98a1b1cf1ca78f7f13f553"
 dependencies = [
  "backend 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
@@ -5727,6 +5718,15 @@ dependencies = [
  "sub_protocols 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
  "tracing",
  "utils 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
+]
+
+[[package]]
+name = "lean_compiler"
+version = "0.1.0"
+source = "git+https://github.com/leanEthereum/leanVM.git?rev=48a904208d682848dac0e18ef8b01ebfc40df9ad#48a904208d682848dac0e18ef8b01ebfc40df9ad"
+dependencies = [
+ "lean_vm 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=48a904208d682848dac0e18ef8b01ebfc40df9ad)",
+ "primitives",
 ]
 
 [[package]]
@@ -5762,10 +5762,10 @@ dependencies = [
 [[package]]
 name = "lean_da"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanVM.git?rev=022ec377a39de6c6982cb0d88799d54b05d5c981#022ec377a39de6c6982cb0d88799d54b05d5c981"
+source = "git+https://github.com/leanEthereum/leanVM.git?rev=48a904208d682848dac0e18ef8b01ebfc40df9ad#48a904208d682848dac0e18ef8b01ebfc40df9ad"
 dependencies = [
  "fiat_shamir",
- "parallel 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=022ec377a39de6c6982cb0d88799d54b05d5c981)",
+ "parallel 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=48a904208d682848dac0e18ef8b01ebfc40df9ad)",
  "pcs",
  "primitives",
  "serde",
@@ -5826,20 +5826,6 @@ dependencies = [
 [[package]]
 name = "lean_vm"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanVM.git?rev=022ec377a39de6c6982cb0d88799d54b05d5c981#022ec377a39de6c6982cb0d88799d54b05d5c981"
-dependencies = [
- "fiat_shamir",
- "flock",
- "parallel 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=022ec377a39de6c6982cb0d88799d54b05d5c981)",
- "pcs",
- "primitives",
- "tracing",
- "zk_alloc",
-]
-
-[[package]]
-name = "lean_vm"
-version = "0.1.0"
 source = "git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553#2498896ca4d32a545a98a1b1cf1ca78f7f13f553"
 dependencies = [
  "backend 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
@@ -5851,6 +5837,20 @@ dependencies = [
  "serde",
  "tracing",
  "utils 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
+]
+
+[[package]]
+name = "lean_vm"
+version = "0.1.0"
+source = "git+https://github.com/leanEthereum/leanVM.git?rev=48a904208d682848dac0e18ef8b01ebfc40df9ad#48a904208d682848dac0e18ef8b01ebfc40df9ad"
+dependencies = [
+ "fiat_shamir",
+ "flock",
+ "parallel 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=48a904208d682848dac0e18ef8b01ebfc40df9ad)",
+ "pcs",
+ "primitives",
+ "tracing",
+ "zk_alloc",
 ]
 
 [[package]]
@@ -5948,16 +5948,16 @@ dependencies = [
 [[package]]
 name = "leanvm"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanVM.git?rev=022ec377a39de6c6982cb0d88799d54b05d5c981#022ec377a39de6c6982cb0d88799d54b05d5c981"
+source = "git+https://github.com/leanEthereum/leanVM.git?rev=48a904208d682848dac0e18ef8b01ebfc40df9ad#48a904208d682848dac0e18ef8b01ebfc40df9ad"
 dependencies = [
  "clap",
  "lean_da",
- "lean_vm 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=022ec377a39de6c6982cb0d88799d54b05d5c981)",
+ "lean_vm 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=48a904208d682848dac0e18ef8b01ebfc40df9ad)",
  "primitives",
  "rand 0.9.2",
- "rec_aggregation 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=022ec377a39de6c6982cb0d88799d54b05d5c981)",
+ "rec_aggregation 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=48a904208d682848dac0e18ef8b01ebfc40df9ad)",
  "sphincs",
- "xmss 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=022ec377a39de6c6982cb0d88799d54b05d5c981)",
+ "xmss 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=48a904208d682848dac0e18ef8b01ebfc40df9ad)",
  "zk_alloc",
 ]
 
@@ -7804,17 +7804,17 @@ dependencies = [
 [[package]]
 name = "parallel"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanVM.git?rev=022ec377a39de6c6982cb0d88799d54b05d5c981#022ec377a39de6c6982cb0d88799d54b05d5c981"
+source = "git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553#2498896ca4d32a545a98a1b1cf1ca78f7f13f553"
 dependencies = [
- "libc",
+ "system-info 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
 ]
 
 [[package]]
 name = "parallel"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553#2498896ca4d32a545a98a1b1cf1ca78f7f13f553"
+source = "git+https://github.com/leanEthereum/leanVM.git?rev=48a904208d682848dac0e18ef8b01ebfc40df9ad#48a904208d682848dac0e18ef8b01ebfc40df9ad"
 dependencies = [
- "system-info 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
+ "libc",
 ]
 
 [[package]]
@@ -7910,10 +7910,10 @@ dependencies = [
 [[package]]
 name = "pcs"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanVM.git?rev=022ec377a39de6c6982cb0d88799d54b05d5c981#022ec377a39de6c6982cb0d88799d54b05d5c981"
+source = "git+https://github.com/leanEthereum/leanVM.git?rev=48a904208d682848dac0e18ef8b01ebfc40df9ad#48a904208d682848dac0e18ef8b01ebfc40df9ad"
 dependencies = [
  "fiat_shamir",
- "parallel 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=022ec377a39de6c6982cb0d88799d54b05d5c981)",
+ "parallel 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=48a904208d682848dac0e18ef8b01ebfc40df9ad)",
  "primitives",
  "serde",
  "tracing",
@@ -8276,10 +8276,10 @@ dependencies = [
 [[package]]
 name = "primitives"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanVM.git?rev=022ec377a39de6c6982cb0d88799d54b05d5c981#022ec377a39de6c6982cb0d88799d54b05d5c981"
+source = "git+https://github.com/leanEthereum/leanVM.git?rev=48a904208d682848dac0e18ef8b01ebfc40df9ad#48a904208d682848dac0e18ef8b01ebfc40df9ad"
 dependencies = [
  "libc",
- "parallel 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=022ec377a39de6c6982cb0d88799d54b05d5c981)",
+ "parallel 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=48a904208d682848dac0e18ef8b01ebfc40df9ad)",
  "serde",
  "tracing-forest",
  "tracing-subscriber 0.3.23",
@@ -9987,26 +9987,6 @@ dependencies = [
 [[package]]
 name = "rec_aggregation"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanVM.git?rev=022ec377a39de6c6982cb0d88799d54b05d5c981#022ec377a39de6c6982cb0d88799d54b05d5c981"
-dependencies = [
- "bincode",
- "flock",
- "lean_compiler 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=022ec377a39de6c6982cb0d88799d54b05d5c981)",
- "lean_da",
- "lean_vm 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=022ec377a39de6c6982cb0d88799d54b05d5c981)",
- "parallel 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=022ec377a39de6c6982cb0d88799d54b05d5c981)",
- "pcs",
- "primitives",
- "rand 0.9.2",
- "serde",
- "sphincs",
- "tracing",
- "xmss 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=022ec377a39de6c6982cb0d88799d54b05d5c981)",
-]
-
-[[package]]
-name = "rec_aggregation"
-version = "0.1.0"
 source = "git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553#2498896ca4d32a545a98a1b1cf1ca78f7f13f553"
 dependencies = [
  "backend 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
@@ -10026,6 +10006,26 @@ dependencies = [
  "tracing",
  "utils 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
  "zk-alloc 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
+]
+
+[[package]]
+name = "rec_aggregation"
+version = "0.1.0"
+source = "git+https://github.com/leanEthereum/leanVM.git?rev=48a904208d682848dac0e18ef8b01ebfc40df9ad#48a904208d682848dac0e18ef8b01ebfc40df9ad"
+dependencies = [
+ "bincode",
+ "flock",
+ "lean_compiler 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=48a904208d682848dac0e18ef8b01ebfc40df9ad)",
+ "lean_da",
+ "lean_vm 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=48a904208d682848dac0e18ef8b01ebfc40df9ad)",
+ "parallel 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=48a904208d682848dac0e18ef8b01ebfc40df9ad)",
+ "pcs",
+ "primitives",
+ "rand 0.9.2",
+ "serde",
+ "sphincs",
+ "tracing",
+ "xmss 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=48a904208d682848dac0e18ef8b01ebfc40df9ad)",
 ]
 
 [[package]]
@@ -14062,9 +14062,9 @@ dependencies = [
 [[package]]
 name = "sphincs"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanVM.git?rev=022ec377a39de6c6982cb0d88799d54b05d5c981#022ec377a39de6c6982cb0d88799d54b05d5c981"
+source = "git+https://github.com/leanEthereum/leanVM.git?rev=48a904208d682848dac0e18ef8b01ebfc40df9ad#48a904208d682848dac0e18ef8b01ebfc40df9ad"
 dependencies = [
- "parallel 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=022ec377a39de6c6982cb0d88799d54b05d5c981)",
+ "parallel 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=48a904208d682848dac0e18ef8b01ebfc40df9ad)",
  "primitives",
  "rand 0.9.2",
  "serde",
@@ -16278,10 +16278,10 @@ dependencies = [
 [[package]]
 name = "xmss"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanVM.git?rev=022ec377a39de6c6982cb0d88799d54b05d5c981#022ec377a39de6c6982cb0d88799d54b05d5c981"
+source = "git+https://github.com/leanEthereum/leanVM.git?rev=48a904208d682848dac0e18ef8b01ebfc40df9ad#48a904208d682848dac0e18ef8b01ebfc40df9ad"
 dependencies = [
  "ethereum_ssz",
- "parallel 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=022ec377a39de6c6982cb0d88799d54b05d5c981)",
+ "parallel 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=48a904208d682848dac0e18ef8b01ebfc40df9ad)",
  "primitives",
  "rand 0.9.2",
  "serde",
@@ -16495,7 +16495,7 @@ dependencies = [
 [[package]]
 name = "zk_alloc"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanVM.git?rev=022ec377a39de6c6982cb0d88799d54b05d5c981#022ec377a39de6c6982cb0d88799d54b05d5c981"
+source = "git+https://github.com/leanEthereum/leanVM.git?rev=48a904208d682848dac0e18ef8b01ebfc40df9ad#48a904208d682848dac0e18ef8b01ebfc40df9ad"
 dependencies = [
  "libc",
 ]
