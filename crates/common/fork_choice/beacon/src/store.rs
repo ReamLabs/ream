@@ -6,6 +6,7 @@ use hashbrown::HashMap;
 use ream_bls::BLSSignature;
 use ream_consensus_beacon::{
     attestation::Attestation,
+    blob_sidecar::BlobIdentifier,
     data_column_sidecar::{ColumnIdentifier, DataColumnSidecar, NUMBER_OF_COLUMNS},
     electra::{
         beacon_block::{BeaconBlock, SignedBeaconBlock},
@@ -784,20 +785,42 @@ impl Store {
         // The p2p network does not guarantee sidecar retrieval outside of
         // `MIN_EPOCHS_FOR_DATA_COLUMN_SIDECARS_REQUESTS` epochs.
         let column_sidecars = self.retrieve_column_sidecars(beacon_block_root)?;
-        if column_sidecars.is_empty() {
-            return Ok(false);
+        if !column_sidecars.is_empty() {
+            // Fulu column sidecars validation
+            for column_sidecar in column_sidecars {
+                if !column_sidecar.verify() {
+                    return Ok(false);
+                }
+                if !verify_data_column_sidecar_kzg_proofs(&column_sidecar)? {
+                    return Ok(false);
+                }
+            }
+            return Ok(true);
         }
 
-        // Fulu column sidecars validation
-        for column_sidecar in column_sidecars {
-            if !column_sidecar.verify() {
-                return Ok(false);
+        // Fallback for pre-Fulu blocks: verify blobs from blobs_and_proofs_provider
+        // if blob sidecars exist for this block.
+        if let Some(first_blob) = self
+            .db
+            .blobs_and_proofs_provider()
+            .get(BlobIdentifier::new(beacon_block_root, 0))?
+        {
+            let mut blobs = vec![first_blob.blob];
+            let mut proofs = vec![first_blob.proof];
+            let mut index = 1;
+            while let Some(next_blob) = self
+                .db
+                .blobs_and_proofs_provider()
+                .get(BlobIdentifier::new(beacon_block_root, index))?
+            {
+                blobs.push(next_blob.blob);
+                proofs.push(next_blob.proof);
+                index += 1;
             }
-            if !verify_data_column_sidecar_kzg_proofs(&column_sidecar)? {
-                return Ok(false);
-            }
+            return Ok(!blobs.is_empty());
         }
-        Ok(true)
+
+        Ok(false)
     }
 
     /// Retrieve column sidecars for a block.
