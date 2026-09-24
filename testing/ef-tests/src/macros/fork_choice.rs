@@ -16,10 +16,13 @@ macro_rules! test_fork_choice {
                 use ream_execution_engine::mock_engine::MockExecutionEngine;
                 use ream_execution_rpc_types::get_blobs::{Blob, BlobAndProofV1};
                 use ream_fork_choice_beacon::{
-                    handlers::{on_attestation, on_attester_slashing, on_block, on_tick},
+                    handlers::{
+                        OnBlockOutcome, on_attestation, on_attester_slashing, on_block, on_tick,
+                    },
                     store::{get_forkchoice_store, Store},
                 };
                 use ream_network_spec::networks::initialize_test_network_spec;
+                use ream_polynomial_commitments::handlers::verify_data_column_sidecar_kzg_proofs;
                 use ream_storage::{
                     db::{ReamDB, beacon::BeaconDB},
                     tables::{table::CustomTable, field::REDBField},
@@ -153,16 +156,41 @@ macro_rules! test_fork_choice {
                                         });
 
                                     let verify_blob_availability = blocks.columns.is_some();
+                                    // Consensus vectors provide untrusted retrieved columns. Keep the
+                                    // database invariant that stored columns passed DA verification.
+                                    let mut data_columns_valid = true;
 
                                     if let Some(columns) = blocks.columns {
-                                        for (index, column) in columns.into_iter().enumerate() {
+                                        for column in columns {
                                             let column_path = case_dir.join(format!("{}.ssz_snappy", column));
                                             let column: DataColumnSidecar = utils::read_ssz_snappy(&column_path).expect("Could not read column file.");
-                                            store.db.column_sidecars_provider().insert(ColumnIdentifier::new(block.message.tree_hash_root(), index as u64), column)?;
+                                            let column_valid = column.verify()
+                                                && matches!(
+                                                    verify_data_column_sidecar_kzg_proofs(&column),
+                                                    Ok(true)
+                                                );
+                                            data_columns_valid &= column_valid;
+
+                                            if column_valid {
+                                                store.db.column_sidecars_provider().insert(
+                                                    ColumnIdentifier::new(
+                                                        column
+                                                            .signed_block_header
+                                                            .message
+                                                            .tree_hash_root(),
+                                                        column.index,
+                                                    ),
+                                                    column,
+                                                )?;
+                                            }
                                         }
                                     }
 
-                                    assert_eq!(on_block(&mut store, &block, &mock_engine, verify_blob_availability).await.is_ok(), blocks.valid.unwrap_or(true), "Unexpected result on on_block");
+                                    let block_imported = matches!(
+                                        on_block(&mut store, &block, &mock_engine, verify_blob_availability).await,
+                                        Ok(OnBlockOutcome::Imported)
+                                    );
+                                    assert_eq!(data_columns_valid && block_imported, blocks.valid.unwrap_or(true), "Unexpected result on on_block");
                                 }
                                 ForkChoiceStep::Attestation(attestations) => {
                                     let attestation_path =
