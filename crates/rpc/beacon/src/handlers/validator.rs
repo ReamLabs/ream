@@ -602,7 +602,7 @@ pub async fn get_attestation_data(
 /// For the initial stage, this endpoint returns a 501 as DVT support is not planned.
 #[post("/validator/sync_committee_selections")]
 pub async fn post_sync_committee_selections(
-    _selections: Json<SyncCommitteeSelection>,
+    _selections: Json<Vec<SyncCommitteeSelection>>,
 ) -> Result<impl Responder, ApiError> {
     Ok(HttpResponse::NotImplemented())
 }
@@ -1518,7 +1518,7 @@ pub async fn get_blocks_v3(
     .await?;
 
     let proposer_slashings: VariableList<ProposerSlashing, U16> = operation_pool
-        .get_all_proposer_slahsings()
+        .get_all_proposer_slashings()
         .try_into()
         .unwrap_or_default();
     let attester_slashings: VariableList<AttesterSlashing, U1> = operation_pool
