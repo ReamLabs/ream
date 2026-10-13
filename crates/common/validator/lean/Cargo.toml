@@ -62,5 +62,8 @@ ream-network-spec.workspace = true
 ream-post-quantum-crypto.workspace = true
 ream-sync.workspace = true
 
+[dev-dependencies]
+tempfile.workspace = true
+
 [lints]
 workspace = true
