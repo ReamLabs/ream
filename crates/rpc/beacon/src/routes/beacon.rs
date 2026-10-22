@@ -4,7 +4,7 @@ use crate::handlers::{
     attestation::post_attestation_rewards,
     blob_sidecar::get_blob_sidecars,
     block::{
-        get_blind_block, get_block_attestations, get_block_from_id, get_block_rewards,
+        get_blinded_block, get_block_attestations, get_block_from_id, get_block_rewards,
         get_block_root, get_genesis, post_beacon_block, post_blinded_beacon_block,
         post_sync_committee_rewards,
     },
@@ -67,7 +67,7 @@ pub fn register_beacon_routes(cfg: &mut ServiceConfig) {
         .service(get_light_client_updates)
         .service(get_light_client_finality_update)
         .service(get_light_client_optimistic_update)
-        .service(get_blind_block)
+        .service(get_blinded_block)
         .service(post_validator_liveness)
         .service(get_proposer_slashings)
         .service(post_proposer_slashings)

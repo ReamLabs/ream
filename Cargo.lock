@@ -9758,6 +9758,7 @@ dependencies = [
  "serde",
  "serde_json",
  "ssz_types",
+ "tempfile",
  "thiserror 2.0.19",
  "tokio",
  "tracing",

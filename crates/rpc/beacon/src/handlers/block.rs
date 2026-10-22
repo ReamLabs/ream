@@ -328,8 +328,9 @@ pub async fn post_sync_committee_rewards(
     Ok(HttpResponse::Ok().json(BeaconResponse::new(reward_data)))
 }
 
-#[get("/beacon/blind_block/{block_id}")]
-pub async fn get_blind_block(
+/// GET /eth/v1/beacon/blinded_blocks/{block_id}
+#[get("/beacon/blinded_blocks/{block_id}")]
+pub async fn get_blinded_block(
     http_request: HttpRequest,
     db: Data<BeaconDB>,
     block_id: Path<ID>,
