@@ -1,4 +1,5 @@
 mod block_cache;
+pub mod optimistic;
 mod peer_manager;
 mod peer_range_downloader;
 
@@ -39,6 +40,7 @@ pub struct BlockRangeSyncer {
     pub peer_manager: PeerManager,
     pub p2p_sender: UnboundedSender<P2PMessage>,
     pub executor: ReamExecutor,
+    pub optimistic_mode: bool,
 }
 
 impl BlockRangeSyncer {
@@ -53,6 +55,22 @@ impl BlockRangeSyncer {
             p2p_sender,
             peer_manager: PeerManager::new(network_state),
             executor,
+            optimistic_mode: false,
+        }
+    }
+
+    pub fn new_optimistic(
+        beacon_chain: Arc<BeaconChain>,
+        p2p_sender: UnboundedSender<P2PMessage>,
+        network_state: Arc<NetworkState>,
+        executor: ReamExecutor,
+    ) -> Self {
+        Self {
+            beacon_chain,
+            p2p_sender,
+            peer_manager: PeerManager::new(network_state),
+            executor,
+            optimistic_mode: true,
         }
     }
 
@@ -220,6 +238,22 @@ impl BlockRangeSyncer {
                         .insert(blob_identifier, blob_sidecar.into())
                     {
                         warn!("Failed to insert blob into database: {err}");
+                    }
+                }
+
+                if self.optimistic_mode {
+                    let store = self.beacon_chain.store.lock().await;
+                    let current_head_slot = store.get_current_slot().unwrap_or(0);
+                    let is_optimistic = crate::block_range::optimistic::is_optimistic_candidate_block(
+                        &store,
+                        current_head_slot,
+                        &block,
+                    );
+                    drop(store);
+
+                    if is_optimistic {
+                        self.beacon_chain.process_block_optimistic(block).await?;
+                        continue;
                     }
                 }
 

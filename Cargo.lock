@@ -8999,6 +8999,7 @@ dependencies = [
  "ream-consensus-misc",
  "ream-events-beacon",
  "ream-execution-engine",
+ "ream-execution-rpc-types",
  "ream-fork-choice-beacon",
  "ream-metrics",
  "ream-network-spec",
@@ -9006,8 +9007,11 @@ dependencies = [
  "ream-req-resp",
  "ream-storage",
  "ream-sync-committee-pool",
+ "ssz_types",
+ "tempdir",
  "tokio",
  "tracing",
+ "tree_hash",
 ]
 
 [[package]]
@@ -9269,6 +9273,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "ssz_types",
+ "thiserror 2.0.19",
  "tokio",
  "tree_hash",
  "tree_hash_derive",
@@ -9901,6 +9906,7 @@ dependencies = [
  "ream-consensus-beacon",
  "ream-consensus-misc",
  "ream-executor",
+ "ream-fork-choice-beacon",
  "ream-network-spec",
  "ream-p2p",
  "ream-req-resp",

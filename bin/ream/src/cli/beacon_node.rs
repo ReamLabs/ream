@@ -108,6 +108,9 @@ pub struct BeaconNodeConfig {
 
     #[arg(long, help = "Set metrics port", default_value_t = DEFAULT_BEACON_METRICS_PORT)]
     pub metrics_port: u16,
+
+    #[arg(long, default_value_t = true, help = "Enable optimistic sync")]
+    pub optimistic_sync: bool,
 }
 
 impl From<BeaconNodeConfig> for ManagerConfig {
@@ -127,6 +130,7 @@ impl From<BeaconNodeConfig> for ManagerConfig {
             enable_builder: config.enable_builder,
             mev_relay_url: config.mev_relay_url,
             blob_retention_epochs: config.blob_retention_epochs,
+            optimistic_sync: config.optimistic_sync,
         }
     }
 }

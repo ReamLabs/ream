@@ -16,6 +16,7 @@ optimized-leanvm = [
     "ream-network-spec/optimized-leanvm",
     "devnet5",
     "ream-chain-beacon/optimized-leanvm",
+    "ream-fork-choice-beacon/optimized-leanvm",
     "ream-p2p/optimized-leanvm",
     "ream-req-resp/optimized-leanvm",
     "ream-storage/optimized-leanvm",
@@ -47,6 +48,7 @@ ream-chain-beacon.workspace = true
 ream-consensus-beacon.workspace = true
 ream-consensus-misc.workspace = true
 ream-executor.workspace = true
+ream-fork-choice-beacon.workspace = true
 ream-network-spec.workspace = true
 ream-p2p.workspace = true
 ream-req-resp.workspace = true
