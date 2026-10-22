@@ -49,8 +49,13 @@ ream-consensus-misc.workspace = true
 ream-executor.workspace = true
 ream-network-spec.workspace = true
 ream-p2p.workspace = true
+ream-peer.workspace = true
 ream-req-resp.workspace = true
 ream-storage.workspace = true
+
+[dev-dependencies]
+discv5.workspace = true
+parking_lot.workspace = true
 
 [lints]
 workspace = true

@@ -177,7 +177,7 @@ impl NetworkManagerService {
                         }
                     };
 
-                    if !block_range_syncer.is_synced_to_finalized_slot().await {
+                    if !block_range_syncer.is_synced_to_head_slot().await {
                         syncer_handle = block_range_syncer.start();
                         syncer_active = true;
                     }
