@@ -231,13 +231,13 @@ pub async fn validate_beacon_block(
         ));
     }
 
-    if is_parent && let Some(execution_enigne) = &beacon_chain.execution_engine {
+    if is_parent && let Some(execution_engine) = &beacon_chain.execution_engine {
         let mut versioned_hashes = vec![];
         for commitment in block.message.body.blob_kzg_commitments.iter() {
             versioned_hashes.push(commitment.calculate_versioned_hash());
         }
 
-        let payload_verification_status = execution_enigne
+        let payload_verification_status = execution_engine
             .notify_new_payload(NewPayloadRequest {
                 execution_payload: block.message.body.execution_payload.clone(),
                 versioned_hashes,
@@ -246,7 +246,7 @@ pub async fn validate_beacon_block(
             })
             .await?;
 
-        match payload_verification_status {
+        match payload_verification_status.status {
             // If execution_payload verification of block's parent by an execution node is not
             // complete: [REJECT] The block's parent passes all validation (excluding
             // execution node verification of the block.body.execution_payload)

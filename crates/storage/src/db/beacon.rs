@@ -15,6 +15,7 @@ use crate::{
             equivocating_indices::EquivocatingIndicesField,
             finalized_checkpoint::FinalizedCheckpointField, genesis_time::GenesisTimeField,
             justified_checkpoint::JustifiedCheckpointField, latest_messages::LatestMessagesTable,
+            optimistic_roots::OptimisticRootsTable,
             parent_root_index::ParentRootIndexMultimapTable,
             previous_justified_checkpoint::PreviousJustifiedCheckpointField,
             proposer_boost_root::ProposerBoostRootField, slot_index::BeaconSlotIndexTable,
@@ -52,6 +53,12 @@ impl BeaconDB {
         BeaconStateTable {
             db: self.db.clone(),
             cache: self.cache.clone(),
+        }
+    }
+
+    pub fn optimistic_roots_provider(&self) -> OptimisticRootsTable {
+        OptimisticRootsTable {
+            db: self.db.clone(),
         }
     }
 

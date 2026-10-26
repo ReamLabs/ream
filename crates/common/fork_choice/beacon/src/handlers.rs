@@ -8,6 +8,7 @@ use ream_consensus_misc::{
     constants::beacon::INTERVALS_PER_SLOT, misc::compute_start_slot_at_epoch,
 };
 use ream_execution_engine::engine_trait::ExecutionApi;
+use ream_execution_rpc_types::payload_status::PayloadStatus;
 use ream_metrics::BEACON_PROCESSED_DEPOSITS_TOTAL;
 use ream_network_spec::networks::beacon_network_spec;
 use ream_storage::{
@@ -22,11 +23,12 @@ use tree_hash::TreeHash;
 use crate::store::Store;
 
 /// Run ``on_block`` upon receiving a new block.
-pub async fn on_block(
+pub async fn on_block<E: ExecutionApi>(
     store: &mut Store,
     signed_block: &SignedBeaconBlock,
-    execution_engine: &Option<impl ExecutionApi>,
+    execution_engine: &Option<E>,
     verify_blob_availability: bool,
+    skip_execution_validation: bool,
 ) -> anyhow::Result<()> {
     let block = &signed_block.message;
     let parent_root = block.parent_root;
@@ -81,11 +83,62 @@ pub async fn on_block(
         .get(parent_root)?
         .ok_or_else(|| anyhow!("beacon state not found"))?
         .clone();
-    state
-        .state_transition(signed_block, true, execution_engine)
+    let engine_to_pass = if skip_execution_validation {
+        &None
+    } else {
+        execution_engine
+    };
+
+    let payload_status = state
+        .state_transition(signed_block, true, engine_to_pass)
         .await?;
 
     BEACON_PROCESSED_DEPOSITS_TOTAL.set(state.eth1_deposit_index as i64);
+
+    // Track optimistic root status per Ethereum Consensus Specs (sync/optimistic.md):
+    // A block is optimistic if:
+    // - execution validation was skipped (skip_execution_validation == true), OR
+    // - execution engine returned a NOT_VALIDATED status (Syncing or Accepted).
+    // When execution engine returns VALID, the block is fully validated, and any
+    // optimistic ancestors in the chain leading up to it are also validated.
+    let is_optimistic = if skip_execution_validation {
+        true
+    } else {
+        match payload_status {
+            Some(PayloadStatus::Syncing) | Some(PayloadStatus::Accepted) => true,
+            Some(PayloadStatus::Valid) | None => false,
+            _ => false,
+        }
+    };
+
+    if is_optimistic {
+        store
+            .db
+            .optimistic_roots_provider()
+            .insert(block_root, true)?;
+    } else {
+        store.db.optimistic_roots_provider().remove(block_root)?;
+        // Resolve optimistic ancestors: when a block is VALID, any earlier optimistic
+        // ancestors on this chain are confirmed valid and removed from optimistic roots.
+        let mut ancestor = parent_root;
+        while ancestor != B256::ZERO {
+            if store
+                .db
+                .optimistic_roots_provider()
+                .get(ancestor)?
+                .unwrap_or(false)
+            {
+                store.db.optimistic_roots_provider().remove(ancestor)?;
+                if let Some(ancestor_block) = store.db.block_provider().get(ancestor)? {
+                    ancestor = ancestor_block.message.parent_root;
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+    }
 
     // Add new block to the store
     store

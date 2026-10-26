@@ -50,3 +50,17 @@ impl MultimapTable for ParentRootIndexMultimapTable {
         Ok(())
     }
 }
+
+impl ParentRootIndexMultimapTable {
+    /// Remove a single child entry from the multimap.
+    /// Used during invalid-payload rollback to keep the fork-choice block tree consistent.
+    pub fn remove_child(&self, parent_root: B256, child_root: B256) -> Result<(), StoreError> {
+        let mut write_txn = self.db.begin_write()?;
+        write_txn.set_durability(Durability::Immediate)?;
+        let mut table = write_txn.open_multimap_table(PARENT_ROOT_INDEX_MULTIMAP_TABLE)?;
+        table.remove(parent_root, child_root)?;
+        drop(table);
+        write_txn.commit()?;
+        Ok(())
+    }
+}
