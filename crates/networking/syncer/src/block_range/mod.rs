@@ -72,6 +72,26 @@ impl BlockRangeSyncer {
         finalized_slot <= Some(latest_synced_slot)
     }
 
+    /// Checks whether the local client has synchronized up to the network canonical head slot.
+    pub async fn is_synced_to_head_slot(&self) -> bool {
+        let head_slot = self.peer_manager.head_slot();
+        let latest_synced_slot = self
+            .beacon_chain
+            .store
+            .lock()
+            .await
+            .db
+            .slot_index_provider()
+            .get_highest_slot()
+            .unwrap_or_default()
+            .unwrap_or(0);
+
+        match head_slot {
+            Some(head) => latest_synced_slot >= head.saturating_sub(1),
+            None => self.is_synced_to_finalized_slot().await,
+        }
+    }
+
     pub fn start(mut self) -> JoinHandle<anyhow::Result<anyhow::Result<BlockRangeSyncer>>> {
         let executor = self.executor.clone();
         executor.spawn(async move {
@@ -101,26 +121,34 @@ impl BlockRangeSyncer {
                 bail!("No synced slot found in the database");
             };
 
-            // phase 1: download majority of blocks from ranges
+            // download blocks from ranges across finalized and head sync phases
             let mut block_cache =
                 BlockCache::new(latest_synced_root, latest_synced_slot);
             let mut task_handles = vec![];
             loop {
                 poll_ready_tasks(&mut task_handles, &mut block_cache, &mut self.peer_manager)?;
 
-                let finalized_slot = match self.peer_manager.finalized_slot() {
-                    Some(finalized_slot) => finalized_slot,
+                let target_slot = match self.peer_manager.sync_target_slot(latest_synced_slot) {
+                    Some(target_slot) => target_slot,
                     None => {
-                        warn!("No peers available to determine finalized slot, retrying...");
+                        warn!("No peers available to determine sync target slot, retrying...");
                         sleep(SLEEP_DURATION).await;
                         self.peer_manager.update_peer_set();
                         continue;
                     }
                 };
 
-                let data_to_fetch = block_cache.data_to_fetch(finalized_slot);
+                let finalized_slot = self.peer_manager.finalized_slot();
+                let head_slot = self.peer_manager.head_slot();
+                let sync_stage = if finalized_slot.map(|f| latest_synced_slot >= f).unwrap_or(false) {
+                    "HeadSync"
+                } else {
+                    "FinalizedSync"
+                };
+
+                let data_to_fetch = block_cache.data_to_fetch(target_slot);
                 info!(
-                    "Forward sync status: Downloaded Blocks {}, Downloaded Blobs {}/{}, Stage {data_to_fetch}",
+                    "Forward sync status [{sync_stage} -> Target: {target_slot} (Finalized: {finalized_slot:?}, Head: {head_slot:?})]: Downloaded Blocks {}, Downloaded Blobs {}/{}, Stage {data_to_fetch}",
                     block_cache.block_count(),
                     block_cache.downloaded_blob_count(),
                     block_cache.blob_count(),
@@ -128,7 +156,7 @@ impl BlockRangeSyncer {
 
                 match data_to_fetch {
                     DataToFetch::BlockRange(range) => {
-                        let Some(peer) = self.peer_manager.fetch_idle_peer() else {
+                        let Some(peer) = self.peer_manager.fetch_idle_peer_for_slot(range.start_slot) else {
                             self.peer_manager.update_peer_set();
                             info!("No idle peers available for block range sync.");
                             sleep(SLEEP_DURATION).await;
