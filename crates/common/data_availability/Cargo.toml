@@ -14,5 +14,14 @@ alloy-primitives.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 
+# ream dependencies
+ream-consensus-beacon.workspace = true
+
+[dev-dependencies]
+ssz_types.workspace = true
+
+# ream dependencies
+ream-consensus-misc.workspace = true
+
 [lints]
 workspace = true
