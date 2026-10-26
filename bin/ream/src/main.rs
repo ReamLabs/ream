@@ -273,8 +273,12 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
 
     set_attestation_committee_count(config.attestation_committee_count);
 
-    let keystores = load_validator_registry(&config.validator_registry_path, &config.node_id)
-        .expect("Failed to load validator registry");
+    let keystores = load_validator_registry(
+        &config.validator_registry_path,
+        &config.node_id,
+        &config.network.genesis_validators,
+    )
+    .expect("Failed to load validator registry");
 
     let proposal_signer = Arc::new(ProposalSigner::new(
         keystores.into_iter().map(Arc::new).collect(),
