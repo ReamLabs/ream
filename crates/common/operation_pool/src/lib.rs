@@ -146,11 +146,6 @@ impl OperationPool {
         self.proposer_slashings.read().iter().cloned().collect()
     }
 
-    #[deprecated(note = "use `get_all_proposer_slashings` instead")]
-    pub fn get_all_proposer_slahsings(&self) -> Vec<ProposerSlashing> {
-        self.get_all_proposer_slashings()
-    }
-
     pub fn insert_proposer_slashing(&self, slashing: ProposerSlashing) {
         self.proposer_slashings.write().insert(slashing);
     }
@@ -414,7 +409,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(deprecated)]
     fn test_proposer_slashings_retrieval() {
         let operation_pool = OperationPool::default();
         let slashing = ProposerSlashing {
@@ -423,10 +417,6 @@ mod tests {
         };
         operation_pool.insert_proposer_slashing(slashing.clone());
 
-        assert_eq!(
-            operation_pool.get_all_proposer_slashings(),
-            vec![slashing.clone()]
-        );
-        assert_eq!(operation_pool.get_all_proposer_slahsings(), vec![slashing]);
+        assert_eq!(operation_pool.get_all_proposer_slashings(), vec![slashing]);
     }
 }
