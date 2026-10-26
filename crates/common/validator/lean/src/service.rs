@@ -321,6 +321,69 @@ pub async fn build_block(
     }
 }
 
+#[cfg(all(
+    test,
+    feature = "devnet5",
+    not(any(feature = "optimized-leanvm", feature = "optimized-leanvm-b"))
+))]
+mod preparation_tests {
+    use alloy_primitives::B256;
+    use ream_consensus_lean::block::{Block, BlockBody};
+
+    use super::*;
+    use crate::signer::tests::preparation_fixture_signer;
+
+    #[tokio::test]
+    async fn production_block_builder_contains_an_unprepared_proposal() {
+        let signer = Arc::new(preparation_fixture_signer());
+        let slot = signer.keystores()[0]
+            .proposal_private_key
+            .get_prepared_interval()
+            .end;
+        assert!(
+            signer.keystores()[0]
+                .proposal_private_key
+                .get_activation_interval()
+                .contains(&slot)
+        );
+        let (sender, mut receiver) = mpsc::unbounded_channel();
+        let task = tokio::spawn(build_block(sender, slot, 0, signer));
+
+        let Some(LeanChainServiceMessage::ProduceBlock {
+            slot: requested,
+            sender,
+        }) = receiver.recv().await
+        else {
+            panic!("block builder must request a production block");
+        };
+        assert_eq!(requested, slot);
+        sender
+            .send(ServiceResponse::Ok(BlockWithSignatures {
+                block: Block {
+                    slot,
+                    proposer_index: 0,
+                    parent_root: B256::ZERO,
+                    state_root: B256::ZERO,
+                    body: BlockBody {
+                        attestations: VariableList::empty(),
+                    },
+                },
+                signatures: VariableList::empty(),
+                attestation_public_keys: vec![],
+            }))
+            .expect("send produced block");
+
+        tokio::time::timeout(Duration::from_secs(10), task)
+            .await
+            .expect("block builder must finish")
+            .expect("unprepared signing must not panic the production task");
+        assert!(
+            receiver.recv().await.is_none(),
+            "refused proposal must not be published"
+        );
+    }
+}
+
 #[cfg(feature = "devnet5")]
 fn sign_block(
     proposal_signer: &ProposalSigner,

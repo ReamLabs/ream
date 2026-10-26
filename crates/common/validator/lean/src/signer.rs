@@ -32,6 +32,16 @@ pub enum ProposalSignerError {
         activation_end: u64,
     },
 
+    #[error(
+        "slot {slot} is outside validator {validator_index}'s proposal-key prepared interval {prepared_start}..{prepared_end}"
+    )]
+    SlotOutsidePreparedInterval {
+        validator_index: u64,
+        slot: u64,
+        prepared_start: u64,
+        prepared_end: u64,
+    },
+
     #[error("failed to sign proposal for validator {validator_index} at slot {slot}: {source}")]
     SigningFailed {
         validator_index: u64,
@@ -47,6 +57,7 @@ impl ProposalSignerError {
             Self::ValidatorNotFound { .. } => "validator_not_found",
             Self::SlotOverflow { .. } => "slot_overflow",
             Self::SlotOutsideActivationInterval { .. } => "slot_outside_activation_interval",
+            Self::SlotOutsidePreparedInterval { .. } => "slot_outside_prepared_interval",
             Self::SigningFailed { .. } => "signing_failed",
         }
     }
@@ -98,6 +109,17 @@ impl ProposalSigner {
                 activation_end: activation_interval.end,
             });
         }
+        // The primitive asserts this precondition. Refuse before entering it;
+        // preparation advancement belongs to the key lifecycle, not this call.
+        let prepared_interval = keystore.proposal_private_key.get_prepared_interval();
+        if !prepared_interval.contains(&slot) {
+            return Err(ProposalSignerError::SlotOutsidePreparedInterval {
+                validator_index,
+                slot,
+                prepared_start: prepared_interval.start,
+                prepared_end: prepared_interval.end,
+            });
+        }
         let signature = keystore
             .proposal_private_key
             .sign(block_root, epoch)
@@ -123,7 +145,7 @@ impl ProposalSigner {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use std::sync::Arc;
 
     use alloy_primitives::B256;
@@ -145,6 +167,68 @@ mod tests {
             attestation_private_key,
             proposal_private_key,
         })])
+    }
+
+    #[cfg(not(any(feature = "optimized-leanvm", feature = "optimized-leanvm-b")))]
+    pub(crate) fn preparation_fixture_signer() -> ProposalSigner {
+        let attestation_private_key = PrivateKey::from_bytes(include_bytes!(
+            "../../../../../bin/ream/assets/lean/hash-sig-keys/validator_0_attestation_sk.ssz"
+        ))
+        .expect("decode public attestation fixture");
+        let proposal_private_key = PrivateKey::from_bytes(include_bytes!(
+            "../../../../../bin/ream/assets/lean/hash-sig-keys/validator_0_proposal_sk.ssz"
+        ))
+        .expect("decode public proposal fixture");
+        let registry: ream_keystore::lean_keystore::AnnotatedValidatorRegistry =
+            serde_yaml::from_str(include_str!(
+                "../../../../../bin/ream/assets/lean/annotated_validators.yaml"
+            ))
+            .expect("decode public fixture registry");
+        let entries = &registry.nodes["ream_0"];
+        ProposalSigner::new(vec![Arc::new(ValidatorKeystore {
+            index: 0,
+            attestation_public_key: entries[0].public_key_hex,
+            proposal_public_key: entries[1].public_key_hex,
+            attestation_private_key,
+            proposal_private_key,
+        })])
+    }
+
+    #[test]
+    #[cfg(not(any(feature = "optimized-leanvm", feature = "optimized-leanvm-b")))]
+    fn refuses_unprepared_proposals_without_disrupting_prepared_signing() {
+        let signer = preparation_fixture_signer();
+        let key = &signer.keystores()[0].proposal_private_key;
+        let prepared = key.get_prepared_interval();
+        let slot = prepared.end;
+        assert!(key.get_activation_interval().contains(&slot));
+
+        let error = signer
+            .sign_proposal(0, slot, &B256::repeat_byte(0x42))
+            .expect_err("active but unprepared slot must be refused");
+        assert_eq!(error.code(), "slot_outside_prepared_interval");
+        assert!(matches!(
+            error,
+            ProposalSignerError::SlotOutsidePreparedInterval {
+                validator_index: 0,
+                slot: rejected,
+                prepared_start,
+                prepared_end,
+            } if rejected == slot && prepared_start == prepared.start && prepared_end == prepared.end
+        ));
+        assert_eq!(key.get_prepared_interval(), prepared);
+
+        let recovery_slot = slot - 1;
+        let root = B256::repeat_byte(0x43);
+        let signed = signer
+            .sign_proposal(0, recovery_slot, &root)
+            .expect("prepared signing must remain usable after refusal");
+        assert!(
+            signed
+                .signature
+                .verify(&signed.public_key, recovery_slot as u32, root.as_ref())
+                .expect("verify recovery signature")
+        );
     }
 
     #[test]
