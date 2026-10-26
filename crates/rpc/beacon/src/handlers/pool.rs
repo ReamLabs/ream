@@ -216,12 +216,12 @@ pub async fn post_attester_slashings(
 pub async fn get_proposer_slashings(
     operation_pool: Data<Arc<OperationPool>>,
 ) -> Result<impl Responder, ApiError> {
-    Ok(HttpResponse::Ok().json(DataVersionedResponse::new(
+    Ok(HttpResponse::Ok().json(DataResponse::new(
         operation_pool.get_all_proposer_slashings(),
     )))
 }
 
-/// POST /eth/v2/beacon/pool/proposer_slashing
+/// POST /eth/v1/beacon/pool/proposer_slashings
 #[post("/beacon/pool/proposer_slashings")]
 pub async fn post_proposer_slashings(
     db: Data<BeaconDB>,

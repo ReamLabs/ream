@@ -4,7 +4,9 @@ use std::{
 };
 
 use actix_web::{
-    HttpRequest, HttpResponse, Responder, get, post,
+    HttpRequest, HttpResponse, Responder, get,
+    http::header,
+    post,
     web::{Data, Json, Path, Payload, Query},
 };
 use alloy_primitives::B256;
@@ -15,10 +17,10 @@ use ream_api_types_beacon::{
     id::ValidatorID,
     responses::{
         BeaconResponse, BeaconVersionedResponse, DataResponse, ETH_CONSENSUS_VERSION_HEADER,
-        RootResponse, SSZ_CONTENT_TYPE,
+        RootResponse, SSZ_CONTENT_TYPE, VERSION,
     },
 };
-use ream_api_types_common::{error::ApiError, id::ID};
+use ream_api_types_common::{content_type::ContentType, error::ApiError, id::ID};
 use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_consensus_beacon::{
     blob_sidecar::BlobIdentifier,
@@ -337,15 +339,14 @@ pub async fn get_blinded_block(
 ) -> Result<impl Responder, ApiError> {
     let beacon_block = get_beacon_block_from_id(block_id.into_inner(), &db).await?;
     let blinded_beacon_block = beacon_block.as_signed_blinded_beacon_block();
-    match http_request
-        .headers()
-        .get(SSZ_CONTENT_TYPE)
-        .and_then(|header| header.to_str().ok())
-    {
-        Some(SSZ_CONTENT_TYPE) => Ok(HttpResponse::Ok()
+    match ContentType::from(http_request.headers().get(header::ACCEPT)) {
+        ContentType::Ssz => Ok(HttpResponse::Ok()
             .content_type(SSZ_CONTENT_TYPE)
+            .insert_header((ETH_CONSENSUS_VERSION_HEADER, VERSION))
             .body(blinded_beacon_block.as_ssz_bytes())),
-        _ => Ok(HttpResponse::Ok().json(BeaconVersionedResponse::new(blinded_beacon_block))),
+        ContentType::Json => Ok(HttpResponse::Ok()
+            .insert_header((ETH_CONSENSUS_VERSION_HEADER, VERSION))
+            .json(BeaconVersionedResponse::new(blinded_beacon_block))),
     }
 }
 

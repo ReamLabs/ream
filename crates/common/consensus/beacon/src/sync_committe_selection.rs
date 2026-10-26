@@ -5,8 +5,11 @@ use tree_hash_derive::TreeHash;
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct SyncCommitteeSelection {
-    validatior_index: u64,
-    slot: u64,
-    subcommittee_index: u64,
-    selection_proof: BLSSignature,
+    #[serde(with = "serde_utils::quoted_u64")]
+    pub validator_index: u64,
+    #[serde(with = "serde_utils::quoted_u64")]
+    pub slot: u64,
+    #[serde(with = "serde_utils::quoted_u64")]
+    pub subcommittee_index: u64,
+    pub selection_proof: BLSSignature,
 }
