@@ -2786,6 +2786,21 @@ impl LeanChainService {
             slot = signed_block.block.slot,
             "Received gossiped block while backfill syncing"
         );
+
+        // A pending block blocks the Synced handoff until finalization passes its
+        // slot, which never happens for a far-future slot. Apply the same horizon
+        // block import uses.
+        let wall_clock_slot = get_current_slot();
+        if signed_block.block.slot > wall_clock_slot + 1 {
+            debug!(
+                root = ?root,
+                slot = signed_block.block.slot,
+                wall_clock_slot,
+                "Ignoring gossiped block ahead of wall clock while backfill syncing"
+            );
+            return Ok(());
+        }
+
         self.handle_backfill_block(None, signed_block.clone(), SyncBlockSource::Gossip)
             .await
     }
@@ -3528,6 +3543,64 @@ mod tests {
         assert!(
             db.latest_known_aggregated_payloads_provider()
                 .contains_key(&key)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_far_future_gossip_block_does_not_block_synced_handoff() {
+        let store = sample_store(1).await;
+        let (writer, _) = Writer::new(store);
+        let (_chain_tx, chain_rx) = mpsc::unbounded_channel();
+        let (p2p_tx, _p2p_rx) = mpsc::unbounded_channel();
+        let mut service = LeanChainService::new(
+            writer,
+            chain_rx,
+            p2p_tx,
+            Arc::new(AggregatorState::new(false)),
+        )
+        .await;
+        assert_eq!(service.sync_status, SyncStatus::Syncing);
+
+        // Any peer can gossip this: nothing checks the slot, parent, or proposer.
+        let junk_block = SignedBlock {
+            block: ream_consensus_lean::block::Block {
+                slot: 1 << 40,
+                proposer_index: 0,
+                parent_root: B256::repeat_byte(0xab),
+                state_root: B256::ZERO,
+                body: ream_consensus_lean::block::BlockBody {
+                    attestations: VariableList::default(),
+                    #[cfg(feature = "reth")]
+                    execution_payload: Default::default(),
+                },
+            },
+            #[cfg(feature = "devnet5")]
+            proof: ream_consensus_lean::attestation::MultiMessageAggregate {
+                proof: VariableList::default(),
+            },
+        };
+        service
+            .handle_syncing_process_block(&junk_block)
+            .await
+            .unwrap();
+        service.prune_stale_pending_blocks().await.unwrap();
+
+        // Finalization never reaches this slot, so a block kept here pins the
+        // node in Syncing for good: no store ticks, gossiped votes ignored.
+        let can_switch_to_synced = should_switch_to_synced(
+            HandoffStrategy::Legacy,
+            HandoffInputs {
+                is_behind_peers: false,
+                has_orphaned_pending_blocks: service.has_orphaned_pending_blocks().await,
+                has_pending_backfill_work: false,
+                has_near_head_bridge: false,
+                has_active_backfill_jobs: false,
+                has_inflight_backfill_requests: false,
+            },
+        );
+        assert!(
+            can_switch_to_synced,
+            "a block from a slot far past the wall clock must not block the Synced handoff"
         );
     }
 }
