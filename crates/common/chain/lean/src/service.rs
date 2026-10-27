@@ -2786,6 +2786,21 @@ impl LeanChainService {
             slot = signed_block.block.slot,
             "Received gossiped block while backfill syncing"
         );
+
+        // A pending block blocks the Synced handoff until finalization passes its
+        // slot, which never happens for a far-future slot. Apply the same horizon
+        // block import uses.
+        let wall_clock_slot = get_current_slot();
+        if signed_block.block.slot > wall_clock_slot + 1 {
+            debug!(
+                root = ?root,
+                slot = signed_block.block.slot,
+                wall_clock_slot,
+                "Ignoring gossiped block ahead of wall clock while backfill syncing"
+            );
+            return Ok(());
+        }
+
         self.handle_backfill_block(None, signed_block.clone(), SyncBlockSource::Gossip)
             .await
     }
@@ -3571,7 +3586,7 @@ mod tests {
         service.prune_stale_pending_blocks().await.unwrap();
 
         // Finalization never reaches this slot, so a block kept here pins the
-        // node in Syncing for good: no store ticks, no duties.
+        // node in Syncing for good: no store ticks, gossiped votes ignored.
         let can_switch_to_synced = should_switch_to_synced(
             HandoffStrategy::Legacy,
             HandoffInputs {
