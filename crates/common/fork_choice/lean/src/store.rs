@@ -2099,16 +2099,11 @@ impl Store {
             }
         }
 
-        let (
-            attestation_data_by_root_provider,
-            latest_new_aggregated_payloads_provider,
-            latest_known_aggregated_payloads_provider,
-        ) = {
+        let (attestation_data_by_root_provider, latest_new_aggregated_payloads_provider) = {
             let db = self.store.lock().await;
             (
                 db.attestation_data_by_root_provider(),
                 db.latest_new_aggregated_payloads_provider(),
-                db.latest_known_aggregated_payloads_provider(),
             )
         };
 
@@ -2182,28 +2177,6 @@ impl Store {
             attestation_data_by_root_provider.insert(data_root, data.clone())?;
 
             for &validator in &validator_ids {
-                let mut already_voted_this_slot = false;
-                for (key, _) in latest_new_aggregated_payloads_provider
-                    .iter()?
-                    .into_iter()
-                    .chain(latest_known_aggregated_payloads_provider.iter()?)
-                {
-                    if key.validator_id != validator || key.data_root == data_root {
-                        continue;
-                    }
-                    if attestation_data_by_root_provider
-                        .get(key.data_root)?
-                        .is_some_and(|existing_data| existing_data.slot == data.slot)
-                    {
-                        already_voted_this_slot = true;
-                        break;
-                    }
-                }
-
-                if already_voted_this_slot {
-                    continue;
-                }
-
                 let key = SignatureKey::from_parts(validator, data_root);
 
                 let mut proofs = latest_new_aggregated_payloads_provider
@@ -2883,14 +2856,18 @@ fn shift_projected_finalized_slot(
 mod tests {
     use alloy_primitives::B256;
     use ream_consensus_lean::{
-        attestation::{AttestationData, MultiMessageAggregate, SignedAttestation},
+        attestation::{
+            AttestationData, MultiMessageAggregate, SignedAggregatedAttestation, SignedAttestation,
+            SingleMessageAggregate,
+        },
         block::{Block, BlockBody, SignedBlock},
         checkpoint::Checkpoint,
     };
+    use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
     use ream_post_quantum_crypto::leansig::signature::Signature;
     use ream_storage::tables::{field::REDBField, table::REDBTable};
     use ream_test_utils::store::sample_store;
-    use ssz_types::VariableList;
+    use ssz_types::{BitList, VariableList};
     use tree_hash::TreeHash;
 
     use super::{BlockProductionStrategy, Store};
@@ -3087,5 +3064,124 @@ mod tests {
             })
             .await
             .unwrap();
+    }
+
+    /// Imports an empty block on `parent_root` with a state root matching its post-state.
+    async fn import_empty_block(store: &mut Store, slot: u64, parent_root: B256) -> B256 {
+        let mut post_state = store
+            .store
+            .lock()
+            .await
+            .state_provider()
+            .get(parent_root)
+            .unwrap()
+            .unwrap();
+        let mut signed_block =
+            fake_signed_block(slot, slot % post_state.validators.len() as u64, parent_root);
+        post_state.process_slots(slot).unwrap();
+        post_state.process_block(&signed_block.block).unwrap();
+        signed_block.block.state_root = post_state.tree_hash_root();
+        store.on_block(&signed_block, false).await.unwrap();
+        signed_block.block.tree_hash_root()
+    }
+
+    fn aggregated_vote(
+        validators: &[usize],
+        source: Checkpoint,
+        target: Checkpoint,
+    ) -> SignedAggregatedAttestation {
+        let mut participants = BitList::with_capacity(6).unwrap();
+        for &validator in validators {
+            participants.set(validator, true).unwrap();
+        }
+        SignedAggregatedAttestation {
+            data: AttestationData {
+                slot: 3,
+                head: target,
+                target,
+                source,
+            },
+            proof: SingleMessageAggregate::new(participants, VariableList::empty()),
+        }
+    }
+
+    /// Head after an equal-slot equivocation by V0, with the two votes delivered in the
+    /// given order. V1 backs fork_a and V2 backs fork_b, so V0 decides the head. Also
+    /// returns the head leanSpec expects: the fork whose vote has the larger data root.
+    async fn head_after_equivocation(fork_a_vote_first: bool) -> (B256, B256, B256, B256) {
+        let mut store = sample_store_as_store(6).await;
+        let genesis_root = { store.store.lock().await.head_provider().get().unwrap() };
+        store
+            .store
+            .lock()
+            .await
+            .time_provider()
+            .insert(4 * INTERVALS_PER_SLOT)
+            .unwrap();
+
+        let common_root = import_empty_block(&mut store, 1, genesis_root).await;
+        let fork_a_root = import_empty_block(&mut store, 2, common_root).await;
+        let fork_b_root = import_empty_block(&mut store, 3, common_root).await;
+
+        let source = Checkpoint {
+            root: genesis_root,
+            slot: 0,
+        };
+        let vote_a = aggregated_vote(
+            &[0, 1],
+            source,
+            Checkpoint {
+                root: fork_a_root,
+                slot: 2,
+            },
+        );
+        let vote_b = aggregated_vote(
+            &[0, 2],
+            source,
+            Checkpoint {
+                root: fork_b_root,
+                slot: 3,
+            },
+        );
+        let vote_a_root = vote_a.data.tree_hash_root();
+        let vote_b_root = vote_b.data.tree_hash_root();
+        let ordered = if fork_a_vote_first {
+            [vote_a, vote_b]
+        } else {
+            [vote_b, vote_a]
+        };
+        for vote in ordered {
+            store
+                .on_gossip_aggregated_attestation_without_verification(vote)
+                .await
+                .unwrap();
+        }
+        store.accept_new_attestations().await.unwrap();
+
+        let head = store.store.lock().await.head_provider().get().unwrap();
+        let expected_head = if vote_a_root > vote_b_root {
+            fork_a_root
+        } else {
+            fork_b_root
+        };
+        (head, expected_head, fork_a_root, fork_b_root)
+    }
+
+    // Each order runs in its own test: `sample_store` keys its database directory by
+    // thread, so two stores built in one test would share state.
+    #[tokio::test]
+    async fn equal_slot_equivocation_head_with_fork_a_vote_first() {
+        let (head, expected, fork_a_root, fork_b_root) = head_after_equivocation(true).await;
+        assert!(head == fork_a_root || head == fork_b_root);
+        // Both votes share a slot, so the larger attestation data root wins.
+        assert_eq!(head, expected);
+    }
+
+    #[tokio::test]
+    async fn equal_slot_equivocation_head_with_fork_b_vote_first() {
+        let (head, expected, fork_a_root, fork_b_root) = head_after_equivocation(false).await;
+        assert!(head == fork_a_root || head == fork_b_root);
+        // Both votes share a slot, so the larger attestation data root wins.
+        assert_eq!(head, expected);
     }
 }
